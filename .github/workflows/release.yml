@@ -59,6 +59,10 @@ jobs:
           $pattern = '(?ms)^## \[' + [regex]::Escape($version) + '\].*?(?=^## |^\[[^\]]+\]:|\z)'
           $match = [regex]::Match($text, $pattern)
           $body = if ($match.Success) { $match.Value.Trim() } else { "См. CHANGELOG.md" }
+          # The screenshots of the README come first, so the release shows the
+          # look of the program above the list of changes.
+          $shots = '![Главное окно: карточки найденных видео и консоль](https://raw.githubusercontent.com/flynet/pyDownloader/main/assets/screenshots/window.png)' + [Environment]::NewLine + [Environment]::NewLine + '![Диалог настроек](https://raw.githubusercontent.com/flynet/pyDownloader/main/assets/screenshots/settings.png)' + [Environment]::NewLine + [Environment]::NewLine
+          $body = $shots + $body
           New-Item -ItemType Directory -Force build | Out-Null
           Set-Content -Path build/release_notes.md -Value $body -Encoding utf8
 

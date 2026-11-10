@@ -3,6 +3,14 @@
 Формат — [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/),
 версионирование — [SemVer](https://semver.org/lang/ru/). Релиз = тег `vX.Y.Z` на `main`.
 
+## [Unreleased]
+
+### Added
+- Скриншоты главного окна и диалога настроек: они лежат в `assets/screenshots`,
+  показаны в README и в тексте релиза. Снимки рисует
+  `tools/make_screenshots.py` демонстрационными данными (карточки, консоль),
+  без браузера и загрузок, поэтому снимки воспроизводимы.
+
 ## [0.2.0] - 2026-11-10
 
 ### Added
