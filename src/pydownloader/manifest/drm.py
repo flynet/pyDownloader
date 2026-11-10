@@ -13,6 +13,7 @@ from dataclasses import dataclass
 
 from pydownloader.dash.models import DashManifest
 from pydownloader.hls.models import Key, Playlist
+from pydownloader.i18n import tr
 
 #: ``schemeIdUri`` (lower case) -> DRM system name.
 DRM_SCHEMES = {
@@ -31,14 +32,20 @@ DRM_SCHEMES = {
     "urn:mpeg:csb:2011": "CommonEncryption",
 }
 ALLOWED_HLS_METHODS = {"NONE", "AES-128"}
-DRM_MESSAGE = "Контент защищён DRM, скачивание невозможно"
+def drm_message() -> str:
+    """The DRM text in the current language (the constant cannot follow the language)."""
+    return tr("mf_drm_message")
 
 
 @dataclass(frozen=True)
 class DrmVerdict:
     is_drm: bool
     system: str | None = None
-    message: str = DRM_MESSAGE
+
+    @property
+    def message(self) -> str:
+        """The DRM text in the language of the running program."""
+        return tr("mf_drm_message")
 
     @property
     def ok(self) -> bool:

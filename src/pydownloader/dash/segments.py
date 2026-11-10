@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 
 from pydownloader.dash.models import DashSegment
+from pydownloader.i18n import tr
 
 _TOKEN_RE = re.compile(r"\$(\w+)(?:%0(\d+)d)?\$")
 # ``$$`` is the DASH escape for a literal dollar sign.
@@ -76,7 +77,7 @@ def build_segments(
             if entry_t is not None:
                 t = entry_t
             if t is None:
-                raise ValueError("SegmentTimeline без @t и без предыдущего значения")
+                raise ValueError(tr("dash_timeline_no_time"))
             for _ in range(r + 1):
                 url = expand_template(
                     media_template,

@@ -14,6 +14,7 @@ from typing import Any
 
 import httpx
 
+from pydownloader.i18n import tr
 from pydownloader.util.ranges import ByteRange
 from pydownloader.util.urls import origin_of
 
@@ -125,11 +126,13 @@ def fetch_text(url: str, headers: Mapping[str, str], timeout: float = DEFAULT_TI
         with httpx.Client(follow_redirects=True, timeout=timeout) as client:
             response = client.get(url, headers=clean_headers(headers))
     except httpx.HTTPError as exc:
-        logger.debug("GET %s: сетевая ошибка %s", url, exc)
-        raise FetchError(f"Сетевая ошибка: {exc}") from exc
-    logger.debug("GET %s -> %s (%d символов)", url, response.status_code, len(response.text))
+        logger.debug(tr("http_net_error_log", url=url, error=exc))
+        raise FetchError(tr("http_net_error", error=exc)) from exc
+    logger.debug(
+        tr("http_get_chars", url=url, status=response.status_code, chars=len(response.text))
+    )
     if response.status_code >= 400:
-        raise FetchError(f"HTTP {response.status_code} для {url}")
+        raise FetchError(tr("http_status_for", status=response.status_code, url=url))
     return response.text
 
 
@@ -152,11 +155,13 @@ def fetch_bytes(
         with httpx.Client(follow_redirects=True, timeout=timeout) as client:
             response = client.get(url, headers=request_headers)
     except httpx.HTTPError as exc:
-        logger.debug("GET %s: сетевая ошибка %s", url, exc)
-        raise FetchError(f"Сетевая ошибка: {exc}") from exc
-    logger.debug("GET %s -> %s (%d байт)", url, response.status_code, len(response.content))
+        logger.debug(tr("http_net_error_log", url=url, error=exc))
+        raise FetchError(tr("http_net_error", error=exc)) from exc
+    logger.debug(
+        tr("http_get_bytes", url=url, status=response.status_code, size=len(response.content))
+    )
     if response.status_code >= 400:
-        raise FetchError(f"HTTP {response.status_code} для {url}")
+        raise FetchError(tr("http_status_for", status=response.status_code, url=url))
     body = response.content
     if byte_range is not None and response.status_code == 200 and len(body) > byte_range.length:
         # The server ignored Range and sent the whole file: cut the requested part
@@ -176,9 +181,9 @@ def head_info(
         with httpx.Client(follow_redirects=True, timeout=timeout) as client:
             response = client.head(url, headers=clean_headers(headers))
     except httpx.HTTPError as exc:
-        raise FetchError(f"Сетевая ошибка: {exc}") from exc
+        raise FetchError(tr("http_net_error", error=exc)) from exc
     if response.status_code >= 400:
-        raise FetchError(f"HTTP {response.status_code} для {url}")
+        raise FetchError(tr("http_status_for", status=response.status_code, url=url))
     length = response.headers.get("content-length")
     size = int(length) if length and length.isdigit() else None
     return size, response.headers.get("accept-ranges", "").lower() == "bytes"

@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 from pydownloader.hls.models import InitSegment, Key, Media, MediaKind, Playlist, Segment, Variant
+from pydownloader.i18n import tr
 from pydownloader.util.ranges import ByteRange, parse_hls_byterange
 from pydownloader.util.urls import resolve_url
 
@@ -34,7 +35,7 @@ def parse_attributes(text: str) -> dict[str, str]:
         if j < n and text[j] == '"':
             end = text.find('"', j + 1)
             if end == -1:
-                raise PlaylistParseError(f"Незакрытая кавычка в атрибутах: {text!r}")
+                raise PlaylistParseError(tr("hls_unclosed_quote", text=text))
             attrs[key] = text[j + 1 : end]
             i = end + 1
             while i < n and text[i] != ",":
@@ -96,10 +97,10 @@ def parse_playlist(text: str, manifest_url: str) -> Playlist:
     links are resolved against it with ``urljoin``.
     """
     if not text.strip():
-        raise PlaylistParseError("Пустой ответ манифеста")
+        raise PlaylistParseError(tr("mf_empty_response"))
     lines = text.splitlines()
     if not lines[0].strip().startswith("#EXTM3U"):
-        raise PlaylistParseError("Нет маркера #EXTM3U — это не HLS-плейлист")
+        raise PlaylistParseError(tr("hls_no_extm3u"))
 
     kind: MediaKind = (
         "master" if any(line.strip().startswith("#EXT-X-STREAM-INF") for line in lines) else "media"

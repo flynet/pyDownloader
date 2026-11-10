@@ -26,6 +26,7 @@ from pydownloader.dash.models import (
     MPDType,
 )
 from pydownloader.dash.segments import build_segments, expand_template
+from pydownloader.i18n import tr
 from pydownloader.util.ranges import ByteRange
 from pydownloader.util.urls import base_dir_url, resolve_url
 
@@ -364,13 +365,13 @@ def _parse_period(
 def parse_mpd(text: str, manifest_url: str) -> DashManifest:
     """Parse ``.mpd`` XML into a :class:`DashManifest` with absolute URLs."""
     if not text.strip():
-        raise ManifestParseError("Пустой ответ манифеста")
+        raise ManifestParseError(tr("mf_empty_response"))
     try:
         root = etree.fromstring(text.encode("utf-8"))
     except etree.XMLSyntaxError as exc:
-        raise ManifestParseError(f"MPD не разобран: {exc}") from exc
+        raise ManifestParseError(tr("dash_parse_failed", error=exc)) from exc
     if _local(root.tag) != "MPD":
-        raise ManifestParseError("Корневой элемент не MPD")
+        raise ManifestParseError(tr("dash_root_not_mpd"))
     base = base_dir_url(manifest_url)
     media_duration = _parse_iso_duration(root.get("mediaPresentationDuration"))
     raw_type: str = str(root.get("type") or "static").lower()

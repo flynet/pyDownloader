@@ -10,6 +10,7 @@ parallelism setting (at most six threads, spec 6.2 p.3).
 from __future__ import annotations
 
 from pydownloader.download.plan import PlanItem, StreamId
+from pydownloader.i18n import tr
 from pydownloader.util.ranges import ByteRange
 from pydownloader.youtube.player import Format, parse_player, pick_audio, pick_video, reason_of
 
@@ -59,12 +60,12 @@ def youtube_plan(payload: str, cap: int) -> list[PlanItem]:
     """Plan for a YouTube source: video chunks plus the best audio track."""
     player = parse_player(payload)
     if not player.ok:
-        raise YoutubeError(f"YouTube: {reason_of(player)}")
+        raise YoutubeError(tr("yt_plan_error", reason=reason_of(player)))
     if player.live:
-        raise YoutubeError("Live-трансляция: пропущена")
+        raise YoutubeError(tr("yt_plan_live"))
     video = pick_video(player, cap)
     if video is None:
-        raise YoutubeError("YouTube: нет доступного видеоформата")
+        raise YoutubeError(tr("yt_plan_no_video"))
     items = chunk_items(video, "video")
     audio = pick_audio(player)
     if audio is not None:

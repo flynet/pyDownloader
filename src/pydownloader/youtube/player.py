@@ -17,14 +17,16 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 
-#: Player status values that mean "nothing can be downloaded".
+from pydownloader.i18n import tr
+
+#: Player status values that mean "nothing can be downloaded": status -> catalog key.
 REASONS = {
-    "LOGIN_REQUIRED": "YouTube требует входа в аккаунт",
-    "UNPLAYABLE": "видео недоступно для воспроизведения",
-    "ERROR": "ошибка воспроизведения YouTube",
-    "EMPTY": "пустой ответ плеера",
-    "MALFORMED": "не удалось разобрать ответ плеера",
-    "PARSE_ERROR": "не удалось разобрать ответ плеера",
+    "LOGIN_REQUIRED": "yt_reason_login_required",
+    "UNPLAYABLE": "yt_reason_unplayable",
+    "ERROR": "yt_reason_error",
+    "EMPTY": "yt_reason_empty",
+    "MALFORMED": "yt_reason_malformed",
+    "PARSE_ERROR": "yt_reason_parse_error",
 }
 
 
@@ -222,4 +224,5 @@ def qualities(player: Player) -> list[int]:
 
 def reason_of(player: Player) -> str:
     """Human-readable reason for a non-OK playability status."""
-    return REASONS.get(player.status, f"YouTube: {player.status}")
+    key = REASONS.get(player.status)
+    return tr(key) if key else tr("yt_reason_status", status=player.status)

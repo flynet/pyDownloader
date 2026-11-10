@@ -1,248 +1,383 @@
-# ТЗ (версия 5): HLS Grabber на Python с современным интерфейсом, установщиком Inno Setup 6 и обновлениями через GitHub Releases
+# Technical Specification (version 5): HLS Grabber in Python with a modern UI, an Inno Setup 6 installer and updates via GitHub Releases
 
-Это переработка версии 4 (Java). Функционал приложения остаётся тем же (разделы 5 и 6 перенесены без изменений по смыслу), меняются стек, интерфейс, упаковка, установка и обновление.
-
----
-
-## 1. Цель
-
-Windows-приложение на Python, которое устанавливается в систему через установщик (Inno Setup 6), имеет современный интерфейс и умеет само проверять новые версии на GitHub Releases.
-
-Работа программы:
-
-1. Пользователь запускает программу и выбирает папку загрузок.
-2. Открывается управляемый браузер и главное окно из двух секций: найденные видео (сверху) и консоль (снизу).
-3. Пользователь сам заходит на сайт и запускает видео.
-4. Приложение перехватывает сетевые запросы браузера и находит HLS (`.m3u8`), MPEG-DASH (`.mpd`) и прямые MP4.
-5. Найденное появляется строкой в верхней секции. Скачивание стартует **только после нажатия «Скачать»** у конкретного видео.
-6. Сегменты скачиваются во временную папку и склеиваются FFmpeg в один `.mp4`.
-
-Принцип: браузер уже получает и расшифровывает (AES-128) поток, значит программа делает то же самое по тем же URL и ключам. DRM (Widevine / PlayReady / FairPlay) не поддерживается: такие видео пропускаются.
+This is a revision of version 4 (Java). The application's functionality stays the
+same (sections 5 and 6 are carried over unchanged in meaning); the stack,
+interface, packaging, installation and update flow change.
 
 ---
 
-## 2. Технический стек
+## 1. Goal
 
-| Компонент | Решение |
+A Windows application in Python that is installed into the system through an
+installer (Inno Setup 6), has a modern interface and can check for new versions
+on GitHub Releases on its own.
+
+How the program works:
+
+1. The user launches the program and picks the downloads folder.
+2. A managed browser and the main window of two sections open: found videos
+   (top) and console (bottom).
+3. The user visits the site and starts the video.
+4. The application intercepts the browser's network requests and finds HLS
+   (`.m3u8`), MPEG-DASH (`.mpd`) and direct MP4.
+5. What is found appears as a row in the top section. Downloading starts
+   **only after pressing "Download"** on a specific video.
+6. Segments are downloaded into a temporary folder and joined by FFmpeg into
+   one `.mp4`.
+
+The principle: the browser already receives and decrypts (AES-128) the stream, so
+the program does the same with the same URLs and keys. DRM (Widevine / PlayReady /
+FairPlay) is not supported: such videos are skipped.
+
+---
+
+## 2. Technology stack
+
+| Component | Solution |
 |---|---|
-| Язык | Python 3.12 (64-bit), менеджер зависимостей `uv` или `pip` + `requirements.txt`, конфиг проекта `pyproject.toml` |
-| Интерфейс | **PySide6 (Qt 6)** с современной тёмной и светлой темой (следует системной), скруглённые карточки, единый QSS-стиль. Допустимая альтернатива: `PySide6-Fluent-Widgets`, если агент сочтёт её надёжной. Без Tkinter |
-| Перехват сети | **Playwright for Python** (`playwright`), перехват на уровне `context` (`request` / `response`), чтобы видеть все вкладки и popup |
-| Браузер | Порядок попыток: `channel="chrome"` → `channel="msedge"` → Chromium от Playwright. Режим headed, persistent context с профилем в `<папка установки>\profile` или `<папка загрузок>\.profile` (выбор в настройках, по умолчанию первый вариант) |
-| HTTP | `httpx` (с поддержкой HTTP/2 и потоковой загрузки) |
-| Шифрование | `cryptography` (AES-128-CBC для HLS) |
-| HLS | Собственный парсер (допустимо использовать библиотеку `m3u8`, если покрывает EXT-X-MAP, BYTERANGE, KEY) |
-| DASH | `xml.etree.ElementTree` или `lxml` |
-| FFmpeg | Бинарник `ffmpeg.exe` кладётся **внутрь установленного приложения** (`{app}\bin\ffmpeg.exe`). Источник: пакет `imageio-ffmpeg` (бинарник берётся при сборке) либо статическая сборка (gyan.dev / BtbN), выбор за агентом. В `NOTICE` указывается лицензия сборки. Запуск через `subprocess` без консольного окна (`CREATE_NO_WINDOW`) |
-| Логи | стандартный `logging`: файл `<папка установки>\logs\app.log` (`%LOCALAPPDATA%\HLSGrabber\logs\app.log`, если папка установки недоступна для записи; ротация) и `QtLogHandler`, который выводит записи в консоль окна |
-| Тесты | `pytest`, `pytest-qt` для базовых проверок GUI |
-| Качество кода | `ruff`, `mypy` (мягкий режим), `pre-commit` |
-| Упаковка | **PyInstaller** в режиме `--onedir` (не `--onefile`: быстрее старт, меньше ложных срабатываний антивирусов), `--windowed`, иконка `.ico`, метаданные версии |
-| Установщик | **Inno Setup 6** (`installer/hlsgrabber.iss`), сборка через `ISCC.exe` |
-| Версионирование | SemVer, теги Git вида `v1.2.3`, релизы на GitHub Releases (раздел 8) |
+| Language | Python 3.12 (64-bit), dependency manager `uv` or `pip` + `requirements.txt`, project config `pyproject.toml` |
+| Interface | **PySide6 (Qt 6)** with a modern dark and light theme (following the system), rounded cards, a single QSS style. Allowed alternative: `PySide6-Fluent-Widgets`, if the agent finds it reliable. No Tkinter |
+| Network interception | **Playwright for Python** (`playwright`), interception at `context` level (`request` / `response`) to see all tabs and popups |
+| Browser | Order of attempts: `channel="chrome"` → `channel="msedge"` → Chromium from Playwright. Headed mode, persistent context with a profile in `<install folder>\profile` or `<downloads folder>\.profile` (choice in settings, the first option by default) |
+| HTTP | `httpx` (with HTTP/2 support and streaming downloads) |
+| Encryption | `cryptography` (AES-128-CBC for HLS) |
+| HLS | Custom parser (the `m3u8` library is allowed if it covers EXT-X-MAP, BYTERANGE, KEY) |
+| DASH | `xml.etree.ElementTree` or `lxml` |
+| FFmpeg | The `ffmpeg.exe` binary goes **inside the installed application** (`{app}\bin\ffmpeg.exe`). Source: the `imageio-ffmpeg` package (the binary is taken at build time) or a static build (gyan.dev / BtbN), the choice is up to the agent. `NOTICE` states the build license. Launched via `subprocess` with no console window (`CREATE_NO_WINDOW`) |
+| Logs | standard `logging`: file `<install folder>\logs\app.log` (`%LOCALAPPDATA%\HLSGrabber\logs\app.log` if the install folder is not writable; rotation) and a `QtLogHandler` that writes records into the window console |
+| Tests | `pytest`, `pytest-qt` for basic GUI checks |
+| Code quality | `ruff`, `mypy` (soft mode), `pre-commit` |
+| Packaging | **PyInstaller** in `--onedir` mode (not `--onefile`: faster startup, fewer antivirus false positives), `--windowed`, `.ico` icon, version metadata |
+| Installer | **Inno Setup 6** (`installer/hlsgrabber.iss`), built via `ISCC.exe` |
+| Versioning | SemVer, Git tags like `v1.2.3`, releases on GitHub Releases (section 8) |
 
 ---
 
-## 3. Сценарий работы
+## 3. Work scenario
 
-1. Запуск программы. Диалог выбора папки загрузок (родной диалог Qt `QFileDialog`, по умолчанию последняя использованная папка). Отмена завершает программу.
-2. Открывается главное окно и параллельно браузер. В выбранной папке создаётся `.tmp\<id задачи>\` для сегментов. Готовые файлы лежат в корне выбранной папки.
-3. Пользователь заходит на сайт и запускает видео. `NetworkSniffer` анализирует трафик. Источники, прошедшие фильтры (раздел 5), появляются карточками в верхней секции.
-4. Пользователь нажимает «Скачать» в нужной карточке. Задача ставится в очередь, прогресс отображается внутри этой карточки.
-5. Загрузки **строго последовательные** (один воркер). Если нажато «Скачать» у нескольких видео, они выполняются по очереди.
-6. После склейки временная папка задачи удаляется, карточка переходит в состояние «Готово». При ошибке временные файлы сохраняются, причина пишется в лог и консоль.
-7. Закрытие окна: если идёт загрузка, спросить подтверждение. После согласия отменить загрузку, закрыть браузер, завершить программу. Если пользователь закрыл браузер, в консоли пишется сообщение, текущая загрузка продолжается до конца (или пользователь может её отменить).
-
----
-
-## 4. Интерфейс (PySide6, одно окно из двух секций)
-
-Окно делится на две части через `QSplitter` (вертикальное, по умолчанию примерно 40% сверху и 60% снизу, разделитель двигается). Стиль: современный, с отступами, скруглёнными углами, акцентным цветом, тёмная и светлая темы по настройке системы. Минимальный размер окна 900×600, размер и положение запоминаются.
-
-### 4.1. Верхняя секция: найденные видео
-
-- При запуске список пустой. По центру серая подсказка: «Видео пока не найдены. Откройте сайт в браузере и запустите видео».
-- При обнаружении подходящего источника добавляется карточка (`SourceCard`). Список прокручиваемый (`QScrollArea`), новые карточки добавляются вниз.
-- Каждая карточка содержит:
-  - бейдж типа (HLS / DASH / MP4);
-  - название (заголовок страницы, на которой найдено видео);
-  - ссылку (обрезанную по ширине, полная в tooltip, контекстное меню «Копировать ссылку»);
-  - разрешение и длительность или размер, если известны;
-  - кнопку **«Скачать»** справа.
-- Состояния карточки:
-  - **Найдено**: активная кнопка «Скачать».
-  - **В очереди**: кнопка заблокирована, подпись «В очереди».
-  - **Скачивается**: вместо кнопки прогресс-бар со скоростью, процентом, «сегменты X из Y», этапом (скачивание / расшифровка / склейка) и кнопка «Отмена».
-  - **Готово**: подпись «Готово» и кнопка «Открыть файл» (запускает скачанное видео в плеере по умолчанию).
-  - **Ошибка**: красная подпись и кнопка «Повторить», подробности в консоли.
-- Нажатие «Скачать» только ставит задачу в очередь.
-- В заголовке секции две кнопки очистки списка:
-  - **«Очистить все»** — убирает все карточки;
-  - **«Очистить скачанные»** — убирает только карточки, чьи файлы уже скачаны и лежат на диске.
-  Активная загрузка при очистке не отменяется и продолжается в фоне.
-- Отдельного общего прогресс-бара между секциями нет: прогресс живёт внутри карточки.
-
-### 4.2. Нижняя секция: консоль
-
-- `QPlainTextEdit` только для чтения, моноширинный шрифт, цветовая подсветка уровней (INFO / WARNING / ERROR).
-- Автопрокрутка вниз (отключается, если пользователь прокрутил вверх, включается при прокрутке в конец).
-- Буфер ограничен ~5000 строк (`setMaximumBlockCount`).
-- Сюда идёт весь лог: запуск браузера, найденные манифесты, причины пропуска (live, DRM, нет 1080p), сегменты, повторы, вызовы FFmpeg, проверка обновлений, ошибки.
-- Формат строки: `[12:34:56] INFO  Найден HLS-поток 1080p: https://...`
-- Над консолью маленькие кнопки: «Очистить», «Открыть папку загрузки», «Открыть лог-файл».
-
-### 4.3. Дополнительно
-
-- Строка состояния внизу окна: версия приложения, текущая папка загрузок, значок и статус обновления (раздел 8).
-- Меню или кнопка-шестерёнка «Настройки» (диалог): папка загрузок, число потоков для сегментов (по умолчанию 6), автопроверка обновлений (вкл. по умолчанию), тема (система / светлая / тёмная). Диалог занимает 80% ширины и высоты главного окна, его можно растягивать; длинный путь к папке виден целиком (и в подсказке при наведении).
-- Заголовок окна: «HLS Grabber `<версия>` — `<папка загрузок>`».
-
-### 4.4. Потоки и отзывчивость
-
-- Playwright работает в **отдельном потоке** со своим циклом событий. Обработчики запросов и ответов только кладут события в очередь и быстро возвращаются.
-- Скачивание и FFmpeg выполняются в отдельном воркере (`QThread` или `ThreadPoolExecutor` с одним воркером для очереди, и пул потоков для сегментов).
-- В GUI данные попадают только через сигналы Qt (`Signal` / `Slot`). Прямые вызовы виджетов из чужих потоков запрещены.
+1. Program startup. The downloads-folder picker dialog (native Qt `QFileDialog`,
+   the last used folder by default). Cancelling terminates the program.
+2. The main window opens and the browser opens in parallel. `.tmp\<task id>\` is
+   created in the chosen folder for segments. Finished files lie in the root of
+   the chosen folder.
+3. The user visits the site and starts the video. `NetworkSniffer` analyzes the
+   traffic. Sources that pass the filters (section 5) appear as cards in the top
+   section.
+4. The user presses "Download" on the needed card. The task is queued, progress
+   is shown inside that card.
+5. Downloads are **strictly sequential** (one worker). If "Download" was pressed
+   for several videos, they run one after another.
+6. After the join, the task's temporary folder is deleted and the card moves to
+   the "Done" state. On error, temporary files are kept, the reason is written
+   to the log and the console.
+7. Closing the window: if a download is running, ask for confirmation. After
+   consent, cancel the download, close the browser, terminate the program. If
+   the user closed the browser, the console writes a message and the current
+   download continues to the end (or the user can cancel it).
 
 ---
 
-## 5. Обнаружение и фильтрация источников
+## 4. Interface (PySide6, one window of two sections)
 
-### 5.1. Кандидаты
+The window is split into two parts by a `QSplitter` (vertical, about 40% top and
+60% bottom by default, the splitter moves). Style: modern, with margins, rounded
+corners, an accent color, dark and light themes per the system settings. Minimum
+window size 900×600, size and position are remembered.
 
-**HLS / DASH.** Запрос считается кандидатом, если:
-- URL содержит `.m3u8` или `.mpd`, **или**
-- Content-Type один из: `application/vnd.apple.mpegurl`, `application/x-mpegURL`, `audio/mpegurl`, `application/dash+xml`.
+### 4.1. Top section: found videos
 
-Тело ответа читается и парсится.
+- At startup the list is empty. A gray hint in the middle: "No videos found yet.
+  Open a site in the browser and start the video".
+- When a suitable source is detected, a card (`SourceCard`) is added. The list is
+  scrollable (`QScrollArea`), new cards are added at the bottom.
+- Each card contains:
+  - a type badge (HLS / DASH / MP4);
+  - a title (the page title on which the video was found);
+  - a link (truncated by width, full in a tooltip, context menu "Copy link");
+  - resolution and duration, or size, if known;
+  - a **"Download"** button on the right.
+- Card states:
+  - **Found**: active "Download" button.
+  - **Queued**: button disabled, caption "Queued".
+  - **Downloading**: instead of the button, a progress bar with speed,
+    percentage, "segments X of Y", stage (downloading / decrypting / joining)
+    and a "Cancel" button.
+  - **Done**: caption "Done" and an "Open file" button (plays the downloaded
+    video in the default player).
+  - **Error**: red caption and a "Retry" button, details in the console.
+- Pressing "Download" only queues the task.
+- In the section header there are two list-clearing buttons:
+  - **"Clear all"** — removes all cards;
+  - **"Clear downloaded"** — removes only the cards whose files are already
+    downloaded and lie on disk.
+  An active download is not cancelled when clearing and continues in the
+  background.
+- There is no separate shared progress bar between the sections: progress lives
+  inside the card.
 
-**Прямые MP4.** Content-Type `video/mp4` или URL оканчивается на `.mp4` (до query).
-- Браузер часто запрашивает такие файлы кусками через `Range`, поэтому запросы с одним и тем же нормализованным URL объединяются в одну запись.
-- Полный размер берётся из `Content-Range` (`bytes 0-1/12345678`) или `Content-Length`.
-- Файлы меньше ~1 МБ (настраивается) отбрасываются как не видео.
-- Фрагменты fMP4-сегментов (`.m4s`, `.mp4`, принадлежащие уже найденному HLS/DASH-манифесту) в список не попадают.
+### 4.2. Bottom section: console
 
-### 5.2. Фильтры (в порядке применения)
+- Read-only `QPlainTextEdit`, monospace font, color highlighting of levels
+  (INFO / WARNING / ERROR).
+- Autoscroll down (disabled when the user scrolls up, re-enabled when scrolling
+  to the end).
+- Buffer limited to ~5000 lines (`setMaximumBlockCount`).
+- The whole log goes here: browser launch, found manifests, skip reasons (live,
+  DRM, no 1080p), segments, retries, FFmpeg calls, update checks, errors.
+- Line format: `[12:34:56] INFO  Found HLS stream 1080p: https://...`
+- Above the console, small buttons: "Clear", "Open downloads folder", "Open log
+  file".
 
-1. **Live.** HLS без `#EXT-X-ENDLIST` и DASH с `type="dynamic"` пропускаются, причина в лог.
-2. **DRM.** Пропускается, если:
-   - `#EXT-X-KEY` с методом, отличным от `NONE` и `AES-128` (SAMPLE-AES и т. п.);
-   - в MPD есть `ContentProtection` с Widevine, PlayReady или FairPlay.
+### 4.3. Extras
 
-   Сообщение в консоль: «Контент защищён DRM, скачивание невозможно».
-3. **Качество 1080p.** Нас интересует только высота 1080.
-   - Для master-плейлиста и MPD источник показывается, только если есть вариант с `height == 1080`. Выбирается вариант с максимальным bandwidth среди 1080p и лучшая аудиодорожка.
-   - Если 1080p нет, источник не показывается, в консоль пишется: «Найден поток без 1080p: пропущен (доступно: 720p, 480p)».
-   - Media playlist без вариантов показывается, если разрешение 1080 или не определяется (в карточке «неизвестно»).
-   - Для прямых MP4 разрешение определяется через `ffprobe`/`ffmpeg -i` (с заголовками по возможности). При неудаче показывается «неизвестно», файл остаётся в списке.
-   - Порог вынесен в настройки (`target_height`, по умолчанию 1080), без UI.
-4. **Дубликаты.** По нормализованному URL (без токенов в query, если очевидно, что они меняются, иначе по полному URL).
+- Status bar at the bottom of the window: application version, current downloads
+  folder, update icon and status (section 8).
+- Menu or gear button "Settings" (a dialog): downloads folder, number of
+  threads for segments (default 6), automatic update checks (enabled by
+  default), theme (system / light / dark). The dialog takes 80% of the main
+  window's width and height and can be resized; a long folder path is fully
+  visible (and in the tooltip on hover).
+- Window title: "HLS Grabber `<version>` — `<downloads folder>`".
+
+### 4.4. Threads and responsiveness
+
+- Playwright runs in **its own thread** with its own event loop. Request and
+  response handlers only put events into a queue and return quickly.
+- Downloading and FFmpeg run in a separate worker (`QThread` or
+  `ThreadPoolExecutor` with one worker for the queue, plus a thread pool for
+  segments).
+- Data reaches the GUI only through Qt signals (`Signal` / `Slot`). Direct
+  widget calls from foreign threads are forbidden.
 
 ---
 
-## 6. Скачивание
+## 5. Source detection and filtering
 
-### 6.1. Общее
-- **Заголовки.** Для манифестов, сегментов и ключей используются `Referer`, `Origin`, `User-Agent` из перехваченного запроса и `Cookie` из `context.cookies(url)`.
-- **URL.** Относительные пути резолвятся от URL манифеста (`urllib.parse.urljoin`). Query-параметры (токены, подписи) сохраняются.
-- **Параллельность внутри одной загрузки:** до 6 потоков на сегменты (настройка).
-- **Повторы:** 3 попытки с экспоненциальной паузой. Уже скачанные сегменты при повторе пропускаются (докачка).
-- **Имя файла:** `<заголовок страницы>.mp4`. Запрещённые символы Windows заменяются, длина обрезается (с учётом лимита пути). При конфликте имён суффикс ` (1)`, ` (2)` и т. д.
-- **Отмена:** по кнопке «Отмена» загрузка прерывается, активные HTTP-запросы и процесс FFmpeg останавливаются, временные файлы задачи удаляются.
+### 5.1. Candidates
+
+**HLS / DASH.** A request is a candidate if:
+- the URL contains `.m3u8` or `.mpd`, **or**
+- Content-Type is one of: `application/vnd.apple.mpegurl`,
+  `application/x-mpegURL`, `audio/mpegurl`, `application/dash+xml`.
+
+The response body is read and parsed.
+
+**Direct MP4.** Content-Type `video/mp4` or the URL ends with `.mp4` (before
+the query).
+- Browsers often request such files in chunks via `Range`, so requests with the
+  same normalized URL are merged into one entry.
+- The full size is taken from `Content-Range` (`bytes 0-1/12345678`) or
+  `Content-Length`.
+- Files smaller than ~1 MB (configurable) are discarded as not video.
+- Fragments of fMP4 segments (`.m4s`, `.mp4` belonging to an already found
+  HLS/DASH manifest) do not get into the list.
+
+### 5.2. Filters (in order of application)
+
+1. **Live.** HLS without `#EXT-X-ENDLIST` and DASH with `type="dynamic"` are
+   skipped, the reason goes to the log.
+2. **DRM.** Skipped if:
+   - `#EXT-X-KEY` with a method other than `NONE` and `AES-128` (SAMPLE-AES
+     and the like);
+   - the MPD has `ContentProtection` with Widevine, PlayReady or FairPlay.
+
+   Console message: "Content is DRM-protected, downloading is impossible".
+3. **1080p quality.** We only care about a height of 1080.
+   - For a master playlist and an MPD, the source is shown only if there is a
+     variant with `height == 1080`. Among 1080p variants the one with the
+     maximum bandwidth is picked, plus the best audio track.
+   - If there is no 1080p, the source is not shown and the console writes:
+     "Found a stream without 1080p: skipped (available: 720p, 480p)".
+   - A media playlist without variants is shown if its resolution is 1080 or
+     cannot be determined (the card shows "unknown").
+   - For direct MP4 the resolution is determined via `ffprobe`/`ffmpeg -i`
+     (with headers when possible). On failure the card shows "unknown" and the
+     file stays in the list.
+   - The threshold is a setting (`target_height`, default 1080), no UI for it.
+4. **Duplicates.** By normalized URL (without query tokens when they obviously
+   change, otherwise by the full URL).
+
+---
+
+## 6. Downloading
+
+### 6.1. General
+- **Headers.** For manifests, segments and keys: `Referer`, `Origin`,
+  `User-Agent` from the intercepted request and `Cookie` from
+  `context.cookies(url)`.
+- **URLs.** Relative paths are resolved against the manifest URL
+  (`urllib.parse.urljoin`). Query parameters (tokens, signatures) are
+  preserved.
+- **Parallelism inside one download:** up to 6 threads for segments
+  (setting).
+- **Retries:** 3 attempts with exponential backoff. Already downloaded segments
+  are skipped on retry (resumable download).
+- **File name:** `<page title>.mp4`. Forbidden Windows characters are replaced,
+  the length is truncated (with the path limit in mind). On a name conflict the
+  suffix ` (1)`, ` (2)` and so on is added.
+- **Cancellation:** pressing "Cancel" interrupts the download, active HTTP
+  requests and the FFmpeg process are stopped, the task's temporary files are
+  deleted.
 
 ### 6.2. HLS
-- Master и media playlists.
-- `#EXT-X-MAP` (init-сегмент fMP4) скачивается первым.
+- Master and media playlists.
+- `#EXT-X-MAP` (the fMP4 init segment) is downloaded first.
 - `#EXT-X-BYTERANGE`.
-- `#EXT-X-MEDIA` (отдельная аудиодорожка скачивается и муксируется; субтитры не обязательны).
-- **AES-128** (`#EXT-X-KEY:METHOD=AES-128`): скачать ключ, расшифровать сегменты через `cryptography` (AES-CBC, PKCS7). IV берётся из атрибута `IV` или вычисляется из media sequence number сегмента.
+- `#EXT-X-MEDIA` (a separate audio track is downloaded and muxed; subtitles
+  are optional).
+- **AES-128** (`#EXT-X-KEY:METHOD=AES-128`): download the key, decrypt segments
+  with `cryptography` (AES-CBC, PKCS7). The IV comes from the `IV` attribute
+  or is computed from the media sequence number of the segment.
 
 ### 6.3. DASH
-- `SegmentTemplate` (`$Number$`, `$Time$`, `$RepresentationID$`, `$Bandwidth$`), `SegmentTimeline`, `SegmentList`, `SegmentBase`, `BaseURL`, несколько Period.
-- Для видео и аудио выбирается лучший Representation (видео по условию 1080p).
-- Init-сегмент + сегменты склеиваются по порядку, затем видео и аудио муксируются FFmpeg.
+- `SegmentTemplate` (`$Number$`, `$Time$`, `$RepresentationID$`,
+  `$Bandwidth$`), `SegmentTimeline`, `SegmentList`, `SegmentBase`, `BaseURL`,
+  several Periods.
+- The best Representation is chosen for video and audio (video under the 1080p
+  condition).
+- The init segment + segments are joined in order, then video and audio are
+  muxed with FFmpeg.
 
-### 6.4. Прямой MP4
-- Скачивание одним потоком. При поддержке `Accept-Ranges` докачка с места обрыва.
-- Склейка не нужна: после завершения `.part`-файл переименовывается в итоговое имя.
+### 6.4. Direct MP4
+- Single-threaded download. With `Accept-Ranges` support, resume from the
+  break point.
+- No join needed: after completion the `.part` file is renamed to the final
+  name.
 
-### 6.5. Склейка (FFmpeg)
-- Без перекодирования: `-c copy`.
-- Видео и аудио отдельными дорожками через `-map`.
-- При необходимости `-bsf:a aac_adtstoasc`.
-- Способ (concat-список локальных файлов или локальный m3u8) выбирает агент, главное, чтобы работало надёжно.
-- Вывод FFmpeg парсится для прогресса (этап «склейка») и пишется в лог.
+### 6.5. Joining (FFmpeg)
+- No re-encoding: `-c copy`.
+- Video and audio as separate tracks via `-map`.
+- `-bsf:a aac_adtstoasc` when needed.
+- The method (concat list of local files or a local m3u8) is up to the agent,
+  the main thing is that it works reliably.
+- FFmpeg output is parsed for progress (the "joining" stage) and written to
+  the log.
 
 ---
 
-## 7. Установка и упаковка
+## 7. Installation and packaging
 
-### 7.1. Сборка приложения (PyInstaller)
-- Режим `--onedir`, `--windowed`, иконка `assets/app.ico`.
-- В сборку включаются: PySide6, драйвер Playwright (`collect_all("playwright")`, внутри него `node.exe`), `ffmpeg.exe` (в `bin\`), ресурсы (иконки, QSS).
-- Скрипт сборки `build.ps1` (или `build.py`): очистка, сборка PyInstaller, генерация файла версии из тега Git, вызов `ISCC.exe`.
+### 7.1. Application build (PyInstaller)
+- `--onedir` mode, `--windowed`, icon `assets/app.ico`.
+- Included in the build: PySide6, the Playwright driver
+  (`collect_all("playwright")`, `node.exe` inside it), `ffmpeg.exe` (in
+  `bin\`), resources (icons, QSS).
+- Build script `build.ps1` (or `build.py`): cleanup, PyInstaller build,
+  generation of the version file from the Git tag, call of `ISCC.exe`.
 
-### 7.2. Браузер Playwright (запасной вариант)
-- Основной путь: установленные Chrome или Edge, ничего скачивать не нужно.
-- Если их нет, при первом запуске программа предлагает скачать Chromium (диалог с согласием), запускает установку драйвера Playwright с `PLAYWRIGHT_BROWSERS_PATH=<папка установки>\browsers` (`%LOCALAPPDATA%\HLSGrabber\browsers`, когда папка установки недоступна для записи) и показывает прогресс в консоли. Chromium не включается в установщик, чтобы не раздувать его. Chromium прежней версии, лежащий в `%LOCALAPPDATA%\HLSGrabber\browsers`, переиспользуется: повторно он не скачивается.
-- Предупреждение в консоль: Chromium от Playwright может не проигрывать H.264/AAC на части сайтов.
+### 7.2. Playwright browser (fallback)
+- Main path: an installed Chrome or Edge, nothing to download.
+- If neither exists, on first run the program offers to download Chromium (a
+  consent dialog), runs the Playwright driver installation with
+  `PLAYWRIGHT_BROWSERS_PATH=<install folder>\browsers`
+  (`%LOCALAPPDATA%\HLSGrabber\browsers` when the install folder is not
+  writable) and shows progress in the console. Chromium is not bundled into
+  the installer to avoid bloat. Chromium from a previous version lying in
+  `%LOCALAPPDATA%\HLSGrabber\browsers` is reused: it is not downloaded again.
+- Warning in the console: Chromium from Playwright may not play H.264/AAC on
+  some sites.
 
-### 7.3. Установщик Inno Setup 6 (`installer/hlsgrabber.iss`)
-- Постоянный `AppId` (GUID) задаётся один раз и не меняется между версиями, чтобы обновление ставилось поверх существующей установки.
-- `AppVersion` и имя выходного файла берутся из параметра `/DAppVersion=...`, передаваемого `ISCC` из скрипта сборки. Имя выходного файла: `HLSGrabber-Setup-<версия>.exe`.
-- Установка по умолчанию в `{autopf}\HLS Grabber`. Режим `PrivilegesRequiredOverridesAllowed=dialog` (пользователь может выбрать установку для себя без прав администратора или для всех).
-- Файлы: содержимое папки PyInstaller `dist\HLSGrabber\*` с `recursesubdirs`.
-- Ярлыки: меню «Пуск» и опциональный ярлык на рабочем столе (задача `desktopicon`).
-- Деинсталлятор: корректно удаляет приложение вместе с данными в папке установки (`profile`, `browsers`, `extensions`, `logs`); пользовательские данные (`%APPDATA%`, `%LOCALAPPDATA%`) удаляются только если пользователь подтвердил удаление в диалоге.
-- Современный вид мастера: `WizardStyle=modern`, свои изображения `WizardImageFile` и `WizardSmallImageFile`, русская и английская локализации (`Languages`).
-- Проверка запущенного приложения: `CloseApplications=yes`, `RestartApplications=no`, чтобы установщик корректно закрывал программу при обновлении.
-- Тихие ключи для автообновления: `/SILENT` или `/VERYSILENT`, `/SUPPRESSMSGBOXES`, `/CLOSEAPPLICATIONS`. После установки опция «Запустить HLS Grabber».
-- Подпись кода (`signtool`) предусмотреть как необязательный шаг в скрипте сборки (чтобы снизить предупреждения SmartScreen), без подписи установщик тоже должен собираться.
+### 7.3. Inno Setup 6 installer (`installer/hlsgrabber.iss`)
+- A constant `AppId` (GUID) is set once and never changes between versions, so
+  that the update installs over the existing installation.
+- `AppVersion` and the output file name come from the `/DAppVersion=...`
+  parameter that `ISCC` receives from the build script. Output file name:
+  `HLSGrabber-Setup-<version>.exe`.
+- Default install to `{autopf}\HLS Grabber`. Mode
+  `PrivilegesRequiredOverridesAllowed=dialog` (the user can choose a
+  per-user install without administrator rights, or for all users).
+- Files: contents of the PyInstaller folder `dist\HLSGrabber\*` with
+  `recursesubdirs`.
+- Shortcuts: Start menu and an optional desktop shortcut (`desktopicon` task).
+- Uninstaller: removes the application cleanly together with the data in the
+  install folder (`profile`, `browsers`, `extensions`, `logs`); user data
+  (`%APPDATA%`, `%LOCALAPPDATA%`) is deleted only if the user confirmed
+  removal in the dialog.
+- Modern wizard look: `WizardStyle=modern`, custom `WizardImageFile` and
+  `WizardSmallImageFile`, Russian and English localizations (`Languages`).
+- Running-application check: `CloseApplications=yes`,
+  `RestartApplications=no`, so the installer closes the program correctly on
+  update.
+- Silent keys for auto-update: `/SILENT` or `/VERYSILENT`,
+  `/SUPPRESSMSGBOXES`, `/CLOSEAPPLICATIONS`. After installation, the "Run HLS
+  Grabber" option.
+- Code signing (`signtool`) is foreseen as an optional step in the build
+  script (to reduce SmartScreen warnings); the installer must also build
+  without signing.
 
-### 7.4. Расположение данных
-- Всё, что создаёт программа, живёт в папке установки: `{app}\profile` (профиль
-  браузера), `{app}\browsers` (Chromium), `{app}\extensions` (распакованный
-  блокировщик), `{app}\logs` (логи). Удаление папки установки удаляет и эти данные.
-- Настройки: `%APPDATA%\HLSGrabber\settings.json` — переживают переустановку.
-- Когда папка установки недоступна для записи (`Program Files` без прав
-  администратора), все перечисленные папки создаются в
+### 7.4. Data layout
+- Everything the program creates lives in the install folder: `{app}\profile`
+  (browser profile), `{app}\browsers` (Chromium), `{app}\extensions` (the
+  unpacked blocker), `{app}\logs` (logs). Deleting the install folder deletes
+  this data too.
+- Settings: `%APPDATA%\HLSGrabber\settings.json` — survive a reinstall.
+- When the install folder is not writable (`Program Files` without
+  administrator rights), all the folders listed above are created in
   `%LOCALAPPDATA%\HLSGrabber`.
-- Chromium, скачанный прежней версией в `%LOCALAPPDATA%\HLSGrabber\browsers`,
-  находится и переиспользуется: повторного скачивания нет.
+- Chromium, downloaded by a previous version into
+  `%LOCALAPPDATA%\HLSGrabber\browsers`, is found and reused: no re-download.
 
 ---
 
-## 8. Версии, Git и обновления через GitHub Releases
+## 8. Versions, Git and updates via GitHub Releases
 
-### 8.1. Версионирование
-- Формат SemVer (`MAJOR.MINOR.PATCH`), теги Git вида `v1.2.3`.
-- Единственный источник версии в коде: `src/hlsgrabber/_version.py`. Файл **генерируется при сборке** из тега (`git describe --tags`), в разработке значение по умолчанию `0.0.0-dev`.
-- Версия отображается в заголовке окна, строке состояния, свойствах `.exe` (ресурс версии PyInstaller) и в инсталлере.
-- `CHANGELOG.md` по формату Keep a Changelog, из него берутся release notes.
+### 8.1. Versioning
+- SemVer format (`MAJOR.MINOR.PATCH`), Git tags like `v1.2.3`.
+- The single source of version in the code: `src/hlsgrabber/_version.py`. The
+  file **is generated at build time** from the tag (`git describe --tags`),
+  the development default is `0.0.0-dev`.
+- The version is shown in the window title, the status bar, the `.exe`
+  properties (PyInstaller version resource) and the installer.
+- `CHANGELOG.md` follows the Keep a Changelog format, release notes are taken
+  from it.
 
-### 8.2. Выпуск релиза (GitHub Actions)
-- Workflow `.github/workflows/release.yml` запускается при push тега `v*` на `windows-latest`.
-- Шаги: checkout (с тегами) → Python 3.12 → установка зависимостей → `pytest` → сборка PyInstaller → `ISCC.exe` (Inno Setup 6 доступен на runner'е, при отсутствии ставится через `choco install innosetup`) → вычисление SHA-256 установщика → публикация релиза с приложенными файлами:
-  - `HLSGrabber-Setup-<версия>.exe`;
-  - `HLSGrabber-Setup-<версия>.exe.sha256`.
-- Отдельный workflow `ci.yml` на каждый push и pull request: `ruff`, `mypy`, `pytest`.
-- Ветки: `main` (стабильная), работа через feature-ветки и pull request. Релиз = тег на `main`.
+### 8.2. Release build (GitHub Actions)
+- Workflow `.github/workflows/release.yml` runs on push of a `v*` tag on
+  `windows-latest`.
+- Steps: checkout (with tags) → Python 3.12 → install dependencies →
+  `pytest` → PyInstaller build → `ISCC.exe` (Inno Setup 6 is available on the
+  runner, if absent it is installed via `choco install innosetup`) → compute
+  the installer's SHA-256 → publish the release with attached files:
+  - `HLSGrabber-Setup-<version>.exe`;
+  - `HLSGrabber-Setup-<version>.exe.sha256`.
+- A separate workflow `ci.yml` on every push and pull request: `ruff`, `mypy`,
+  `pytest`.
+- Branches: `main` (stable), work via feature branches and pull requests. A
+  release is a tag on `main`.
 
-### 8.3. Проверка и установка обновлений в приложении
-- При запуске (в фоне, не блокируя окно) и по кнопке «Проверить обновления» в настройках приложение запрашивает `GET https://api.github.com/repos/<OWNER>/<REPO>/releases/latest`. Владелец и имя репозитория задаются константой в `config.py`.
-- Версия релиза (`tag_name`) сравнивается с текущей по SemVer (`packaging.version`). Предрелизы (`prerelease: true`) и черновики игнорируются.
-- Если есть новая версия, в строке состояния и консоли появляется сообщение, а также диалог: версия, release notes из `body`, кнопки «Обновить», «Позже», «Пропустить эту версию».
-- При согласии:
-  1. Скачивается asset `HLSGrabber-Setup-*.exe` во временную папку (прогресс виден в диалоге).
-  2. Проверяется SHA-256 по файлу `.sha256` из того же релиза. При несовпадении установка отменяется с сообщением об ошибке.
-  3. Если идёт загрузка видео, пользователю предлагается дождаться её окончания.
-  4. Запускается установщик с ключами `/SILENT /CLOSEAPPLICATIONS` (отдельным процессом), текущая программа завершается. После установки пользователь запускает приложение сам или через опцию установщика.
-- Ограничения запросов к GitHub API: кэшировать результат проверки (не чаще одного раза в несколько часов), корректно обрабатывать ошибки сети и лимиты (в консоль предупреждение, без всплывающих ошибок).
-- Опция отключения автопроверки в настройках. Нет сети: приложение работает как обычно.
-- Приватные репозитории в ТЗ не рассматриваются (для публичного репозитория токен не нужен).
+### 8.3. Update check and install inside the application
+- At startup (in the background, not blocking the window) and via the "Check
+  for updates" button in settings, the application requests
+  `GET https://api.github.com/repos/<OWNER>/<REPO>/releases/latest`. The owner
+  and the repository name are a constant in `config.py`.
+- The release version (`tag_name`) is compared with the current one by SemVer
+  (`packaging.version`). Prereleases (`prerelease: true`) and drafts are
+  ignored.
+- If there is a new version, a message appears in the status bar and the
+  console, plus a dialog: version, release notes from `body`, buttons
+  "Update", "Later", "Skip this version".
+- On consent:
+  1. The asset `HLSGrabber-Setup-*.exe` is downloaded into a temporary folder
+     (progress visible in the dialog).
+  2. SHA-256 is checked against the `.sha256` file from the same release. On
+     a mismatch the install is cancelled with an error message.
+  3. If a video download is running, the user is asked to wait for it to
+     finish.
+  4. The installer is launched with the keys `/SILENT /CLOSEAPPLICATIONS` (as
+     a separate process) and the current program terminates. After
+     installation the user starts the application himself or via the
+     installer's option.
+- GitHub API rate limits: cache the check result (no more often than once every
+  few hours), handle network errors and limits gracefully (a warning in the
+  console, no pop-up errors).
+- An option to disable automatic checks in settings. No network: the
+  application works as usual.
+- Private repositories are not covered by the spec (a public repository needs
+  no token).
 
 ---
 
-## 9. Структура проекта
+## 9. Project structure
 
 ```
 hls-grabber/
@@ -250,20 +385,20 @@ hls-grabber/
  ├─ requirements.txt
  ├─ README.md
  ├─ CHANGELOG.md
- ├─ NOTICE                      лицензии сторонних компонентов (FFmpeg, Qt, Playwright)
- ├─ build.ps1                   сборка: PyInstaller + ISCC
- ├─ hlsgrabber.spec             конфиг PyInstaller
+ ├─ NOTICE                      licenses of third-party components (FFmpeg, Qt, Playwright)
+ ├─ build.ps1                   build: PyInstaller + ISCC
+ ├─ hlsgrabber.spec             PyInstaller config
  ├─ installer/
  │   ├─ hlsgrabber.iss
- │   └─ assets/                 изображения мастера, иконки
- ├─ assets/                     app.ico, иконки интерфейса, стили QSS
+ │   └─ assets/                 wizard images, icons
+ ├─ assets/                     app.ico, interface icons, QSS styles
  ├─ .github/workflows/
  │   ├─ ci.yml
  │   └─ release.yml
  ├─ src/hlsgrabber/
- │   ├─ __main__.py             точка входа
- │   ├─ _version.py             генерируется при сборке
- │   ├─ app.py                  инициализация Qt, выбор папки
+ │   ├─ __main__.py             entry point
+ │   ├─ _version.py             generated at build time
+ │   ├─ app.py                  Qt initialization, folder picker
  │   ├─ ui/                     main_window.py, source_card.py, source_list.py,
  │   │                          console_panel.py, settings_dialog.py,
  │   │                          update_dialog.py, theme.py
@@ -284,74 +419,102 @@ hls-grabber/
      ├─ test_mp4_ranges.py
      ├─ test_filenames.py
      ├─ test_update_checker.py
-     └─ data/                   примеры плейлистов и MPD
+     └─ data/                   sample playlists and MPDs
 ```
 
 ---
 
-## 10. Вне рамок (не делать)
+## 10. Out of scope (do not do)
 
-- Обход DRM и любых защит контента.
-- Live-трансляции.
-- Автоматический логин, обход капчи и подписок (всё делает пользователь вручную в браузере).
-- Веб-интерфейс.
-- Параллельные загрузки нескольких видео (только последовательная очередь).
-- Поддержка macOS и Linux (только Windows 10/11 x64).
-- Приватные репозитории и обновление через токен.
+- Bypassing DRM and any content protections.
+- Live streams.
+- Automatic login, captcha and subscription bypass (the user does everything
+  manually in the browser).
+- A web interface.
+- Parallel downloads of several videos (sequential queue only).
+- macOS and Linux support (Windows 10/11 x64 only).
+- Private repositories and token-based updates.
 
 ---
 
-## 11. Критерии приёмки
+## 11. Acceptance criteria
 
-**Приложение**
-- При старте после выбора папки открывается окно: верхняя секция пустая с подсказкой, нижняя секция показывает консоль, параллельно открывается браузер.
-- На открытых тестовых HLS, DASH и прямом MP4 источник автоматически появляется карточкой с названием, ссылкой и кнопкой «Скачать».
-- Скачивание стартует только после нажатия кнопки. Карточка показывает прогресс. На выходе воспроизводимый `.mp4`.
-- Live, DRM и потоки без 1080p пропускаются с понятной записью в консоли.
-- Несколько нажатых «Скачать» выполняются строго по очереди. «Отмена» корректно останавливает загрузку и чистит временные файлы.
-- Окно не «зависает» во время загрузки.
-- Интерфейс корректно отображается в светлой и тёмной теме и при масштабировании Windows 125% и 150%.
+**Application**
+- After startup and the folder picker, the window opens: the top section is
+  empty with a hint, the bottom section shows the console, and the browser
+  opens in parallel.
+- On opened test HLS, DASH and direct MP4, the source automatically appears as
+  a card with a title, a link and a "Download" button.
+- Downloading starts only after pressing the button. The card shows progress.
+  The result is a playable `.mp4`.
+- Live, DRM and streams without 1080p are skipped with a clear entry in the
+  console.
+- Several pressed "Download"s run strictly one after another. "Cancel"
+  correctly stops the download and cleans up temporary files.
+- The window does not freeze during a download.
+- The interface renders correctly in the light and dark themes and at Windows
+  scaling 125% and 150%.
 
-**Установка и обновления**
-- `build.ps1` на чистой машине с Python 3.12 и Inno Setup 6 собирает `HLSGrabber-Setup-<версия>.exe`.
-- Установщик ставит приложение на чистую Windows 10/11 без Python, создаёт ярлыки, программа запускается и работает (FFmpeg найден в `{app}\bin`).
-- Повторный запуск установщика более новой версии обновляет установку поверх (тот же `AppId`), настройки сохраняются.
-- Удаление через «Приложения и возможности» убирает приложение, пользовательские данные удаляются только по согласию.
-- Push тега `vX.Y.Z` запускает GitHub Actions и публикует релиз с установщиком и файлом `.sha256`.
-- Приложение старой версии обнаруживает новый релиз, показывает release notes, скачивает установщик, проверяет SHA-256 и запускает обновление.
-- При отсутствии сети и при ошибках GitHub API приложение продолжает работать, в консоли предупреждение.
+**Installation and updates**
+- `build.ps1` on a clean machine with Python 3.12 and Inno Setup 6 builds
+  `HLSGrabber-Setup-<version>.exe`.
+- The installer installs the application onto a clean Windows 10/11 without
+  Python, creates shortcuts, the program launches and works (FFmpeg is found
+  in `{app}\bin`).
+- Running the installer of a newer version again updates the installation in
+  place (same `AppId`), settings are preserved.
+- Removal via "Apps & features" removes the application, user data is deleted
+  only with consent.
+- Pushing a `vX.Y.Z` tag triggers GitHub Actions and publishes a release with
+  the installer and the `.sha256` file.
+- An old-version application detects the new release, shows the release notes,
+  downloads the installer, verifies SHA-256 and runs the update.
+- With no network and on GitHub API errors the application keeps working, a
+  warning goes to the console.
 
-**Тесты (`pytest`)**
-- HLS: master, media, AES-128, fMP4 (`EXT-X-MAP`), byterange, относительные URL.
+**Tests (`pytest`)**
+- HLS: master, media, AES-128, fMP4 (`EXT-X-MAP`), byterange, relative URLs.
 - DASH: SegmentTemplate, SegmentTimeline, BaseURL.
 - DrmDetector, QualityFilter.
-- Объединение Range-запросов MP4.
-- Санитизация имён и конфликты имён.
-- Сравнение версий и разбор ответа GitHub API (на моках), проверка SHA-256.
+- Merging MP4 Range requests.
+- Name sanitization and name conflicts.
+- Version comparison and GitHub API response parsing (on mocks), SHA-256
+  verification.
 
 ---
 
-## 12. Порядок работы агента
+## 12. Agent workflow
 
-1. Каркас репозитория: `pyproject.toml`, структура пакетов, `ruff`, `pre-commit`, `ci.yml`.
-2. Парсеры HLS и DASH, `QualityFilter`, `DrmDetector` + тесты.
-3. `BrowserLauncher` и `NetworkSniffer` (поток Playwright, детект и объединение MP4), установка Chromium по запросу.
-4. Загрузчики, дешифрование, очередь, отмена.
-5. `FfmpegRunner` и поиск `ffmpeg.exe` (в разработке и в установленном виде).
-6. Интерфейс PySide6: окно, карточки, консоль, тема, настройки.
-7. Модуль обновлений (`update/`) и диалог обновления.
-8. Сборка PyInstaller и скрипт `installer/hlsgrabber.iss`, `build.ps1`.
+1. Repository skeleton: `pyproject.toml`, package structure, `ruff`,
+   `pre-commit`, `ci.yml`.
+2. HLS and DASH parsers, `QualityFilter`, `DrmDetector` + tests.
+3. `BrowserLauncher` and `NetworkSniffer` (Playwright thread, MP4 detection and
+   merging), on-demand Chromium installation.
+4. Downloaders, decryption, queue, cancellation.
+5. `FfmpegRunner` and locating `ffmpeg.exe` (in development and as installed).
+6. PySide6 interface: window, cards, console, theme, settings.
+7. Update module (`update/`) and the update dialog.
+8. PyInstaller build and the `installer/hlsgrabber.iss` script, `build.ps1`.
 9. Workflow `release.yml`, `CHANGELOG.md`, `README.md`, `NOTICE`.
-10. Проверка на чистой Windows (установка, обновление со старой версии, удаление).
+10. Verification on a clean Windows (install, update from an old version,
+    removal).
 
 ---
 
-## 13. Принятые допущения (можно изменить)
+## 13. Accepted assumptions (can be changed)
 
-- Интерфейс на **PySide6**, а не CustomTkinter или Flet: лучше работает с потоками и даёт современный вид, но установщик получается тяжелее (около 100–150 МБ).
-- Репозиторий **публичный**, обновления берутся из `releases/latest` без токена.
-- FFmpeg входит в установщик, Chromium от Playwright скачивается по запросу, только если нет Chrome и Edge.
-- Потоки без варианта 1080p скрываются из списка (пишутся только в консоль).
-- Прогресс загрузки показывается внутри карточки видео, у загружающейся карточки есть кнопка «Отмена».
-- Обновление ставится запуском установщика с `/SILENT`, а не заменой файлов на лету.
-- Перед работой агенту нужно сообщить `OWNER/REPO` репозитория и сгенерировать один раз GUID для `AppId`.
+- Interface on **PySide6**, not CustomTkinter or Flet: it works better with
+  threads and gives a modern look, but the installer ends up heavier (about
+  100–150 MB).
+- The repository is **public**, updates are taken from `releases/latest`
+  without a token.
+- FFmpeg is included in the installer, Chromium from Playwright is downloaded
+  on demand, only when Chrome and Edge are absent.
+- Streams without a 1080p variant are hidden from the list (written only to
+  the console).
+- Download progress is shown inside the video card, the downloading card has a
+  "Cancel" button.
+- The update is applied by running the installer with `/SILENT`, not by
+  replacing files on the fly.
+- Before starting, the agent must be given the repository's `OWNER/REPO` and
+  a GUID for `AppId` must be generated once.

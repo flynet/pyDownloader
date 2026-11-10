@@ -5,9 +5,13 @@
 программы без запуска. Ни браузера, ни загрузок здесь нет: карточки и консоль
 заполняются демонстрационными данными, поэтому снимки воспроизводимы.
 
+Язык снимков — английский, язык программы по умолчанию (spec 8.1). Все строки
+берутся из каталога переводов, поэтому снимок совпадает с тем, что видит
+пользователь.
+
 Окна не показываются на рабочем столе: снимок берётся ``QWidget.grab()`` на
 offscreen-платформе Qt, а шрифты Windows регистрируются в приложении вручную —
-без них кириллица рисуется квадратиками.
+без них текст рисуется квадратиками.
 """
 
 from __future__ import annotations
@@ -24,13 +28,14 @@ from PySide6.QtWidgets import QApplication
 
 from pydownloader.config.paths import Paths, default_paths
 from pydownloader.config.settings import Settings
+from pydownloader.i18n import DEFAULT_LANGUAGE, set_language, tr
 from pydownloader.manifest.registry import SourceEntry
 from pydownloader.ui.main_window import MainWindow
 from pydownloader.ui.settings_panel import SettingsDialog
 from pydownloader.ui.theme import apply_theme
 
 OUT = Path("assets") / "screenshots"
-DOWNLOADS = Path("D:\\Видео")
+DOWNLOADS = Path("D:\\Videos")
 #: Version printed in the console lines: the screenshots are for the release page,
 #: so the tag is written out and stays stable between runs.
 DISPLAY_VERSION = "0.2.0"
@@ -38,7 +43,7 @@ WINDOW_SIZE = (1060, 860)
 #: Splitter sizes of the screenshot: the four demo cards and a dozen console lines.
 CARD_SECTION_HEIGHT = (640, 220)
 UI_FONT = "Segoe UI"
-#: The offscreen platform has no font database: the Cyrillic text becomes boxes
+#: The offscreen platform has no font database: the letters become boxes
 #: until the fonts of Windows are registered in the application.
 UI_FONT_SIZE = 9
 MONOSPACE_FONT = "Consolas"
@@ -51,13 +56,13 @@ WINDOWS_FONTS = (
 
 def demo_cards() -> list[SourceEntry]:
     """Карточки в четырёх состояниях: найдено, скачивается, готово, ошибка."""
-    entries = [
+    return [
         SourceEntry(
             id="hls1080",
             kind="hls",
             url="https://cdn.example.com/720p_1080p/master.m3u8",
             normalized="https://cdn.example.com/720p_1080p/master.m3u8",
-            title="Пример: HLS 1080p",
+            title="Example: HLS 1080p",
             height=1080,
             duration=1874.0,
             size=412_321_024,
@@ -65,9 +70,9 @@ def demo_cards() -> list[SourceEntry]:
         SourceEntry(
             id="hls720",
             kind="hls",
-            url="https://cdn.example.com/pornhub/720p_1080p/master.m3u8",
-            normalized="https://cdn.example.com/pornhub/720p_1080p/master.m3u8",
-            title="Пример: HLS 720p, качается",
+            url="https://cdn.example.com/site/720p_1080p/master.m3u8",
+            normalized="https://cdn.example.com/site/720p_1080p/master.m3u8",
+            title="Example: HLS 720p, downloading",
             height=720,
             duration=620.0,
             size=96_205_824,
@@ -77,7 +82,7 @@ def demo_cards() -> list[SourceEntry]:
             kind="mp4",
             url="https://cdn.example.com/video/clip.mp4",
             normalized="https://cdn.example.com/video/clip.mp4",
-            title="Пример: MP4",
+            title="Example: MP4",
             duration=240.0,
             size=84_000_000,
         ),
@@ -86,30 +91,34 @@ def demo_cards() -> list[SourceEntry]:
             kind="youtube",
             url="https://www.youtube.com/watch?v=dQw4w9WgXcQ",
             normalized="https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-            title="Пример: YouTube",
+            title="Example: YouTube",
             height=1080,
             duration=320.0,
             size=45_101_824,
         ),
     ]
-    return entries
 
 
 def fill_console(window: MainWindow) -> None:
-    """Строки консоли: запуск, находка потока, пропуски, готовый файл."""
+    """Строки консоли из каталога: запуск, находка потока, пропуски, готовый файл."""
     console = window.console
-    console.show_info(f"PyDownloader {DISPLAY_VERSION}, папка загрузок: {DOWNLOADS}")
-    console.show_info("Лог-файл: D:\\PyDownloader\\logs\\app.log")
-    console.show_info("Профиль браузера: D:\\PyDownloader\\profile")
-    console.show_info("FFmpeg: D:\\PyDownloader\\bin\\ffmpeg.exe")
-    console.show_info("Блокировщик рекламы подключён: uBlock Origin Lite")
-    console.show_info("Найден HLS-поток 1080p: https://cdn.example.com/720p_1080p/master.m3u8")
-    console.show_info("Показано в списке: https://cdn.example.com/720p_1080p/master.m3u8")
-    console.show_info("Найден MP4 80.1 МБ: https://cdn.example.com/video/clip.mp4")
-    console.show_warning("Live-трансляция: пропущен (https://cdn.example.com/live/master.m3u8)")
-    console.show_warning("Widevine DRM: обход не поддерживается (system=widevine)")
-    console.show_info("Вариант 1080p недоступен, скачиваю 720p")
-    console.show_info("Готово: D:\\Видео\\clip_1080p.mp4")
+    log_file = Path("D:\\PyDownloader\\logs\\app.log")
+    console.show_info(tr("app_started", version=DISPLAY_VERSION, dir=DOWNLOADS))
+    console.show_info(tr("app_log_file", path=log_file))
+    console.show_info(tr("app_profile_dir", path=Path("D:\\PyDownloader\\profile")))
+    console.show_info(tr("app_data_dir", path=Path("D:\\PyDownloader\\extensions")))
+    console.show_info(tr("app_blocker_state", state=tr("app_blocker_on")))
+    console.show_info(
+        tr("mf_found_hls", height=1080, url="https://cdn.example.com/720p_1080p/master.m3u8")
+    )
+    console.show_info(tr("window_shown", url="https://cdn.example.com/720p_1080p/master.m3u8"))
+    console.show_info(tr("mf_found_mp4", quality="80.1 MB", url="https://cdn.example.com/video/clip.mp4"))
+    console.show_warning(tr("mf_live_skipped", url="https://cdn.example.com/live/master.m3u8"))
+    console.show_warning(tr("dl_drm_detected", message=tr("mf_drm_message"), system="Widevine"))
+    console.show_info(
+        tr("dl_variant_fallback", height=1080, fallback=720, url="https://cdn.example.com/720p/master.m3u8")
+    )
+    console.show_info(tr("window_finished", path=DOWNLOADS / "clip_1080p.mp4"))
 
 
 def fill_cards(window: MainWindow) -> None:
@@ -122,7 +131,7 @@ def fill_cards(window: MainWindow) -> None:
     cards[1].set_progress(204, 340, 3.8)
     cards[2].set_result(str(DOWNLOADS / "clip_1080p.mp4"))
     window.out_paths["mp4"] = DOWNLOADS / "clip_1080p.mp4"
-    cards[3].set_error("HTTP 410: ссылка CDN протухла")
+    cards[3].set_error("HTTP 410: the signed CDN link expired")
 
 
 def shot(widget, name: str) -> None:
@@ -133,7 +142,7 @@ def shot(widget, name: str) -> None:
 
 
 def register_fonts() -> None:
-    """Add the fonts of Windows so the Cyrillic letters are drawn."""
+    """Add the fonts of Windows so the letters of every language are drawn."""
     for path in WINDOWS_FONTS:
         if Path(path).is_file():
             QFontDatabase.addApplicationFont(path)
@@ -144,13 +153,21 @@ def main() -> int:
     app = QApplication(sys.argv)
     register_fonts()
     app.setFont(QFont(UI_FONT, UI_FONT_SIZE))
-    settings = Settings(download_dir=str(DOWNLOADS), theme="dark", threads=6, target_height=1080)
+    # the screenshots show the language the program starts with (spec 8.1)
+    set_language(DEFAULT_LANGUAGE)
+    settings = Settings(
+        download_dir=str(DOWNLOADS),
+        theme="dark",
+        language=DEFAULT_LANGUAGE,
+        threads=6,
+        target_height=1080,
+    )
     apply_theme(app, settings.theme)
     paths: Paths = default_paths()
     window = MainWindow(settings, paths, None, None)
     window.console.setFont(QFont(MONOSPACE_FONT, UI_FONT_SIZE))
     window.resize(*WINDOW_SIZE)
-    window.set_update_status("Обновлений нет · 08:12")
+    window.set_update_status(tr("update_none", time="08:12"))
     # The status bar of the build in git says ``0.0.0-dev``; on the release page the
     # version of the tag is shown instead.
     window.status_label.setText(f"{DISPLAY_VERSION} · {settings.download_dir}")

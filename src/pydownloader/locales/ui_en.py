@@ -1,0 +1,107 @@
+"""English texts of the ui group: the keys come from ui_en.py.
+
+Keys of the card (spec 4.1), the main window (spec 4.2, 4.3), the settings
+dialog (spec 4.3, 8.1), the startup messages (spec 4.4, 7.1) and the update
+dialog (spec 8.3). Placeholders are filled by ``tr`` with keyword arguments.
+"""
+
+TEXTS: dict[str, str] = {
+    # --- card (spec 4.1) ----------------------------------------------------
+    "card_state_queued": "Queued",
+    "card_state_downloading": "Downloading",
+    "card_state_done": "Done",
+    "card_state_error": "Error",
+    "card_stage_download": "downloading",
+    "card_stage_decrypt": "decrypting",
+    "card_stage_mux": "muxing",
+    "card_size_unknown": "size unknown",
+    "card_size_mb": "{mb:.1f} MB",
+    "card_quality_unknown": "resolution unknown",
+    "card_download": "Download",
+    "card_cancel": "Cancel",
+    "card_open_file": "Open file",
+    "card_retry": "Retry",
+    "card_copy_link": "Copy link",
+    "card_progress": "{percent}% · segments {done} of {total}",
+    "card_speed_mb": "{speed:.1f} MB/s",
+    "card_cancelled": "cancelled",
+    # --- main window (spec 4.2, 4.3) ---------------------------------------
+    "window_empty": "No videos found yet. Open a site in the browser and play the video.",
+    "window_clear": "Clear",
+    "window_clear_all": "Clear all",
+    "window_clear_downloaded": "Clear downloaded",
+    "window_open_download_folder": "Open download folder",
+    "window_open_log": "Open log file",
+    "window_settings": "⚙ Settings",
+    "window_quit_question": "A download is running. Cancel it and exit?",
+    "window_download_folder_title": "Download folder",
+    "window_found_videos": "Found videos",
+    "window_clear_all_tip": "Remove all found videos from the list",
+    "window_clear_downloaded_tip": "Remove only the videos that are already downloaded and on disk",
+    "window_list_cleared": "The list of found videos is cleared",
+    "window_active_kept": "Active downloads continue, their cards are removed",
+    "window_no_downloaded": "There are no downloaded videos in the list",
+    "window_removed_count": "Removed downloaded videos: {count}",
+    "window_finished": "Done: {path}",
+    "window_browser_closed": "Browser closed",
+    "window_shown": "Shown in the list: {url}",
+    "window_queued": "Queued: {title}",
+    "window_download_started": "Download started: {title}",
+    "window_task_failed": "Task failed: {title}",
+    "window_file_missing": "The file is not found, opening the download folder",
+    "window_open_failed": "Cannot open the file: {error}",
+    # --- settings dialog (spec 4.3, 8.1) -----------------------------------
+    "settings_title": "PyDownloader settings",
+    "settings_download_folder": "Folder of the downloaded videos",
+    "settings_folder_row": "Download folder:",
+    "settings_threads_row": "Segment threads:",
+    "settings_height_row": "Resolution (p):",
+    "settings_min_mp4_row": "Minimum MP4 (MB):",
+    "settings_theme_row": "Theme:",
+    "settings_language_row": "Language:",
+    "settings_check_updates": "Check for updates",
+    "settings_browse": "Browse…",
+    "settings_save": "Save",
+    "settings_cancel": "Cancel",
+    "settings_check_updates_button": "Check for updates",
+    "settings_restart_hint": "The language is applied after the program restarts.",
+    "settings_restart": "Restart",
+    "theme_dark": "Dark",
+    "theme_light": "Light",
+    "theme_system": "System",
+    # --- startup (spec 4.4, 7.1) -------------------------------------------
+    "app_started": "PyDownloader {version}, download folder: {dir}",
+    "app_log_file": "Log file: {path}",
+    "app_data_dir": "Program data: {path}",
+    "app_profile_dir": "Browser profile: {path}",
+    "app_blocker_state": "Ad blocker: {state}",
+    "app_chromium_offer": (
+        "Chrome and Edge are not found. Download Chromium from Playwright "
+        "(about 170 MB, once)?"
+    ),
+    "app_chromium_offer_blocker": (
+        "The ad blocker needs Chromium from Playwright (about 170 MB, once).\n\n"
+        "Download it? Without it the browser opens without the blocker: Chrome and "
+        "Edge ignore extensions loaded from the command line."
+    ),
+    "app_blocker_not_loaded": (
+        "The ad blocker is not loaded: Chrome and Edge do not accept extensions "
+        "from the command line. To enable it, allow Chromium to be downloaded at "
+        "the next start."
+    ),
+    "app_blocker_on": "connected",
+    "app_blocker_off": "not connected",
+    # --- update dialog (spec 8.3) ------------------------------------------
+    "update_title": "A new version is available",
+    "update_download_text": "Downloading the installer…",
+    "update_install_text": "The installer is starting, the program will close.",
+    "update_wait_text": "A video is downloading. Wait for it to finish before updating?",
+    "update_sha_fail": "SHA-256 does not match, the update is not installed",
+    "update_later": "Later",
+    "update_skip": "Skip this version",
+    "update_button": "Update",
+    "update_cancel": "Cancel",
+    "update_notices": "Release notes",
+    "update_available": "Version {version} is available",
+    "update_none": "No updates · {time}",
+}

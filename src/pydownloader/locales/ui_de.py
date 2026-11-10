@@ -1,0 +1,107 @@
+"""German texts of the ui group: the keys come from ui_en.py.
+
+Keys of the card (spec 4.1), the main window (spec 4.2, 4.3), the settings
+dialog (spec 4.3, 8.1), the startup messages (spec 4.4, 7.1) and the update
+dialog (spec 8.3). Placeholders are filled by ``tr`` with keyword arguments.
+"""
+
+TEXTS: dict[str, str] = {
+    # --- card (spec 4.1) ----------------------------------------------------
+    "card_state_queued": "In der Warteschlange",
+    "card_state_downloading": "Beim Herunterladen",
+    "card_state_done": "Fertig",
+    "card_state_error": "Fehler",
+    "card_stage_download": "Herunterladen",
+    "card_stage_decrypt": "Entschlüsseln",
+    "card_stage_mux": "Zusammenfügen",
+    "card_size_unknown": "Größe unbekannt",
+    "card_size_mb": "{mb:.1f} MB",
+    "card_quality_unknown": "Auflösung unbekannt",
+    "card_download": "Herunterladen",
+    "card_cancel": "Abbrechen",
+    "card_open_file": "Datei öffnen",
+    "card_retry": "Erneut versuchen",
+    "card_copy_link": "Link kopieren",
+    "card_progress": "{percent}% · Segmente {done} von {total}",
+    "card_speed_mb": "{speed:.1f} MB/s",
+    "card_cancelled": "abgebrochen",
+    # --- main window (spec 4.2, 4.3) ---------------------------------------
+    "window_empty": "Noch keine Videos gefunden. Site im Browser öffnen und Video starten.",
+    "window_clear": "Leeren",
+    "window_clear_all": "Alle leeren",
+    "window_clear_downloaded": "Heruntergeladene leeren",
+    "window_open_download_folder": "Downloadordner öffnen",
+    "window_open_log": "Logdatei öffnen",
+    "window_settings": "⚙ Einstellungen",
+    "window_quit_question": "Ein Download läuft. Abbrechen und beenden?",
+    "window_download_folder_title": "Ordner für Downloads",
+    "window_found_videos": "Gefundene Videos",
+    "window_clear_all_tip": "Alle gefundenen Videos aus der Liste entfernen",
+    "window_clear_downloaded_tip": "Nur bereits heruntergeladene Videos aus der Liste entfernen",
+    "window_list_cleared": "Die Liste der gefundenen Videos ist geleert",
+    "window_active_kept": "Aktive Downloads laufen weiter, ihre Karten werden entfernt",
+    "window_no_downloaded": "Es gibt keine heruntergeladenen Videos in der Liste",
+    "window_removed_count": "Heruntergeladene Videos entfernt: {count}",
+    "window_finished": "Fertig: {path}",
+    "window_browser_closed": "Browser geschlossen",
+    "window_shown": "In der Liste gezeigt: {url}",
+    "window_queued": "In der Warteschlange: {title}",
+    "window_download_started": "Download gestartet: {title}",
+    "window_task_failed": "Aufgabe fehlgeschlagen: {title}",
+    "window_file_missing": "Datei nicht gefunden, der Downloadordner wird geöffnet",
+    "window_open_failed": "Datei kann nicht geöffnet werden: {error}",
+    # --- settings dialog (spec 4.3, 8.1) -----------------------------------
+    "settings_title": "PyDownloader-Einstellungen",
+    "settings_download_folder": "Ordner der heruntergeladenen Videos",
+    "settings_folder_row": "Downloadordner:",
+    "settings_threads_row": "Segment-Threads:",
+    "settings_height_row": "Auflösung (p):",
+    "settings_min_mp4_row": "MP4-Minimum (MB):",
+    "settings_theme_row": "Thema:",
+    "settings_language_row": "Sprache:",
+    "settings_check_updates": "Auf Updates prüfen",
+    "settings_browse": "Durchsuchen…",
+    "settings_save": "Speichern",
+    "settings_cancel": "Abbrechen",
+    "settings_check_updates_button": "Nach Updates suchen",
+    "settings_restart_hint": "Die Sprache gilt nach dem Neustart des Programms.",
+    "settings_restart": "Neustarten",
+    "theme_dark": "Dunkel",
+    "theme_light": "Hell",
+    "theme_system": "System",
+    # --- startup (spec 4.4, 7.1) -------------------------------------------
+    "app_started": "PyDownloader {version}, Downloadordner: {dir}",
+    "app_log_file": "Logdatei: {path}",
+    "app_data_dir": "Programmdaten: {path}",
+    "app_profile_dir": "Browserprofil: {path}",
+    "app_blocker_state": "Werbeblocker: {state}",
+    "app_chromium_offer": (
+        "Chrome und Edge wurden nicht gefunden. Chromium von Playwright herunterladen "
+        "(etwa 170 MB, einmal)?"
+    ),
+    "app_chromium_offer_blocker": (
+        "Der Werbeblocker braucht Chromium von Playwright (etwa 170 MB, einmal).\n\n"
+        "Herunterladen? Ohne ihn öffnet sich der Browser ohne Blocker: Chrome und Edge "
+        "ignorieren über die Befehlszeile geladene Erweiterungen."
+    ),
+    "app_blocker_not_loaded": (
+        "Werbeblocker nicht geladen: Chrome und Edge nehmen keine Erweiterungen von "
+        "der Befehlszeile an. Um ihn zu aktivieren, erlauben Sie den Download von "
+        "Chromium beim nächsten Start."
+    ),
+    "app_blocker_on": "verbunden",
+    "app_blocker_off": "nicht verbunden",
+    # --- update dialog (spec 8.3) ------------------------------------------
+    "update_title": "Eine neue Version ist verfügbar",
+    "update_download_text": "Der Installer wird heruntergeladen…",
+    "update_install_text": "Der Installer startet, das Programm wird geschlossen.",
+    "update_wait_text": "Ein Video läuft. Bis zum Ende warten, bevor aktualisiert wird?",
+    "update_sha_fail": "SHA-256 passt nicht, das Update wird nicht installiert",
+    "update_later": "Später",
+    "update_skip": "Diese Version überspringen",
+    "update_button": "Aktualisieren",
+    "update_cancel": "Abbrechen",
+    "update_notices": "Versionshinweise",
+    "update_available": "Version {version} ist verfügbar",
+    "update_none": "Keine Updates · {time}",
+}

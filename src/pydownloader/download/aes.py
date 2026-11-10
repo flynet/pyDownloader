@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
+from pydownloader.i18n import tr
+
 CIPHER_BLOCK_SIZE = 16
 KEY_SIZE = 16
 
@@ -31,7 +33,7 @@ def key_bytes(body: bytes) -> bytes:
     (an HTML error page is a common case).
     """
     if len(body) != KEY_SIZE:
-        raise ValueError(f"Ключ имеет размер {len(body)} байт, ожидалось 16")
+        raise ValueError(tr("aes_key_size", size=len(body), expected=KEY_SIZE))
     return body
 
 
@@ -48,14 +50,14 @@ def decrypt(data: bytes, key: bytes, iv: bytes) -> bytes:
     key is not the key of this segment.
     """
     if len(key) != KEY_SIZE:
-        raise ValueError("Ключ должен быть 16 байт")
+        raise ValueError(tr("aes_key_must_be", size=KEY_SIZE))
     if len(iv) != CIPHER_BLOCK_SIZE:
-        raise ValueError("IV должен быть 16 байт")
+        raise ValueError(tr("aes_iv_must_be", size=CIPHER_BLOCK_SIZE))
     if not data or len(data) % CIPHER_BLOCK_SIZE:
-        raise ValueError("Данные сегмента не кратны размеру блока AES")
+        raise ValueError(tr("aes_data_not_aligned"))
     decryptor = Cipher(algorithms.AES(key), modes.CBC(iv)).decryptor()
     plain = decryptor.update(data) + decryptor.finalize()
     pad = plain[-1]
     if not 1 <= pad <= CIPHER_BLOCK_SIZE or plain[-pad:] != bytes([pad]) * pad:
-        raise ValueError("Некорректное дополнение PKCS#7")
+        raise ValueError(tr("aes_bad_padding"))
     return plain[:-pad]

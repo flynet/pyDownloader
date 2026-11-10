@@ -13,10 +13,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from pydownloader.i18n import tr
+
 FFMPEG_NAME = "ffmpeg.exe"
-NOT_FOUND = (
-    "FFmpeg не найден. Положите ffmpeg.exe в папку bin рядом с программой или добавьте его в PATH"
-)
+#: Текст для карточки: бинарника FFmpeg нет ни в bin, ни в PATH.
+NOT_FOUND = tr("ffmpeg_not_found")
 
 
 class FfmpegNotFoundError(RuntimeError):

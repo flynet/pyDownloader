@@ -21,6 +21,7 @@ from pydownloader.dash.models import DashRepresentation
 from pydownloader.download.aes import decrypt, key_bytes, segment_iv
 from pydownloader.download.plan import PlanItem, build_plan
 from pydownloader.hls.models import Playlist
+from pydownloader.i18n import tr
 from pydownloader.manifest.registry import SourceEntry
 from pydownloader.util.ranges import ByteRange
 
@@ -107,7 +108,7 @@ def download_plan(
     def worker(index: int, item: PlanItem) -> None:
         nonlocal done
         if should_stop():
-            raise CancelledError("Задача отменена")
+            raise CancelledError(tr("dl_task_cancelled"))
         target = tmp_dir / item.name
         if target.exists() and target.stat().st_size > 0:
             results[index] = target
@@ -135,7 +136,7 @@ def download_plan(
             pool.shutdown(wait=False, cancel_futures=True)
             raise error
     if len(results) != total:
-        raise DownloadError("Не все сегменты загружены")
+        raise DownloadError(tr("dl_segments_incomplete"))
     return [results[index] for index in range(total)]
 
 
@@ -147,18 +148,22 @@ def _fetch_with_retries(
     sleep: Sleep | None,
 ) -> bytes:
     pauses = (0.0, *RETRY_PAUSES)
-    last: Exception = DownloadError("Сегмент не скачан")
+    last: Exception = DownloadError(tr("dl_segment_not_downloaded"))
     for attempt, pause in enumerate(pauses, start=1):
         if should_stop():
-            raise CancelledError("Задача отменена")
+            raise CancelledError(tr("dl_task_cancelled"))
         if pause and sleep:
             sleep(pause)
         try:
             return fetch(item.url, headers, item.byte_range)
         except Exception as exc:  # a segment failure is retried (spec 6.2 p.6)
-            logger.debug("Сегмент не скачан (попытка %d): %s (%s)", attempt, item.url, exc)
+            logger.debug(
+                tr("dl_segment_attempt_failed", attempt=attempt, url=item.url, error=exc)
+            )
             last = exc
-    raise DownloadError(f"Сегмент не скачан после {len(pauses)} попыток: {item.url} ({last})")
+    raise DownloadError(
+        tr("dl_segment_failed_after", attempts=len(pauses), url=item.url, error=last)
+    )
 
 
 def _decrypt_item(
@@ -171,7 +176,7 @@ def _decrypt_item(
 ) -> bytes:
     key = item.key
     if key is None or key.uri is None:
-        raise DownloadError(f"Сегмент зашифрован, ключ не указан: {item.url}")
+        raise DownloadError(tr("dl_segment_key_missing", url=item.url))
     with keys_lock:
         cached = keys.get(key.uri)
     if cached is None:

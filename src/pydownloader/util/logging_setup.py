@@ -1,8 +1,10 @@
 """Logging: a rotating file in %LOCALAPPDATA%/PyDownloader/logs plus a console handler.
 
 The Qt console panel (``ui/console_panel.py``, M7) registers itself as a handler, so
-every record goes to the file and to the window at the same time. Records are formatted
-as required by the spec: ``[12:34:56] INFO  Найден HLS-поток 1080p: https://...``
+every record goes to the file and to the window at the same time. The message of a
+record is a key of the ``locales`` catalog rendered by ``i18n.tr``, so the log lines
+follow the language of the interface. Records are formatted as required by the spec:
+``[12:34:56] INFO  HLS stream found 1080p: https://...`` (``mf_found_hls``).
 """
 
 from __future__ import annotations

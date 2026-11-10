@@ -9,12 +9,12 @@ from PySide6.QtWidgets import QApplication
 
 from pydownloader.config.paths import Paths, default_paths
 from pydownloader.config.settings import Settings
+from pydownloader.i18n import tr
 from pydownloader.manifest.registry import SourceEntry
 from pydownloader.ui import main_window as main_window_mod
 from pydownloader.ui.card import SourceCard, format_duration, format_quality, format_size
 from pydownloader.ui.console import MAX_LINES, ConsolePanel
 from pydownloader.ui.main_window import (
-    HINT,
     LogBridge,
     MainWindow,
     geometry_from_hex,
@@ -222,7 +222,7 @@ def test_window_starts_empty_with_the_hint(qtbot, tmp_path):
     window = make_window(tmp_path)
     qtbot.addWidget(window)
     assert window.hint_label.isVisible()
-    assert HINT in window.hint_label.text()
+    assert tr("window_empty") in window.hint_label.text()
     assert window.cards == {}
     assert "PyDownloader" in window.windowTitle()
     assert str(tmp_path) in window.windowTitle()

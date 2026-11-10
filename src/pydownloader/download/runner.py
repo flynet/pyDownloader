@@ -31,7 +31,8 @@ from pydownloader.ffmpeg.locate import Ffmpeg
 from pydownloader.ffmpeg.mux import assemble, copy_single
 from pydownloader.hls.models import Playlist
 from pydownloader.hls.parser import PlaylistParseError, parse_playlist
-from pydownloader.manifest.drm import DRM_MESSAGE, detect_dash, detect_hls
+from pydownloader.i18n import tr
+from pydownloader.manifest.drm import detect_dash, detect_hls
 from pydownloader.manifest.quality import Choice, best_variant
 from pydownloader.manifest.registry import SourceEntry
 from pydownloader.util.filenames import unique_path
@@ -102,7 +103,7 @@ def make_plan(entry: SourceEntry, ctx: RunContext) -> list:
             raise DownloadError(str(exc)) from exc
     choice = entry.choice
     if choice is None:
-        raise DownloadError(f"Источник не разобран: {entry.url}")
+        raise DownloadError(tr("dl_source_not_parsed", url=entry.url))
     if entry.kind == "mp4":
         return plan_mp4(entry.url)
     if entry.kind == "dash":
@@ -128,14 +129,16 @@ def _family_plan(entry: SourceEntry, ctx: RunContext) -> list:
             try:
                 playlist = parse_playlist(text, playlist_url)
             except PlaylistParseError as exc:
-                ctx.log(f"Плейлист группы сегментов не разобран: {exc}")
+                ctx.log(tr("dl_family_playlist_not_parsed", error=exc))
             else:
                 if playlist.kind == "media":
                     if playlist.is_live:
-                        raise DownloadError("Live-трансляция: пропущена")
+                        raise DownloadError(tr("dl_live_skipped"))
                     verdict = detect_hls(playlist)
                     if verdict.is_drm:
-                        raise DownloadError(f"{DRM_MESSAGE} ({verdict.system})")
+                        raise DownloadError(
+                            tr("dl_drm_detected", message=verdict.message, system=verdict.system)
+                        )
                     if playlist.segments:
                         return plan_hls(playlist)
     return plan_family(entry.recorded)
@@ -150,12 +153,12 @@ def _hls_plan(entry: SourceEntry, choice: Choice, ctx: RunContext) -> list:
         if fallback is not None:
             choice, playlist = fallback
     if playlist is None:
-        raise DownloadError(f"Не получен манифест: {choice.url}")
+        raise DownloadError(tr("dl_manifest_not_fetched", url=choice.url))
     audio: Playlist | None = None
     if choice.audio_url:
         audio = _media_playlist(entry, choice.audio_url, ctx)
         if audio is None:
-            ctx.log(f"Аудио-дорожка не получена: {choice.audio_url}")
+            ctx.log(tr("dl_audio_not_fetched", url=choice.audio_url))
     return build_plan(video_playlist=playlist, audio_playlist=audio)
 
 
@@ -177,12 +180,14 @@ def _recorded_variant(
         if playlist is None:
             continue
         logger.info(
-            "Вариант %sp недоступен, скачиваю %sp: %s",
-            choice.height,
-            variant.height,
-            recorded,
+            tr(
+                "dl_variant_fallback",
+                height=choice.height,
+                fallback=variant.height,
+                url=recorded,
+            )
         )
-        ctx.log(f"Вариант {choice.height}p недоступен, скачиваю {variant.height}p")
+        ctx.log(tr("dl_variant_fallback_short", height=choice.height, fallback=variant.height))
         return variant, playlist
     return None
 
@@ -205,16 +210,18 @@ def _media_playlist(
     try:
         playlist = parse_playlist(text, base)
     except PlaylistParseError as exc:
-        raise DownloadError(f"Манифест не разобран: {exc}") from exc
+        raise DownloadError(tr("dl_manifest_not_parsed", error=exc)) from exc
     if playlist.kind == "media":
         if playlist.is_live:
-            raise DownloadError("Live-трансляция: пропущена")
+            raise DownloadError(tr("dl_live_skipped"))
         verdict = detect_hls(playlist)
         if verdict.is_drm:
-            raise DownloadError(f"{DRM_MESSAGE} ({verdict.system})")
+            raise DownloadError(
+                tr("dl_drm_detected", message=verdict.message, system=verdict.system)
+            )
         return playlist
     if depth <= 0:
-        raise DownloadError("Манифест не разобран: вложенный мастер-плейлист")
+        raise DownloadError(tr("dl_nested_master_deep"))
     variant = best_variant(playlist.variants, ctx.target_height)
     if variant is None:
         variants = sorted(
@@ -223,32 +230,32 @@ def _media_playlist(
             reverse=True,
         )
         if not variants:
-            raise DownloadError("В мастер-плейлисте нет вариантов")
+            raise DownloadError(tr("dl_no_variants"))
         variant = variants[0]
     next_url = entry.recorded_url(variant.url) or variant.url
-    logger.debug("Вложенный мастер %s: спускаюсь к %s", url, next_url)
+    logger.debug(tr("dl_nested_master", url=url, target=next_url))
     return _media_playlist(entry, next_url, ctx, depth - 1)
 
 
 def _dash_plan(entry: SourceEntry, choice: Choice, ctx: RunContext) -> list:
     text = ctx.fetch_text(entry.url, ctx.headers)
     if text is None:
-        raise DownloadError(f"Не получен манифест: {entry.url}")
+        raise DownloadError(tr("dl_manifest_not_fetched", url=entry.url))
     try:
         # The body is re-parsed: the plan uses the representations chosen by the filters,
         # and a broken manifest must fail the task here, not in the middle of the download.
         mpd = parse_mpd(text, entry.effective_url(entry.url))
     except ManifestParseError as exc:
-        raise DownloadError(f"Манифест не разобран: {exc}") from exc
+        raise DownloadError(tr("dl_manifest_not_parsed", error=exc)) from exc
     if mpd.is_live:
-        raise DownloadError("Live-трансляция: пропущена")
+        raise DownloadError(tr("dl_live_skipped"))
     verdict = detect_dash(mpd)
     if verdict.is_drm:
-        raise DownloadError(f"{DRM_MESSAGE} ({verdict.system})")
+        raise DownloadError(tr("dl_drm_detected", message=verdict.message, system=verdict.system))
     video: DashRepresentation | None = choice.video
     audio: DashRepresentation | None = choice.audio
     if video is None:
-        raise DownloadError("В манифесте нет видеоролика")
+        raise DownloadError(tr("dl_no_video_track"))
     return build_plan(video_rep=video, audio_rep=audio)
 
 
@@ -260,15 +267,17 @@ def run_task(task: Task, ctx: RunContext) -> Path:
     errors of the modules used.
     """
     if ctx.should_stop():
-        raise CancelledError("Задача отменена")
+        raise CancelledError(tr("dl_task_cancelled"))
     task.plan = make_plan(task.entry, ctx)
     if not task.plan:
-        raise DownloadError("Нечего скачивать")
+        raise DownloadError(tr("dl_nothing_to_download"))
     logger.debug(
-        "План задачи %s: %d файлов, потоки: %s",
-        task.id,
-        len(task.plan),
-        ", ".join(sorted({item.stream for item in task.plan})),
+        tr(
+            "dl_plan_of_task",
+            id=task.id,
+            count=len(task.plan),
+            streams=", ".join(sorted({item.stream for item in task.plan})),
+        )
     )
     try:
         files = download_plan(
@@ -287,7 +296,7 @@ def run_task(task: Task, ctx: RunContext) -> Path:
         raise
     if ctx.should_stop():
         cleanup_tmp(task.tmp_dir)
-        raise CancelledError("Задача отменена")
+        raise CancelledError(tr("dl_task_cancelled"))
     streams = [path for path in files if path.stem != "file"]
     single = [path for path in files if path.stem == "file"]
     if single:

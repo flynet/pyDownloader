@@ -13,6 +13,7 @@ from typing import Literal
 from pydownloader.config.settings import DEFAULT_TARGET_HEIGHT
 from pydownloader.dash.models import DashManifest, DashPeriod, DashRepresentation
 from pydownloader.hls.models import Media, Playlist, Variant
+from pydownloader.i18n import tr
 
 StreamKind = Literal["hls-variant", "hls-media", "dash-video", "mp4"]
 
@@ -48,9 +49,9 @@ class QualityDecision:
 def heights_message(heights: list[int], target: int) -> str:
     """Console text for a stream without the required quality (spec 5.2 p.3)."""
     if not heights:
-        return f"Найден поток без {target}p: пропущен (разрешение не определяется)"
+        return tr("mf_quality_no_heights", target=target)
     listed = ", ".join(f"{h}p" for h in sorted(set(heights), reverse=True))
-    return f"Найден поток без {target}p: пропущен (доступно: {listed})"
+    return tr("mf_quality_available", target=target, listed=listed)
 
 
 def pick_audio(candidates: list[Media], language: str | None = None) -> Media | None:

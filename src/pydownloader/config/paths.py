@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from pydownloader.config.constants import APP_NAME
+from pydownloader.i18n import tr
 
 logger = logging.getLogger("pydownloader.paths")
 
@@ -81,9 +82,7 @@ def _data_root(app_dir: Path | None, local: Path) -> Path:
         return local
     if not _writable(app_dir):
         logger.warning(
-            "Папка программы %s недоступна для записи, данные остаются в %s",
-            app_dir,
-            local,
+            tr("profile_data_dir_writable", dir=app_dir, fallback=local)
         )
         return local
     return app_dir
@@ -97,16 +96,16 @@ def _migrate_profile(old: Path, new: Path) -> bool:
     (it is locked, or the disk refused the move).
     """
     if new.exists() and not new.is_dir():
-        logger.warning("Путь профиля занят файлом: %s", new)
+        logger.warning(tr("profile_dir_taken", path=new))
         return False
     if not old.is_dir() or new.exists():
         return True
     try:
         shutil.move(str(old), str(new))
     except OSError as exc:
-        logger.warning("Не удалось перенести профиль %s в %s: %s", old, new, exc)
+        logger.warning(tr("profile_move_failed", src=old, dst=new, error=exc))
         return False
-    logger.info("Профиль браузера перенесён: %s -> %s", old, new)
+    logger.info(tr("profile_moved", src=old, dst=new))
     return True
 
 
@@ -123,9 +122,7 @@ def _profile_dir(
         return fallback
     if not _writable(app_dir):
         logger.warning(
-            "Папка программы %s недоступна для записи, профиль остаётся в %s",
-            app_dir,
-            fallback,
+            tr("profile_dir_writable", dir=app_dir, fallback=fallback)
         )
         return fallback
     target = app_dir / "profile"

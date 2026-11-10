@@ -1,0 +1,106 @@
+"""Chinese texts of the ui group: the keys come from ui_en.py.
+
+Keys of the card (spec 4.1), the main window (spec 4.2, 4.3), the settings
+dialog (spec 4.3, 8.1), the startup messages (spec 4.4, 7.1) and the update
+dialog (spec 8.3). Placeholders are filled by ``tr`` with keyword arguments.
+The text uses halfwidth punctuation, so ruff does not read it as a Latin one.
+"""
+
+TEXTS: dict[str, str] = {
+    # --- card (spec 4.1) ----------------------------------------------------
+    "card_state_queued": "排队中",
+    "card_state_downloading": "下载中",
+    "card_state_done": "完成",
+    "card_state_error": "错误",
+    "card_stage_download": "下载中",
+    "card_stage_decrypt": "解密中",
+    "card_stage_mux": "合并中",
+    "card_size_unknown": "大小未知",
+    "card_size_mb": "{mb:.1f} MB",
+    "card_quality_unknown": "分辨率未知",
+    "card_download": "下载",
+    "card_cancel": "取消",
+    "card_open_file": "打开文件",
+    "card_retry": "重试",
+    "card_copy_link": "复制链接",
+    "card_progress": "{percent}% · 分段 {done}/{total}",
+    "card_speed_mb": "{speed:.1f} MB/s",
+    "card_cancelled": "已取消",
+    # --- main window (spec 4.2, 4.3) ---------------------------------------
+    "window_empty": "尚未找到视频。请在浏览器中打开网站并播放视频。",
+    "window_clear": "清除",
+    "window_clear_all": "全部清除",
+    "window_clear_downloaded": "清除已下载的",
+    "window_open_download_folder": "打开下载文件夹",
+    "window_open_log": "打开日志文件",
+    "window_settings": "⚙ 设置",
+    "window_quit_question": "正在下载视频。取消下载并退出?",
+    "window_download_folder_title": "下载文件夹",
+    "window_found_videos": "已找到的视频",
+    "window_clear_all_tip": "从列表中移除所有已找到的视频",
+    "window_clear_downloaded_tip": "只移除已下载并保存在磁盘上的视频",
+    "window_list_cleared": "已找到的视频列表已清空",
+    "window_active_kept": "正在进行的下载会继续。其卡片已从列表移除",
+    "window_no_downloaded": "列表中没有已下载的视频",
+    "window_removed_count": "移除的已下载视频: {count}",
+    "window_finished": "完成: {path}",
+    "window_browser_closed": "浏览器已关闭",
+    "window_shown": "已在列表中显示: {url}",
+    "window_queued": "已加入队列: {title}",
+    "window_download_started": "开始下载: {title}",
+    "window_task_failed": "任务失败: {title}",
+    "window_file_missing": "文件未找到。正在打开下载文件夹",
+    "window_open_failed": "无法打开文件: {error}",
+    # --- settings dialog (spec 4.3, 8.1) -----------------------------------
+    "settings_title": "PyDownloader 设置",
+    "settings_download_folder": "已下载视频的文件夹",
+    "settings_folder_row": "下载文件夹:",
+    "settings_threads_row": "分段线程数:",
+    "settings_height_row": "分辨率 (p):",
+    "settings_min_mp4_row": "最小 MP4 (MB):",
+    "settings_theme_row": "主题:",
+    "settings_language_row": "语言:",
+    "settings_check_updates": "检查更新",
+    "settings_browse": "浏览…",
+    "settings_save": "保存",
+    "settings_cancel": "取消",
+    "settings_check_updates_button": "检查更新",
+    "settings_restart_hint": "语言将在程序重启后生效。",
+    "settings_restart": "重启",
+    "theme_dark": "深色",
+    "theme_light": "浅色",
+    "theme_system": "跟随系统",
+    # --- startup (spec 4.4, 7.1) -------------------------------------------
+    "app_started": "PyDownloader {version}, 下载文件夹: {dir}",
+    "app_log_file": "日志文件: {path}",
+    "app_data_dir": "程序数据: {path}",
+    "app_profile_dir": "浏览器配置: {path}",
+    "app_blocker_state": "广告拦截器: {state}",
+    "app_chromium_offer": (
+        "未找到 Chrome 和 Edge。从 Playwright 下载 Chromium (约 170 MB, 仅需一次)?"
+    ),
+    "app_chromium_offer_blocker": (
+        "广告拦截器需要 Playwright 的 Chromium (约 170 MB, 仅需一次)。\n\n"
+        "要下载吗? 没有它浏览器将在没有拦截器的情况下打开: "
+        "Chrome 和 Edge 会忽略从命令行加载的扩展。"
+    ),
+    "app_blocker_not_loaded": (
+        "广告拦截器未加载: Chrome 和 Edge 不接受从命令行加载的扩展。"
+        "要启用它。请在下次启动时允许下载 Chromium。"
+    ),
+    "app_blocker_on": "已连接",
+    "app_blocker_off": "未连接",
+    # --- update dialog (spec 8.3) ------------------------------------------
+    "update_title": "有新版本可用",
+    "update_download_text": "正在下载安装程序…",
+    "update_install_text": "安装程序正在启动。程序将关闭。",
+    "update_wait_text": "视频正在下载。要等它完成后再更新吗?",
+    "update_sha_fail": "SHA-256 校验不匹配。更新未安装",
+    "update_later": "稍后",
+    "update_skip": "跳过此版本",
+    "update_button": "更新",
+    "update_cancel": "取消",
+    "update_notices": "更新说明",
+    "update_available": "版本 {version} 可用",
+    "update_none": "无更新 · {time}",
+}

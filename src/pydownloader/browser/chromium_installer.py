@@ -22,6 +22,7 @@ from pathlib import Path
 from playwright._impl._driver import compute_driver_executable
 
 from pydownloader.browser.launcher import chromium_executable
+from pydownloader.i18n import tr
 
 #: Windows flag so the console window of the installer process stays hidden.
 CREATE_NO_WINDOW = 0x00000000
@@ -80,6 +81,6 @@ def install_chromium(browsers_dir: Path, on_line: Callable[[str], None]) -> Inst
             on_line(line)
     code = process.wait()
     if code == 0:
-        return InstallResult(ok=True, message="Chromium установлен")
-    tail = "; ".join(lines[-3:]) if lines else "нет вывода"
-    return InstallResult(ok=False, message=f"Chromium не установлен (код {code}): {tail}")
+        return InstallResult(ok=True, message=tr("chromium_installed"))
+    tail = "; ".join(lines[-3:]) if lines else tr("chromium_no_output")
+    return InstallResult(ok=False, message=tr("chromium_not_installed", code=code, tail=tail))

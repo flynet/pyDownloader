@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from pydownloader.ffmpeg.locate import Ffmpeg, ffmpeg_env
+from pydownloader.i18n import tr
 
 #: Windows flag: the FFmpeg console window stays hidden.
 CREATE_NO_WINDOW = 0x00000000
@@ -100,17 +101,17 @@ def run_ffmpeg(command: Sequence[str], on_line: Callable[[str], None] | None = N
             if line.strip():
                 on_line(line)
     if process.returncode != 0:
-        tail = " ".join(output.splitlines()[-3:]) if output else "нет вывода"
-        logger.error("FFmpeg код %s: %s", process.returncode, tail)
-        raise FfmpegError(f"FFmpeg завершился с кодом {process.returncode}: {tail}")
-    logger.debug("FFmpeg готов, вывод: %d строк", len(output.splitlines()))
+        tail = " ".join(output.splitlines()[-3:]) if output else tr("ffmpeg_no_output")
+        logger.error(tr("ffmpeg_exit_log", code=process.returncode, tail=tail))
+        raise FfmpegError(tr("ffmpeg_failed", code=process.returncode, tail=tail))
+    logger.debug(tr("ffmpeg_done_output", lines=len(output.splitlines())))
     return output
 
 
 def copy_single(src: Path, out_path: Path) -> MuxResult:
     """A direct MP4 is copied to the destination, FFmpeg is not needed (spec 6.4 p.4)."""
     out_path.write_bytes(src.read_bytes())
-    return MuxResult(out_path=out_path, log="прямой MP4")
+    return MuxResult(out_path=out_path, log=tr("ffmpeg_direct_mp4"))
 
 
 def assemble(

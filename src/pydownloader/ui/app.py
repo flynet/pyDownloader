@@ -5,6 +5,9 @@ pydownloader``. The folder dialog is shown on the first start (cancel ends the
 program); later starts use the folder saved in the settings. Then the window is
 opened and the browser starts in its own thread. Chromium is downloaded on the
 first request (spec 7.2), its progress goes to the console.
+
+The language comes from the settings and is applied right after they are read,
+so every console line and every window text uses the chosen language (spec 8.1).
 """
 
 from __future__ import annotations
@@ -12,7 +15,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import QProcess, QThread, Signal
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from pydownloader._version import VERSION
@@ -36,26 +39,13 @@ from pydownloader.config.settings import Settings, load_settings, save_settings
 from pydownloader.download.worker import QueueWorker
 from pydownloader.ffmpeg.locate import Ffmpeg, FfmpegNotFoundError, locate_ffmpeg
 from pydownloader.ffmpeg.probe import probe_height
+from pydownloader.i18n import set_language, tr
 from pydownloader.manifest.quality import QualityFilter
 from pydownloader.manifest.registry import SourceRegistry
 from pydownloader.ui.main_window import LogBridge, MainWindow, pick_download_dir
 from pydownloader.ui.theme import apply_theme
 from pydownloader.update.ui import UpdateMonitor
 from pydownloader.util.logging_setup import setup_logging
-
-INSTALL_QUESTION = (
-    "Chrome и Edge не найдены. Скачать Chromium от Playwright (около 170 МБ, один раз)?"
-)
-INSTALL_QUESTION_EXTENSION = (
-    "Для блокировщика рекламы нужен Chromium от Playwright (около 170 МБ, один раз).\n\n"
-    "Скачать его? Без него браузер откроется без блокировщика: Chrome и Edge "
-    "игнорируют расширения, загруженные из командной строки."
-)
-EXTENSION_SKIPPED = (
-    "Блокировщик рекламы не загружен: Chrome и Edge не принимают расширения "
-    "из командной строки. Чтобы включить его, разрешите скачать Chromium "
-    "при следующем запуске."
-)
 
 
 class ChromiumInstallWorker(QThread):
@@ -78,6 +68,24 @@ def app_root() -> Path | None:
     if getattr(sys, "frozen", False):
         return application_dir()
     return None
+
+
+def restart_command() -> tuple[str, list[str]]:
+    """Command that starts the program again: the exe of the build, the module in a checkout."""
+    if getattr(sys, "frozen", False):
+        return sys.executable, []
+    return sys.executable, ["-m", "pydownloader"]
+
+
+def restart_application(app: QApplication) -> None:
+    """Start a detached copy of the program and quit this one (spec 8.1).
+
+    The new process keeps the current working directory, so it finds the same
+    data folder of the installed program as the running one does.
+    """
+    exe, args = restart_command()
+    QProcess.startDetached(exe, args)
+    app.quit()
 
 
 def make_worker(settings: Settings, ffmpeg: Ffmpeg, sniffer: SnifferThread | None) -> QueueWorker:
@@ -125,10 +133,10 @@ def create_window(app: QApplication, settings: Settings, paths: Paths) -> MainWi
     bridge.line.connect(window.console.append_line)
     window.log_bridge = bridge
     setup_logging(paths.log_file, bridge.line.emit)
-    window.logger.info(f"PyDownloader {VERSION}, папка загрузок: {settings.download_dir}")
-    window.logger.info(f"Лог-файл: {paths.log_file}")
-    window.logger.info(f"Данные программы: {paths.data_dir}")
-    window.logger.info(f"Профиль браузера: {paths.profile_dir}")
+    window.logger.info(tr("app_started", version=VERSION, dir=settings.download_dir))
+    window.logger.info(tr("app_log_file", path=paths.log_file))
+    window.logger.info(tr("app_data_dir", path=paths.data_dir))
+    window.logger.info(tr("app_profile_dir", path=paths.profile_dir))
     window.logger.info(f"FFmpeg: {ffmpeg.path}")
     return window
 
@@ -143,18 +151,18 @@ def start_browser(window: MainWindow, settings: Settings, paths: Paths) -> None:
     """
     extension = extension_dir(application_dir(), paths.data_dir / "extensions")
     if extension is not None:
-        window.log_info(f"Блокировщик рекламы: {extension}")
+        window.log_info(tr("app_blocker_state", state=extension))
     offered = False
     if (
         extension is not None
         and chromium_executable(paths.browsers_dir, paths.legacy_browsers_dir) is None
     ):
         offered = True
-        if _ask_install(window, INSTALL_QUESTION_EXTENSION):
+        if _ask_install(window, tr("app_chromium_offer_blocker")):
             _start_install(window, settings, paths)
             return
         extension = None
-        window.log_warning(EXTENSION_SKIPPED)
+        window.log_warning(tr("app_blocker_not_loaded"))
     try:
         browser = resolve_browser(
             paths.browsers_dir,
@@ -163,11 +171,11 @@ def start_browser(window: MainWindow, settings: Settings, paths: Paths) -> None:
         )
     except NoBrowserError as exc:
         window.log_warning(str(exc))
-        if not offered and _ask_install(window, INSTALL_QUESTION):
+        if not offered and _ask_install(window, tr("app_chromium_offer")):
             _start_install(window, settings, paths)
         return
     if extension is not None and not browser.is_bundled_chromium:
-        window.log_warning(EXTENSION_SKIPPED)
+        window.log_warning(tr("app_blocker_not_loaded"))
         extension = None
     launch_sniffer(window, settings, paths, browser, extension)
 
@@ -254,6 +262,8 @@ def main(argv: list[str] | None = None) -> int:
     app.setApplicationDisplayName(APP_NAME)
     paths = default_paths()
     settings = load_settings(paths.settings_file)
+    # The language is chosen once for the whole run, so it is set before any text.
+    set_language(settings.language)
     chosen = resolve_download_dir(settings)
     if chosen is None:
         return 0

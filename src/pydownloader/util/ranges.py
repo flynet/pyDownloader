@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from pydownloader.i18n import tr
+
 _CONTENT_RANGE_RE = re.compile(r"bytes\s+(\d+)\s*-\s*(\d+)\s*/\s*(\d+|\*)", re.IGNORECASE)
 _CONTENT_RANGE_TOTAL_RE = re.compile(r"bytes\s+\*\s*/\s*(\d+)", re.IGNORECASE)
 _HLS_BYTE_RANGE_RE = re.compile(r"^\s*(\d+)(?:@(\d+))?\s*$")
@@ -40,16 +42,16 @@ def parse_hls_byterange(value: str, previous_end: int | None) -> ByteRange:
     """
     match = _HLS_BYTE_RANGE_RE.match(value)
     if not match:
-        raise ValueError(f"Некорректный BYTERANGE: {value!r}")
+        raise ValueError(tr("range_bad_byterange", value=value))
     length = int(match.group(1))
     if match.group(2) is not None:
         start = int(match.group(2))
     elif previous_end is not None:
         start = previous_end
     else:
-        raise ValueError("BYTERANGE без offset и без предыдущего диапазона в том же файле")
+        raise ValueError(tr("range_no_offset"))
     if length <= 0:
-        raise ValueError(f"Длина BYTERANGE должна быть положительной: {value!r}")
+        raise ValueError(tr("range_bad_length", value=value))
     return ByteRange(start=start, length=length)
 
 
