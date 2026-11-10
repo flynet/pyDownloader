@@ -122,6 +122,25 @@ def test_build_segments_without_duration_or_end_number():
     assert build_segments("seg$Number$.m4s", start_number=1) == []
 
 
+def test_init_template_expands_representation_id():
+    """DASH-IF live profile: the init URL also carries $RepresentationID$."""
+    text = (
+        '<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" '
+        'mediaPresentationDuration="PT8S"><Period>'
+        '<AdaptationSet contentType="video" mimeType="video/mp4">'
+        '<SegmentTemplate duration="120" timescale="30" startNumber="1" '
+        'media="$RepresentationID$/$RepresentationID$_$Number$.m4v" '
+        'initialization="$RepresentationID$/$RepresentationID$_0.m4v"/>'
+        '<Representation id="bbb_1080" codecs="avc1.640028" width="1920" height="1080" '
+        'bandwidth="9914554"/></AdaptationSet></Period></MPD>'
+    )
+    mpd = parse_mpd(text, MPD_URL)
+    video = mpd.periods[0].videos()[0]
+    assert video.init is not None
+    assert video.init.url == "https://cdn.example.com/dash/bbb_1080/bbb_1080_0.m4v"
+    assert video.segments[0].url == "https://cdn.example.com/dash/bbb_1080/bbb_1080_1.m4v"
+
+
 def test_invalid_xml(read):
     with pytest.raises(ManifestParseError):
         parse_mpd("<not-xml", MPD_URL)
