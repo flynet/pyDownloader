@@ -3,7 +3,7 @@
 Формат — [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/),
 версионирование — [SemVer](https://semver.org/lang/ru/). Релиз = тег `vX.Y.Z` на `main`.
 
-## [Unreleased]
+## [0.1.0] - 2026-11-10
 
 ### Added
 - Парсер HLS: master/media, `EXT-X-MAP`, `EXT-X-BYTERANGE`, `EXT-X-KEY` (AES-128),
@@ -27,4 +27,5 @@
   `pydownloader.spec`, установщик Inno Setup 6 (`installer/pydownloader.iss`),
   `release.yml` с публикацией установщика и release notes из CHANGELOG.
 
-[Unreleased]: https://github.com/flynet/pyDownloader/compare/v0.0.0...HEAD
+[Unreleased]: https://github.com/flynet/pyDownloader/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/flynet/pyDownloader/releases/tag/v0.1.0
