@@ -1,7 +1,9 @@
 ; Inno Setup 6 script of PyDownloader (spec 7.3).
 ; build.ps1 passes the version: iscc /DProductVersion=1.2.3 installer\pydownloader.iss
 
+#if !defined(ProductVersion)
 #define ProductVersion "0.0.0-dev"
+#endif
 ; build.ps1 passes the four-part numeric version for the file properties.
 #if !defined(VersionTuple)
 #define VersionTuple "0.0.0.0"
