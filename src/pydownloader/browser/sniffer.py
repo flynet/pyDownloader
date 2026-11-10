@@ -242,7 +242,12 @@ class SnifferThread(QThread):
             self.registry.note_response(event)
         for event in events:
             outcomes = process_event(
-                event, self.registry, self._fetch, self.quality, self.probe_height
+                event,
+                self.registry,
+                self._fetch,
+                self.quality,
+                self.probe_height,
+                body=event.body,
             )
             for outcome in outcomes:
                 self._report(outcome)
