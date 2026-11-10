@@ -1,10 +1,10 @@
 """Application start: pick the folder, open the window and the browser (spec 3.1).
 
 ``main`` is the entry point of ``PyDownloader.exe`` and of ``python -m
-pydownloader``. The order follows the spec: the folder dialog first (cancel
-ends the program), then the window, then the browser in its own thread.
-Chromium is downloaded on the first request (spec 7.2), its progress goes to
-the console.
+pydownloader``. The folder dialog is shown on the first start (cancel ends the
+program); later starts use the folder saved in the settings. Then the window is
+opened and the browser starts in its own thread. Chromium is downloaded on the
+first request (spec 7.2), its progress goes to the console.
 """
 
 from __future__ import annotations
@@ -165,6 +165,28 @@ def _after_install(
     launch_sniffer(window, settings, paths, browser)
 
 
+def resolve_download_dir(settings: Settings) -> Path | None:
+    """Folder for the videos: the saved one, or the dialog on the first start.
+
+    The dialog appears only when the settings have no usable folder (the first
+    run, or a saved path on a removed drive). Later starts take the saved path
+    as is and create it when it was deleted. ``None`` means the user cancelled
+    the first-start dialog.
+    """
+    if settings.download_dir:
+        saved = Path(settings.download_dir)
+        try:
+            saved.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass  # the folder is gone (a removed drive, a file in the way): ask again
+        else:
+            return saved
+    start = Path(settings.download_dir) if settings.download_dir else download_dir_default()
+    if not start.is_dir():
+        start = start.parent if start.parent.is_dir() else download_dir_default()
+    return pick_download_dir(start)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     app = QApplication(args)
@@ -172,8 +194,7 @@ def main(argv: list[str] | None = None) -> int:
     app.setApplicationDisplayName(APP_NAME)
     paths = default_paths()
     settings = load_settings(paths.settings_file)
-    start = Path(settings.download_dir) if settings.download_dir else download_dir_default()
-    chosen = pick_download_dir(start)
+    chosen = resolve_download_dir(settings)
     if chosen is None:
         return 0
     settings.download_dir = str(chosen)
