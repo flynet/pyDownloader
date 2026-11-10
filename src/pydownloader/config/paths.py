@@ -1,10 +1,14 @@
 """Where the installed application is allowed to write.
 
-Settings go to ``%APPDATA%/PyDownloader``; logs and the downloaded Chromium go
-to ``%LOCALAPPDATA%/PyDownloader``. The browser profile lives in the program
-folder (``<app>/profile``) so that cookies and sessions are easy to find and
-survive updates; when the program folder is not writable (a ``Program Files``
-install without administrator rights), the profile falls back to LocalAppData.
+Everything the program produces lives in the program folder (``<app>``) so that
+removing the installation removes the data: ``<app>/logs``,
+``<app>/browsers`` (the Chromium downloaded by Playwright),
+``<app>/extensions`` (the unpacked ad blocker) and ``<app>/profile`` (cookies,
+sessions). Settings stay in ``%APPDATA%/PyDownloader`` — they survive a
+reinstall. When the program folder is not writable (a ``Program Files`` install
+without administrator rights), all of it falls back to
+``%LOCALAPPDATA%/PyDownloader``. Chromium downloaded by an older version is
+found in LocalAppData and reused, so nothing is downloaded twice.
 """
 
 from __future__ import annotations
@@ -52,6 +56,8 @@ class Paths:
     data_dir: Path
     browsers_dir: Path
     profile_dir: Path
+    #: Where an older version downloaded Chromium (``%LOCALAPPDATA%``), reused if found.
+    legacy_browsers_dir: Path | None = None
 
 
 def _writable(folder: Path) -> bool:
@@ -63,6 +69,24 @@ def _writable(folder: Path) -> bool:
     except OSError:
         return False
     return True
+
+
+def _data_root(app_dir: Path | None, local: Path) -> Path:
+    """Folder for the data the program writes: the program folder when writable.
+
+    Logs, the downloaded Chromium and the unpacked ad blocker live there, so
+    deleting the installation deletes them with it.
+    """
+    if app_dir is None:
+        return local
+    if not _writable(app_dir):
+        logger.warning(
+            "Папка программы %s недоступна для записи, данные остаются в %s",
+            app_dir,
+            local,
+        )
+        return local
+    return app_dir
 
 
 def _migrate_profile(old: Path, new: Path) -> bool:
@@ -117,19 +141,24 @@ def default_paths(
 ) -> Paths:
     """Build the standard layout.
 
+    Logs, Chromium and the unpacked ad blocker go to the program folder
+    (``app_dir``) when it is writable, to LocalAppData otherwise.
     ``profile_in_downloads`` moves the browser profile into ``<downloads>/.profile``
-    (the alternative offered in the settings). Otherwise the profile is kept in
-    ``<app_dir>/profile`` when ``app_dir`` is given and writable, and in
-    LocalAppData as the last resort.
+    (the alternative offered in the settings); otherwise the profile is kept in
+    ``<app_dir>/profile`` and in LocalAppData as the last resort.
     """
     local = _local_app_data_root()
+    root = _data_root(app_dir, local)
     return Paths(
         settings_file=_app_data_root() / "settings.json",
-        log_dir=local / "logs",
-        log_file=local / "logs" / "app.log",
-        data_dir=local,
-        browsers_dir=local / "browsers",
-        profile_dir=_profile_dir(local, profile_in_downloads, downloads_dir, app_dir),
+        log_dir=root / "logs",
+        log_file=root / "logs" / "app.log",
+        data_dir=root,
+        browsers_dir=root / "browsers",
+        profile_dir=_profile_dir(
+            local, profile_in_downloads, downloads_dir, root if app_dir is not None else None
+        ),
+        legacy_browsers_dir=local / "browsers",
     )
 
 

@@ -28,13 +28,13 @@ Windows-приложение на Python, которое устанавлива�
 | Язык | Python 3.12 (64-bit), менеджер зависимостей `uv` или `pip` + `requirements.txt`, конфиг проекта `pyproject.toml` |
 | Интерфейс | **PySide6 (Qt 6)** с современной тёмной и светлой темой (следует системной), скруглённые карточки, единый QSS-стиль. Допустимая альтернатива: `PySide6-Fluent-Widgets`, если агент сочтёт её надёжной. Без Tkinter |
 | Перехват сети | **Playwright for Python** (`playwright`), перехват на уровне `context` (`request` / `response`), чтобы видеть все вкладки и popup |
-| Браузер | Порядок попыток: `channel="chrome"` → `channel="msedge"` → Chromium от Playwright. Режим headed, persistent context с профилем в `%LOCALAPPDATA%\HLSGrabber\profile` или `<папка загрузок>\.profile` (выбор в настройках, по умолчанию первый вариант) |
+| Браузер | Порядок попыток: `channel="chrome"` → `channel="msedge"` → Chromium от Playwright. Режим headed, persistent context с профилем в `<папка установки>\profile` или `<папка загрузок>\.profile` (выбор в настройках, по умолчанию первый вариант) |
 | HTTP | `httpx` (с поддержкой HTTP/2 и потоковой загрузки) |
 | Шифрование | `cryptography` (AES-128-CBC для HLS) |
 | HLS | Собственный парсер (допустимо использовать библиотеку `m3u8`, если покрывает EXT-X-MAP, BYTERANGE, KEY) |
 | DASH | `xml.etree.ElementTree` или `lxml` |
 | FFmpeg | Бинарник `ffmpeg.exe` кладётся **внутрь установленного приложения** (`{app}\bin\ffmpeg.exe`). Источник: пакет `imageio-ffmpeg` (бинарник берётся при сборке) либо статическая сборка (gyan.dev / BtbN), выбор за агентом. В `NOTICE` указывается лицензия сборки. Запуск через `subprocess` без консольного окна (`CREATE_NO_WINDOW`) |
-| Логи | стандартный `logging`: файл `%LOCALAPPDATA%\HLSGrabber\logs\app.log` (ротация) и `QtLogHandler`, который выводит записи в консоль окна |
+| Логи | стандартный `logging`: файл `<папка установки>\logs\app.log` (`%LOCALAPPDATA%\HLSGrabber\logs\app.log`, если папка установки недоступна для записи; ротация) и `QtLogHandler`, который выводит записи в консоль окна |
 | Тесты | `pytest`, `pytest-qt` для базовых проверок GUI |
 | Качество кода | `ruff`, `mypy` (мягкий режим), `pre-commit` |
 | Упаковка | **PyInstaller** в режиме `--onedir` (не `--onefile`: быстрее старт, меньше ложных срабатываний антивирусов), `--windowed`, иконка `.ico`, метаданные версии |
@@ -183,7 +183,7 @@ Windows-приложение на Python, которое устанавлива�
 
 ### 7.2. Браузер Playwright (запасной вариант)
 - Основной путь: установленные Chrome или Edge, ничего скачивать не нужно.
-- Если их нет, при первом запуске программа предлагает скачать Chromium (диалог с согласием), запускает установку драйвера Playwright с `PLAYWRIGHT_BROWSERS_PATH=%LOCALAPPDATA%\HLSGrabber\browsers` и показывает прогресс в консоли. Chromium не включается в установщик, чтобы не раздувать его.
+- Если их нет, при первом запуске программа предлагает скачать Chromium (диалог с согласием), запускает установку драйвера Playwright с `PLAYWRIGHT_BROWSERS_PATH=<папка установки>\browsers` (`%LOCALAPPDATA%\HLSGrabber\browsers`, когда папка установки недоступна для записи) и показывает прогресс в консоли. Chromium не включается в установщик, чтобы не раздувать его. Chromium прежней версии, лежащий в `%LOCALAPPDATA%\HLSGrabber\browsers`, переиспользуется: повторно он не скачивается.
 - Предупреждение в консоль: Chromium от Playwright может не проигрывать H.264/AAC на части сайтов.
 
 ### 7.3. Установщик Inno Setup 6 (`installer/hlsgrabber.iss`)
@@ -192,16 +192,22 @@ Windows-приложение на Python, которое устанавлива�
 - Установка по умолчанию в `{autopf}\HLS Grabber`. Режим `PrivilegesRequiredOverridesAllowed=dialog` (пользователь может выбрать установку для себя без прав администратора или для всех).
 - Файлы: содержимое папки PyInstaller `dist\HLSGrabber\*` с `recursesubdirs`.
 - Ярлыки: меню «Пуск» и опциональный ярлык на рабочем столе (задача `desktopicon`).
-- Деинсталлятор: корректно удаляет приложение; пользовательские данные (`%APPDATA%`, `%LOCALAPPDATA%`) удаляются только если пользователь отметил соответствующий пункт в диалоге удаления.
+- Деинсталлятор: корректно удаляет приложение вместе с данными в папке установки (`profile`, `browsers`, `extensions`, `logs`); пользовательские данные (`%APPDATA%`, `%LOCALAPPDATA%`) удаляются только если пользователь подтвердил удаление в диалоге.
 - Современный вид мастера: `WizardStyle=modern`, свои изображения `WizardImageFile` и `WizardSmallImageFile`, русская и английская локализации (`Languages`).
 - Проверка запущенного приложения: `CloseApplications=yes`, `RestartApplications=no`, чтобы установщик корректно закрывал программу при обновлении.
 - Тихие ключи для автообновления: `/SILENT` или `/VERYSILENT`, `/SUPPRESSMSGBOXES`, `/CLOSEAPPLICATIONS`. После установки опция «Запустить HLS Grabber».
 - Подпись кода (`signtool`) предусмотреть как необязательный шаг в скрипте сборки (чтобы снизить предупреждения SmartScreen), без подписи установщик тоже должен собираться.
 
 ### 7.4. Расположение данных
-- Приложение установлено в `Program Files` и **не пишет** в свою папку.
-- Настройки: `%APPDATA%\HLSGrabber\settings.json`.
-- Логи, профиль браузера, Chromium: `%LOCALAPPDATA%\HLSGrabber\`.
+- Всё, что создаёт программа, живёт в папке установки: `{app}\profile` (профиль
+  браузера), `{app}\browsers` (Chromium), `{app}\extensions` (распакованный
+  блокировщик), `{app}\logs` (логи). Удаление папки установки удаляет и эти данные.
+- Настройки: `%APPDATA%\HLSGrabber\settings.json` — переживают переустановку.
+- Когда папка установки недоступна для записи (`Program Files` без прав
+  администратора), все перечисленные папки создаются в
+  `%LOCALAPPDATA%\HLSGrabber`.
+- Chromium, скачанный прежней версией в `%LOCALAPPDATA%\HLSGrabber\browsers`,
+  находится и переиспользуется: повторного скачивания нет.
 
 ---
 

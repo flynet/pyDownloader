@@ -127,6 +127,7 @@ def create_window(app: QApplication, settings: Settings, paths: Paths) -> MainWi
     setup_logging(paths.log_file, bridge.line.emit)
     window.logger.info(f"PyDownloader {VERSION}, папка загрузок: {settings.download_dir}")
     window.logger.info(f"Лог-файл: {paths.log_file}")
+    window.logger.info(f"Данные программы: {paths.data_dir}")
     window.logger.info(f"Профиль браузера: {paths.profile_dir}")
     window.logger.info(f"FFmpeg: {ffmpeg.path}")
     return window
@@ -144,7 +145,10 @@ def start_browser(window: MainWindow, settings: Settings, paths: Paths) -> None:
     if extension is not None:
         window.log_info(f"Блокировщик рекламы: {extension}")
     offered = False
-    if extension is not None and chromium_executable(paths.browsers_dir) is None:
+    if (
+        extension is not None
+        and chromium_executable(paths.browsers_dir, paths.legacy_browsers_dir) is None
+    ):
         offered = True
         if _ask_install(window, INSTALL_QUESTION_EXTENSION):
             _start_install(window, settings, paths)
@@ -153,7 +157,9 @@ def start_browser(window: MainWindow, settings: Settings, paths: Paths) -> None:
         window.log_warning(EXTENSION_SKIPPED)
     try:
         browser = resolve_browser(
-            paths.browsers_dir, prefer_chromium=extension is not None
+            paths.browsers_dir,
+            prefer_chromium=extension is not None,
+            legacy_dir=paths.legacy_browsers_dir,
         )
     except NoBrowserError as exc:
         window.log_warning(str(exc))
@@ -210,7 +216,7 @@ def _after_install(
         window.log_error(message)
         # The download failed: use Chrome/Edge without the blocker when present.
         try:
-            browser = resolve_browser(paths.browsers_dir)
+            browser = resolve_browser(paths.browsers_dir, legacy_dir=paths.legacy_browsers_dir)
         except NoBrowserError:
             return
         launch_sniffer(window, settings, paths, browser)
