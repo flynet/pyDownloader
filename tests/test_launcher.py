@@ -68,6 +68,20 @@ def test_chromium_of_playwright_is_the_last_option(tmp_path: Path):
     assert chromium_executable(tmp_path) == executable
 
 
+def test_chromium_of_an_older_install_is_found_in_the_legacy_folder(tmp_path: Path):
+    legacy = tmp_path / "local"
+    old = legacy / "chromium-1248" / "chrome-win64" / "chrome.exe"
+    old.parent.mkdir(parents=True)
+    old.write_bytes(b"MZ")
+    primary = tmp_path / "app-browsers"
+    assert chromium_executable(primary, legacy) == old
+    # Both present: the folder of the current install wins, nothing is redownloaded.
+    new = primary / "chromium-1254" / "chrome-win64" / "chrome.exe"
+    new.parent.mkdir(parents=True)
+    new.write_bytes(b"MZ")
+    assert chromium_executable(primary, legacy) == new
+
+
 def test_no_browser_raises(tmp_path: Path):
     with pytest.raises(NoBrowserError):
         resolve_browser(tmp_path, [("chrome", str(tmp_path / "none.exe"))])

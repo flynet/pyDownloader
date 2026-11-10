@@ -79,15 +79,16 @@ def installed_browsers(
     return found
 
 
-def chromium_executable(browsers_dir: Path) -> Path | None:
+def chromium_executable(browsers_dir: Path, legacy_dir: Path | None = None) -> Path | None:
     """Path of the Playwright Chromium downloaded earlier, ``None`` if absent.
 
     ``PLAYWRIGHT_BROWSERS_PATH`` lays files out as
     ``chromium-<revision>/chrome-win64/chrome.exe`` (``chrome-win`` and
-    ``chrome.exe`` directly in older revisions).
+    ``chrome.exe`` directly in older revisions). The folders are searched in
+    order: the program folder first, then ``legacy_dir`` where an older version
+    put the download, so a Chromium of a previous install is reused.
     """
-    if not browsers_dir.is_dir():
-        return None
+    folders = [browsers_dir] if legacy_dir is None else [browsers_dir, legacy_dir]
     patterns = (
         "chromium-*/chrome-win64/chrome.exe",
         "chromium-*/chrome-win/chrome.exe",
@@ -95,9 +96,10 @@ def chromium_executable(browsers_dir: Path) -> Path | None:
         "chromium*/chrome.exe",
     )
     for pattern in patterns:
-        for candidate in sorted(browsers_dir.glob(pattern)):
-            if candidate.is_file():
-                return candidate
+        for folder in folders:
+            for candidate in sorted(folder.glob(pattern)):
+                if candidate.is_file():
+                    return candidate
     return None
 
 
@@ -112,16 +114,18 @@ def resolve_browser(
     candidates: list[tuple[BrowserKind, str]] | None = None,
     exists: Callable[[str], bool] = os.path.isfile,
     prefer_chromium: bool = False,
+    legacy_dir: Path | None = None,
 ) -> BrowserChoice:
     """Chrome → Edge → the Chromium installed in ``browsers_dir``.
 
     With ``prefer_chromium`` the bundled Chromium wins over installed browsers:
     it is the only one that loads the ad blocker from the command line.
+    ``legacy_dir`` is searched for a Chromium downloaded by an older version.
 
     Raises :class:`NoBrowserError` when nothing is available, so the caller can
     offer the Chromium download (spec 7.2).
     """
-    chromium = chromium_executable(browsers_dir)
+    chromium = chromium_executable(browsers_dir, legacy_dir)
     if chromium is not None and prefer_chromium:
         return _chromium_choice(chromium)
     installed = installed_browsers(candidates, exists)

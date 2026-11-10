@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -96,7 +97,7 @@ def test_extension_without_chromium_offers_the_download(tmp_path: Path, monkeypa
     window = make_window()
     started: list[str] = []
     monkeypatch.setattr(app_mod, "extension_dir", lambda app, cache: tmp_path / "uBlock")
-    monkeypatch.setattr(app_mod, "chromium_executable", lambda folder: None)
+    monkeypatch.setattr(app_mod, "chromium_executable", lambda folder, legacy=None: None)
     monkeypatch.setattr(app_mod, "_ask_install", lambda window, question: True)
     monkeypatch.setattr(app_mod, "_start_install", lambda *args: started.append("install"))
 
@@ -108,10 +109,12 @@ def test_declining_the_extension_falls_back_to_chrome(tmp_path: Path, monkeypatc
     window = make_window()
     launched: list[object] = []
     monkeypatch.setattr(app_mod, "extension_dir", lambda app, cache: tmp_path / "uBlock")
-    monkeypatch.setattr(app_mod, "chromium_executable", lambda folder: None)
+    monkeypatch.setattr(app_mod, "chromium_executable", lambda folder, legacy=None: None)
     monkeypatch.setattr(app_mod, "_ask_install", lambda window, question: False)
     monkeypatch.setattr(
-        app_mod, "resolve_browser", lambda browsers_dir, prefer_chromium=False: CHROME
+        app_mod,
+        "resolve_browser",
+        lambda browsers_dir, prefer_chromium=False, legacy_dir=None: CHROME,
     )
     monkeypatch.setattr(app_mod, "launch_sniffer", record_launch(launched))
 
@@ -125,11 +128,42 @@ def test_extension_is_passed_to_the_bundled_chromium(tmp_path: Path, monkeypatch
     extension = tmp_path / "uBlock"
     launched: list[object] = []
     monkeypatch.setattr(app_mod, "extension_dir", lambda app, cache: extension)
-    monkeypatch.setattr(app_mod, "chromium_executable", lambda folder: Path("chrome.exe"))
     monkeypatch.setattr(
-        app_mod, "resolve_browser", lambda browsers_dir, prefer_chromium=False: CHROMIUM
+        app_mod, "chromium_executable", lambda folder, legacy=None: Path("chrome.exe")
+    )
+    monkeypatch.setattr(
+        app_mod,
+        "resolve_browser",
+        lambda browsers_dir, prefer_chromium=False, legacy_dir=None: CHROMIUM,
     )
     monkeypatch.setattr(app_mod, "launch_sniffer", record_launch(launched))
 
     app_mod.start_browser(window, Settings(), make_paths(tmp_path))
     assert launched == [extension]
+
+
+def test_chromium_of_an_older_version_is_used_without_a_new_download(
+    tmp_path: Path, monkeypatch
+):
+    window = make_window()
+    extension = tmp_path / "uBlock"
+    legacy = tmp_path / "local-browsers"
+    executable = legacy / "chromium-1248" / "chrome-win64" / "chrome.exe"
+    executable.parent.mkdir(parents=True)
+    executable.write_bytes(b"MZ")
+    started: list[str] = []
+    launched: list[object] = []
+    monkeypatch.setattr(app_mod, "extension_dir", lambda app, cache: extension)
+    monkeypatch.setattr(app_mod, "_ask_install", lambda window, question: started.append("install"))
+    monkeypatch.setattr(
+        app_mod,
+        "launch_sniffer",
+        lambda window, settings, paths, browser, ext=None: launched.append((browser, ext)),
+    )
+
+    paths = replace(make_paths(tmp_path), legacy_browsers_dir=legacy)
+    app_mod.start_browser(window, Settings(), paths)
+
+    assert started == []
+    assert launched[0][0].kind == "chromium"
+    assert launched[0][1] == extension

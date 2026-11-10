@@ -66,6 +66,15 @@ def test_chromium_installed_check(tmp_path: Path):
     assert chromium_installed(browsers)
 
 
+def test_chromium_of_an_older_install_counts_as_installed(tmp_path: Path):
+    browsers = tmp_path / "app-browsers"
+    legacy = tmp_path / "local-browsers"
+    old = legacy / "chromium-1248" / "chrome-win64" / "chrome.exe"
+    old.parent.mkdir(parents=True)
+    old.write_bytes(b"MZ")
+    assert chromium_installed(browsers, legacy)
+
+
 def test_install_runs_playwright_driver(tmp_path, fake_popen):
     captured = fake_popen(returncode=0)
     collected: list[str] = []

@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from pydownloader.browser.launcher import chromium_executable
 from pydownloader.config import paths as paths_mod
 from pydownloader.config.paths import application_dir, default_paths
 
@@ -25,7 +26,10 @@ def test_profile_is_kept_next_to_the_program(isolated_appdata: Path):
     paths = default_paths(app_dir=app)
     assert paths.profile_dir == app / "profile"
     assert paths.settings_file == isolated_appdata / "roaming" / "PyDownloader" / "settings.json"
-    assert paths.log_file == isolated_appdata / "local" / "PyDownloader" / "logs" / "app.log"
+    assert paths.log_file == app / "logs" / "app.log"
+    assert paths.data_dir == app
+    assert paths.browsers_dir == app / "browsers"
+    assert paths.legacy_browsers_dir == isolated_appdata / "local" / "PyDownloader" / "browsers"
 
 
 def test_profile_in_downloads_wins_over_the_app_folder(isolated_appdata: Path):
@@ -44,6 +48,31 @@ def test_profile_falls_back_to_local_appdata_when_the_app_folder_is_read_only(
     monkeypatch.setattr(paths_mod, "_writable", lambda folder: False)
     paths = default_paths(app_dir=app)
     assert paths.profile_dir == isolated_appdata / "local" / "PyDownloader" / "profile"
+
+
+def test_logs_and_browsers_fall_back_when_the_app_folder_is_read_only(
+    isolated_appdata: Path, monkeypatch
+):
+    app = isolated_appdata / "app"
+    app.mkdir()
+    local = isolated_appdata / "local" / "PyDownloader"
+    monkeypatch.setattr(paths_mod, "_writable", lambda folder: False)
+    paths = default_paths(app_dir=app)
+    assert paths.data_dir == local
+    assert paths.log_file == local / "logs" / "app.log"
+    assert paths.browsers_dir == local / "browsers"
+
+
+def test_chromium_of_an_older_version_is_reused(isolated_appdata: Path):
+    app = isolated_appdata / "app"
+    local = isolated_appdata / "local" / "PyDownloader"
+    old = local / "browsers" / "chromium-1248" / "chrome-win64" / "chrome.exe"
+    old.parent.mkdir(parents=True)
+    old.write_bytes(b"MZ")
+
+    paths = default_paths(app_dir=app)
+    assert not (paths.browsers_dir / "chromium-1248").exists()
+    assert chromium_executable(paths.browsers_dir, paths.legacy_browsers_dir) == old
 
 
 def test_without_app_dir_the_profile_stays_in_local_appdata(isolated_appdata: Path):

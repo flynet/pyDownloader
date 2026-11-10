@@ -2,9 +2,12 @@
 
 Chromium is not shipped in the installer. When neither Chrome nor Edge is
 installed, the app asks the user and runs the Playwright driver with
-``PLAYWRIGHT_BROWSERS_PATH=%LOCALAPPDATA%/PyDownloader/browsers``. The same
-driver is used in the frozen app, because ``collect_all("playwright")`` puts
-``node.exe`` and ``package/cli.js`` into the build.
+``PLAYWRIGHT_BROWSERS_PATH=<папка программы>/browsers`` (LocalAppData when the
+program folder is not writable), so the download is removed together with the
+installation. A Chromium of an older version is found in LocalAppData and
+reused. The same driver is used in the frozen app, because
+``collect_all("playwright")`` puts ``node.exe`` and ``package/cli.js`` into the
+build.
 """
 
 from __future__ import annotations
@@ -47,9 +50,9 @@ def install_env(browsers_dir: Path) -> dict[str, str]:
     return env
 
 
-def chromium_installed(browsers_dir: Path) -> bool:
-    """Whether Chromium was downloaded to ``browsers_dir`` earlier."""
-    return chromium_executable(browsers_dir) is not None
+def chromium_installed(browsers_dir: Path, legacy_dir: Path | None = None) -> bool:
+    """Whether Chromium was downloaded to ``browsers_dir`` (or by an older version)."""
+    return chromium_executable(browsers_dir, legacy_dir) is not None
 
 
 def install_chromium(browsers_dir: Path, on_line: Callable[[str], None]) -> InstallResult:
