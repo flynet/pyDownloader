@@ -17,6 +17,8 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+from pydownloader.i18n import tr
+
 logger = logging.getLogger("pydownloader.extensions")
 
 #: Names searched next to the executable, in the order of preference.
@@ -52,7 +54,7 @@ def find_crx(folder: Path) -> Path | None:
 def _zip_start(data: bytes) -> int:
     """Offset of the ZIP payload after the CRX header."""
     if len(data) < 16 or data[:4] != CRX_MAGIC:
-        raise ExtensionError("файл не является расширением Chromium (.crx)")
+        raise ExtensionError(tr("ext_not_crx"))
     version = int.from_bytes(data[4:8], "little")
     if version == 2:
         # Cr24 v2: public key length, signature length, key, signature, ZIP.
@@ -63,9 +65,9 @@ def _zip_start(data: bytes) -> int:
         header_length = int.from_bytes(data[8:12], "little")
         start = 12 + header_length
     else:
-        raise ExtensionError(f"неизвестная версия CRX: {version}")
+        raise ExtensionError(tr("ext_unknown_version", value=version))
     if start >= len(data):
-        raise ExtensionError("повреждённый заголовок CRX")
+        raise ExtensionError(tr("ext_bad_header"))
     return start
 
 
@@ -84,12 +86,12 @@ def unpack_crx(crx: Path, target: Path) -> Path:
             for member in archive.infolist():
                 destination = (target / member.filename).resolve()
                 if not destination.is_relative_to(root):
-                    raise ExtensionError(f"недопустимый путь в архиве: {member.filename}")
+                    raise ExtensionError(tr("ext_bad_path", path=member.filename))
             archive.extractall(target)
     except zipfile.BadZipFile as exc:
-        raise ExtensionError("расширение повреждено: ZIP-архив не читается") from exc
+        raise ExtensionError(tr("ext_bad_zip")) from exc
     if not (target / "manifest.json").is_file():
-        raise ExtensionError("в архиве нет manifest.json")
+        raise ExtensionError(tr("ext_no_manifest"))
     return target
 
 
@@ -116,7 +118,7 @@ def installed_extension(crx: Path, cache_dir: Path) -> Path:
     finally:
         if staging.exists():
             shutil.rmtree(staging, ignore_errors=True)
-    logger.info("Расширение распаковано: %s", target)
+    logger.info(tr("ext_unpacked", path=target))
     return target
 
 
@@ -125,12 +127,12 @@ def extension_dir(app_dir: Path, cache_dir: Path) -> Path | None:
     try:
         crx = find_crx(app_dir)
     except OSError as exc:
-        logger.warning("Не удалось прочитать папку программы %s: %s", app_dir, exc)
+        logger.warning(tr("ext_dir_unreadable", path=app_dir, error=exc))
         return None
     if crx is None:
         return None
     try:
         return installed_extension(crx, cache_dir)
     except (OSError, ExtensionError) as exc:
-        logger.warning("Расширение %s не загружено: %s", crx, exc)
+        logger.warning(tr("ext_not_loaded", path=crx, error=exc))
         return None

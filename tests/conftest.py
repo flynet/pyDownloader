@@ -6,11 +6,19 @@ from pathlib import Path
 
 import pytest
 
+from pydownloader.i18n import set_language
+
 DATA_DIR = Path(__file__).parent / "data"
 
 # Final URL of a manifest after redirects: relative links are resolved against it.
 HLS_URL = "https://cdn.example.com/video/master.m3u8"
 MPD_URL = "https://cdn.example.com/dash/manifest.mpd"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def russian_language():
+    """The suite checks the Russian texts: it is written in Russian (spec 4.3)."""
+    set_language("ru")
 
 
 @pytest.fixture

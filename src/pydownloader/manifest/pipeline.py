@@ -5,7 +5,9 @@ The manifest body of the intercepted response is used when the sniffer captured
 it (a signed CDN rejects a second request for the same path); otherwise it is
 fetched with the headers and cookies of the browser (spec 6.1).
 
-Every outcome carries the console message for the UI console panel.
+Every outcome carries the console message for the UI console panel; the text is
+a key of the catalog (``locales/manifest_*.py``), so the console follows the
+language of the program.
 """
 
 from __future__ import annotations
@@ -21,8 +23,9 @@ from pydownloader.dash.parser import ManifestParseError, parse_mpd
 from pydownloader.download.http import capture_headers
 from pydownloader.hls.models import Playlist
 from pydownloader.hls.parser import PlaylistParseError, parse_playlist
+from pydownloader.i18n import tr
 from pydownloader.manifest.detector import Candidate, classify, mp4_size_skip
-from pydownloader.manifest.drm import DRM_MESSAGE, detect_dash, detect_hls
+from pydownloader.manifest.drm import detect_dash, detect_hls
 from pydownloader.manifest.quality import Choice, QualityFilter, pick_audio
 from pydownloader.manifest.registry import SourceEntry, SourceRegistry
 
@@ -88,7 +91,8 @@ def process_event(
     if candidate is None:
         reason = mp4_size_skip(event.url, event.content_type, size, registry.min_mp4_size)
         if reason:
-            return [Outcome("skip-size", None, f"{reason}: {event.url}")]
+            message = tr("mf_reason_with_url", reason=reason, url=event.url)
+            return [Outcome("skip-size", None, message)]
         return []
     if candidate.kind == "mp4":
         return _process_mp4(candidate, registry, quality, probe_height)
@@ -103,11 +107,12 @@ def _process_mp4(
 ) -> list[Outcome]:
     result = registry.add_mp4(candidate)
     if result.reason:
-        action: Action = "fragment" if "фрагмент" in result.reason else "skip-size"
-        return [Outcome(action, None, f"{result.reason}: {candidate.url}")]
+        action: Action = "fragment" if result.fragment else "skip-size"
+        message = tr("mf_reason_with_url", reason=result.reason, url=candidate.url)
+        return [Outcome(action, None, message)]
     if not result.is_new:
         entry = result.entry
-        return [Outcome("duplicate", entry, f"Уже найден, Range-запрос объединён: {entry.url}")]
+        return [Outcome("duplicate", entry, tr("mf_range_merged", url=entry.url))]
     entry = result.entry
     height = probe_height(candidate.url, candidate.headers) if probe_height else None
     entry.height = height
@@ -116,7 +121,8 @@ def _process_mp4(
         registry.remove(entry.normalized)
         return [Outcome("skip-quality", None, decision.message)]
     entry.choice = decision.choice
-    return [Outcome("show", entry, f"Найден MP4 {entry.display_quality()}: {entry.url}")]
+    message = tr("mf_found_mp4", quality=entry.display_quality(), url=entry.url)
+    return [Outcome("show", entry, message)]
 
 
 def _process_manifest(
@@ -129,27 +135,28 @@ def _process_manifest(
     result = registry.add_manifest(candidate)
     if not result.is_new:
         if result.reason:
-            return [Outcome("fragment", result.entry, f"{result.reason}: {candidate.url}")]
-        return [Outcome("duplicate", result.entry, f"Уже найден: {result.entry.url}")]
+            message = tr("mf_reason_with_url", reason=result.reason, url=candidate.url)
+            return [Outcome("fragment", result.entry, message)]
+        return [Outcome("duplicate", result.entry, tr("mf_found_already", url=result.entry.url))]
     entry = result.entry
     text: str | None
     if body is not None:
         text = body
-        logger.debug("Манифест взят из перехваченного ответа: %s", candidate.url)
+        logger.debug(tr("mf_manifest_captured", url=candidate.url))
     else:
         text = fetch(candidate.url, candidate.headers)
     if text is None:
         registry.remove(entry.normalized)
-        return [Outcome("fetch-error", None, f"Не получен манифест: {candidate.url}")]
+        return [Outcome("fetch-error", None, tr("mf_manifest_not_fetched", url=candidate.url))]
     try:
         if candidate.kind == "dash":
             mpd = parse_mpd(text, candidate.url)
         else:
             playlist = parse_playlist(text, candidate.url)
     except (ManifestParseError, PlaylistParseError) as exc:
-        logger.debug("Манифест не разобран (%s): %s", candidate.url, exc)
+        logger.debug(tr("mf_parse_failed_debug", url=candidate.url, error=exc))
         registry.remove(entry.normalized)
-        return [Outcome("parse-error", None, f"Манифест не разобран: {exc}")]
+        return [Outcome("parse-error", None, tr("mf_manifest_not_parsed", error=exc))]
     if candidate.kind == "dash":
         return _dash_outcomes(entry, mpd, registry, quality)
     return _hls_outcomes(entry, playlist, registry, fetch, quality)
@@ -160,11 +167,12 @@ def _dash_outcomes(
 ) -> list[Outcome]:
     if mpd.is_live:
         registry.remove(entry.normalized)
-        return [Outcome("skip-live", None, f"Live-трансляция: пропущен ({entry.url})")]
+        return [Outcome("skip-live", None, tr("mf_live_skipped", url=entry.url))]
     verdict = detect_dash(mpd)
     if verdict.is_drm:
         registry.remove(entry.normalized)
-        return [Outcome("skip-drm", None, f"{DRM_MESSAGE} ({verdict.system})")]
+        message = tr("mf_drm_detected", message=verdict.message, system=verdict.system)
+        return [Outcome("skip-drm", None, message)]
     decision = quality.decide_dash(mpd)
     if not decision.show or decision.choice is None:
         registry.remove(entry.normalized)
@@ -174,7 +182,7 @@ def _dash_outcomes(
     entry.height = choice.height
     entry.duration = mpd.media_presentation_duration
     registry.remember_prefix(entry.url, entry)
-    return [Outcome("show", entry, f"Найден DASH-поток {entry.height}p: {entry.url}")]
+    return [Outcome("show", entry, tr("mf_found_dash", height=entry.height, url=entry.url))]
 
 
 def _audio_url(playlist: Playlist, group: str | None) -> str | None:
@@ -193,26 +201,25 @@ def _hls_outcomes(
     if playlist.kind == "media":
         if playlist.is_live:
             registry.remove(entry.normalized)
-            return [Outcome("skip-live", None, f"Live-трансляция: пропущен ({entry.url})")]
+            return [Outcome("skip-live", None, tr("mf_live_skipped", url=entry.url))]
         verdict = detect_hls(playlist)
         if verdict.is_drm:
             registry.remove(entry.normalized)
-            return [Outcome("skip-drm", None, f"{DRM_MESSAGE} ({verdict.system})")]
+            message = tr("mf_drm_detected", message=verdict.message, system=verdict.system)
+            return [Outcome("skip-drm", None, message)]
         decision = quality.decide_hls(playlist)
         choice = decision.choice
         if choice is None:
             registry.remove(entry.normalized)
-            return [Outcome("parse-error", None, f"Манифест не разобран: {entry.url}")]
+            return [Outcome("parse-error", None, tr("mf_manifest_not_parsed", error=entry.url))]
         entry.choice = choice
         entry.duration = sum(s.duration for s in playlist.segments)
         registry.remember_prefix(entry.url, entry)
-        return [Outcome("show", entry, f"Найден HLS-поток (разрешение неизвестно): {entry.url}")]
+        return [Outcome("show", entry, tr("mf_found_hls_unknown", url=entry.url))]
 
     decision = quality.decide_hls(playlist)
     if not decision.show or decision.choice is None:
-        logger.debug(
-            "Качество не подходит (%s): %s", entry.url, decision.message
-        )
+        logger.debug(tr("mf_quality_debug", url=entry.url, message=decision.message))
         registry.remove(entry.normalized)
         return [Outcome("skip-quality", None, decision.message)]
     choice = decision.choice
@@ -238,12 +245,15 @@ def _hls_outcomes(
     variant_url = entry.recorded_url(choice.url) or choice.url
     audio_url = entry.recorded_url(choice.audio_url) if choice.audio_url else None
     choice = replace(choice, url=variant_url, audio_url=audio_url or choice.audio_url)
+    recorded = tr("mf_yes") if variant_url != choice.url else tr("mf_no")
     logger.debug(
-        "Мастер %s: выбран %sp, вариант %s (записан: %s)",
-        entry.url,
-        choice.height,
-        choice.url,
-        "да" if variant_url != choice.url else "нет",
+        tr(
+            "mf_master_debug",
+            url=entry.url,
+            height=choice.height,
+            variant=choice.url,
+            recorded=recorded,
+        )
     )
     variant_text = fetch(variant_url, entry.headers)
     if variant_text is None:
@@ -251,45 +261,36 @@ def _hls_outcomes(
         # (phncdn) rejects the URL inherited from the master, while the exact
         # signed URL of the variant appears in browser traffic when the player
         # requests it. The worker prefers that recorded URL.
-        logger.warning(
-            "Вариант %sp не получен сейчас, будет запрошен при скачивании: %s",
-            choice.height,
-            choice.url,
-        )
+        logger.warning(tr("mf_variant_not_fetched", height=choice.height, url=choice.url))
         entry.choice = choice
         entry.height = choice.height
         registry.remember_prefix(choice.url, entry)
         if choice.audio_url:
             registry.remember_prefix(choice.audio_url, entry)
-        return [
-            Outcome(
-                "show",
-                entry,
-                f"Найден HLS-поток {entry.height}p: {entry.url} "
-                "(вариант будет запрошен при скачивании)",
-            )
-        ]
+        message = tr("mf_found_hls_deferred", height=entry.height, url=entry.url)
+        return [Outcome("show", entry, message)]
     try:
         variant = parse_playlist(variant_text, entry.effective_url(choice.url))
     except (ManifestParseError, PlaylistParseError) as exc:
-        logger.debug("Вариант не разобран (%s): %s", choice.url, exc)
+        logger.debug(tr("mf_variant_not_parsed_debug", url=choice.url, error=exc))
         registry.remove(entry.normalized)
-        return [Outcome("parse-error", None, f"Манифест не разобран: {exc}")]
+        return [Outcome("parse-error", None, tr("mf_manifest_not_parsed", error=exc))]
     if variant.kind == "master":
         # A nested master (phncdn serves one per quality): the download plan
         # descends into it, here only the quality/live checks matter.
-        logger.debug("Вариант %s — вложенный мастер-плейлист", choice.url)
+        logger.debug(tr("mf_nested_master_debug", url=choice.url))
     if variant.is_live:
         registry.remove(entry.normalized)
-        return [Outcome("skip-live", None, f"Live-трансляция: пропущен ({choice.url})")]
+        return [Outcome("skip-live", None, tr("mf_live_skipped", url=choice.url))]
     verdict = detect_hls(variant)
     if verdict.is_drm:
         registry.remove(entry.normalized)
-        return [Outcome("skip-drm", None, f"{DRM_MESSAGE} ({verdict.system})")]
+        message = tr("mf_drm_detected", message=verdict.message, system=verdict.system)
+        return [Outcome("skip-drm", None, message)]
     entry.choice = choice
     entry.height = choice.height
     entry.duration = sum(s.duration for s in variant.segments)
     registry.remember_prefix(choice.url, entry)
     if choice.audio_url:
         registry.remember_prefix(choice.audio_url, entry)
-    return [Outcome("show", entry, f"Найден HLS-поток {entry.height}p: {entry.url}")]
+    return [Outcome("show", entry, tr("mf_found_hls", height=entry.height, url=entry.url))]

@@ -24,7 +24,7 @@ from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import QWidget
 
 from pydownloader.browser.events import CookieRequest, ResponseEvent
-from pydownloader.browser.launcher import CHROMIUM_WARNING, BrowserChoice, launch_kwargs
+from pydownloader.browser.launcher import BrowserChoice, launch_kwargs
 from pydownloader.download.http import (
     FetchError,
     capture_headers,
@@ -32,6 +32,7 @@ from pydownloader.download.http import (
     fetch_text,
     merge_cookies,
 )
+from pydownloader.i18n import tr
 from pydownloader.manifest.pipeline import Outcome, ProbeHeight, process_event
 from pydownloader.manifest.quality import Choice, QualityFilter
 from pydownloader.manifest.registry import SourceRegistry
@@ -130,16 +131,18 @@ class SnifferThread(QThread):
                 self._context = context
                 context.on("response", self._on_response)
                 logger.info(
-                    "Браузер: %s, профиль %s, расширение %s",
-                    self.browser.label,
-                    self.profile_dir,
-                    self.extension_dir or "нет",
+                    tr(
+                        "browser_started",
+                        browser=self.browser.label,
+                        profile=self.profile_dir,
+                        extension=self.extension_dir or tr("browser_none"),
+                    )
                 )
-                self.message.emit(f"Браузер запущен: {self.browser.label}")
+                self.message.emit(tr("browser_started_line", browser=self.browser.label))
                 if self.extension_dir is not None:
-                    self.message.emit("Блокировщик рекламы подключён")
+                    self.message.emit(tr("ext_connected"))
                 if self.browser.is_bundled_chromium:
-                    self.message.emit(CHROMIUM_WARNING)
+                    self.message.emit(tr("browser_codec_warning"))
                 pages = context.pages
                 page = pages[0] if pages else context.new_page()
                 if self.start_url:
@@ -147,26 +150,27 @@ class SnifferThread(QThread):
                 while not self._stop:
                     pages = context.pages
                     if not pages:
-                        self.message.emit("Браузер закрыт пользователем")
+                        self.message.emit(tr("browser_closed_by_user"))
                         break
                     page = pages[0]
                     try:
                         if page.is_closed():
-                            self.message.emit("Браузер закрыт пользователем")
+                            self.message.emit(tr("browser_closed_by_user"))
                             break
                         page.wait_for_timeout(PUMP_MS)
                     except Exception as exc:  # a page was closed or crashed
                         if page.is_closed():
-                            self.message.emit("Браузер закрыт пользователем")
+                            self.message.emit(tr("browser_closed_by_user"))
                             break
-                        logger.debug("Страница недоступна: %s", exc)
-                        self.message.emit(f"Страница недоступна: {exc}")
+                        text = tr("browser_page_unavailable", error=exc)
+                        logger.debug(text)
+                        self.message.emit(text)
                         continue
                     self._drain(context)
                     self._capture_youtube(context)
                 context.close()
         except Exception as exc:
-            self.failed.emit(f"Браузер: {exc}")
+            self.failed.emit(tr("browser_failed", error=exc))
         self._context = None
         self.browser_closed.emit()
 
@@ -220,17 +224,22 @@ class SnifferThread(QThread):
                 break
             if isinstance(item, CookieRequest):
                 item.cookies = context.cookies(item.url)
-                logger.debug("Cookies для %s: %d", item.url, len(item.cookies))
+                logger.debug(tr("browser_cookies", url=item.url, count=len(item.cookies)))
                 item.event.set()
                 continue
             events.append(item)
         for event in events:
+            placeholder = tr("browser_placeholder")
             logger.debug(
-                "Ответ %s %s %s байт %s",
-                event.status,
-                event.content_type or "-",
-                event.content_length if event.content_length is not None else "-",
-                event.url,
+                tr(
+                    "browser_response",
+                    status=event.status,
+                    type=event.content_type or placeholder,
+                    length=event.content_length
+                    if event.content_length is not None
+                    else placeholder,
+                    url=event.url,
+                )
             )
             if event.response is not None:
                 if event.status < 400:
@@ -246,7 +255,7 @@ class SnifferThread(QThread):
             page_key = (event.page_url, event.page_title)
             if page_key != self._last_page:
                 self._last_page = page_key
-                logger.debug("Страница: %s — %s", event.page_url, event.page_title)
+                logger.debug(tr("browser_page", url=event.page_url, title=event.page_title))
                 self.page_changed.emit(event.page_url, event.page_title)
             self.registry.note_response(event)
         for event in events:
@@ -262,13 +271,11 @@ class SnifferThread(QThread):
                 self._report(outcome)
         for family in self.registry.synthesize_families():
             logger.info(
-                "Семейство сегментов: %s (%d файлов)",
-                family.url,
-                len(family.recorded),
+                tr("browser_family", url=family.url, count=len(family.recorded))
             )
             self.source_found.emit(family)
             self.message.emit(
-                f"Найдена HLS-группа сегментов ({len(family.recorded)} файлов): {family.url}"
+                tr("browser_hls_group", count=len(family.recorded), url=family.url)
             )
 
     def _capture_youtube(self, context: BrowserContext) -> None:
@@ -330,7 +337,7 @@ class SnifferThread(QThread):
             existing.payload = raw
             existing.height = height
             existing.choice = Choice(kind="mp4", url=page_url, height=height)
-            self.message.emit(f"YouTube: поток обновлён — {existing.title or video_id}")
+            self.message.emit(tr("browser_youtube_updated", title=existing.title or video_id))
             self._yt_last_id = video_id
             self._yt_failed_id = None
             return
@@ -352,8 +359,8 @@ class SnifferThread(QThread):
         self._yt_last_id = video_id
         self._yt_failed_id = None
         if result.is_new:
-            quality = ", ".join(f"{value}p" for value in heights) or "неизвестно"
-            self.message.emit(f"Найден YouTube ({quality}): {entry.title}")
+            quality = ", ".join(f"{value}p" for value in heights) or tr("browser_quality_none")
+            self.message.emit(tr("browser_youtube_found", quality=quality, title=entry.title))
             self.source_found.emit(entry)
 
     def _user_agent(self, page) -> str:
@@ -389,11 +396,13 @@ class SnifferThread(QThread):
             for part in merged.get("Cookie", "").split(";")
             if "=" in part
         )
-        logger.debug("Запрос манифеста %s (cookies: %s)", url, ", ".join(cookie_names) or "-")
+        logger.debug(
+            tr("browser_manifest_request", url=url, cookies=", ".join(cookie_names) or "-")
+        )
         try:
             return fetch_text(url, merged)
         except FetchError as exc:
-            logger.debug("Манифест не получен: %s (%s)", url, exc)
+            logger.debug(tr("browser_manifest_failed", url=url, error=exc))
             self.message.emit(str(exc))
             return None
 

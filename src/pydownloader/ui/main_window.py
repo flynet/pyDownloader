@@ -36,6 +36,7 @@ from pydownloader.config.paths import Paths
 from pydownloader.config.settings import Settings, save_settings
 from pydownloader.download.worker import QueueWorker
 from pydownloader.ffmpeg.locate import Ffmpeg
+from pydownloader.i18n import tr
 from pydownloader.manifest.registry import SourceEntry
 from pydownloader.ui.card import SourceCard
 from pydownloader.ui.console import ConsolePanel
@@ -49,15 +50,6 @@ MIN_HEIGHT = 600
 #: Split sizes of the two sections: about 40% for the cards, 60% for the console.
 SPLIT_TOP = 400
 SPLIT_BOTTOM = 600
-HINT = "Видео пока не найдены. Откройте сайт в браузере и запустите видео."
-
-CLEAR_BUTTON = "Очистить"
-CLEAR_ALL_BUTTON = "Очистить все"
-CLEAR_DOWNLOADED_BUTTON = "Очистить скачанные"
-OPEN_FOLDER_BUTTON = "Открыть папку загрузки"
-OPEN_LOG_BUTTON = "Открыть лог-файл"
-SETTINGS_BUTTON = "⚙ Настройки"
-CLOSE_CONFIRM = "Идёт загрузка. Отменить загрузку и выйти?"
 
 
 class LogBridge(QObject):
@@ -137,7 +129,7 @@ class MainWindow(QMainWindow):
         container = QWidget()
         self.cards_layout = QVBoxLayout(container)
         self.cards_layout.setContentsMargins(8, 8, 8, 8)
-        self.hint_label = QLabel(HINT)
+        self.hint_label = QLabel(tr("window_empty"))
         self.hint_label.setObjectName("cardMeta")
         self.hint_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.cards_layout.addWidget(self.hint_label)
@@ -150,19 +142,17 @@ class MainWindow(QMainWindow):
         self.scroll_area = area
 
         header = QHBoxLayout()
-        header.addWidget(QLabel("Найденные видео"))
+        header.addWidget(QLabel(tr("window_found_videos")))
         header.addStretch(1)
-        self.clear_all_button = QPushButton(CLEAR_ALL_BUTTON)
-        self.clear_all_button.setToolTip("Убрать все найденные видео из списка")
+        self.clear_all_button = QPushButton(tr("window_clear_all"))
+        self.clear_all_button.setToolTip(tr("window_clear_all_tip"))
         self.clear_all_button.clicked.connect(self.clear_all_cards)
         header.addWidget(self.clear_all_button)
-        self.clear_downloaded_button = QPushButton(CLEAR_DOWNLOADED_BUTTON)
-        self.clear_downloaded_button.setToolTip(
-            "Убрать из списка видео, которые уже скачаны и лежат на диске"
-        )
+        self.clear_downloaded_button = QPushButton(tr("window_clear_downloaded"))
+        self.clear_downloaded_button.setToolTip(tr("window_clear_downloaded_tip"))
         self.clear_downloaded_button.clicked.connect(self.clear_downloaded_cards)
         header.addWidget(self.clear_downloaded_button)
-        settings_button = QPushButton(SETTINGS_BUTTON)
+        settings_button = QPushButton(tr("window_settings"))
         settings_button.clicked.connect(self.open_settings)
         header.addWidget(settings_button)
 
@@ -179,11 +169,11 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
 
         row = QHBoxLayout()
-        clear = QPushButton(CLEAR_BUTTON)
+        clear = QPushButton(tr("window_clear"))
         clear.clicked.connect(console.clear_panel)
-        folder = QPushButton(OPEN_FOLDER_BUTTON)
+        folder = QPushButton(tr("window_open_download_folder"))
         folder.clicked.connect(self._open_download_folder)
-        log = QPushButton(OPEN_LOG_BUTTON)
+        log = QPushButton(tr("window_open_log"))
         log.clicked.connect(self._open_log_file)
         row.addWidget(clear)
         row.addWidget(folder)
@@ -260,7 +250,7 @@ class MainWindow(QMainWindow):
         self.cards[entry.id] = card
         self.cards_layout.insertWidget(self.cards_layout.count() - 1, card)
         self.hint_label.hide()
-        self.log_info(f"Показано в списке: {entry.url}")
+        self.log_info(tr("window_shown", url=entry.url))
 
     def _start_download(self, entry_id: str) -> None:
         """«Скачать» puts the task in the queue (spec 4.1 p.6), the worker runs it."""
@@ -269,14 +259,14 @@ class MainWindow(QMainWindow):
             return
         self.worker.enqueue(card.entry)
         card.set_state("queued")
-        self.log_info(f"В очереди: {card.entry.title or card.entry.url}")
+        self.log_info(tr("window_queued", title=card.entry.title or card.entry.url))
 
     def _cancel_download(self, entry_id: str) -> None:
         if self.worker is not None:
             self.worker.cancel(entry_id)
         card = self.cards.get(entry_id)
         if card is not None:
-            card.set_error("отменено")
+            card.set_error(tr("card_cancelled"))
 
     def clear_all_cards(self) -> None:
         """«Очистить все»: remove every found video from the list.
@@ -291,8 +281,8 @@ class MainWindow(QMainWindow):
             self._remove_card(card)
         self.out_paths.clear()
         if active:
-            self.log_warning("Активные загрузки продолжатся, но их карточки убраны")
-        self.log_info("Список найденных видео очищен")
+            self.log_warning(tr("window_active_kept"))
+        self.log_info(tr("window_list_cleared"))
 
     def clear_downloaded_cards(self) -> None:
         """«Очистить скачанные»: remove only videos whose file is on the disk."""
@@ -304,9 +294,9 @@ class MainWindow(QMainWindow):
                 self.out_paths.pop(entry_id, None)
                 removed += 1
         if removed:
-            self.log_info(f"Убрано скачанных видео: {removed}")
+            self.log_info(tr("window_removed_count", count=removed))
         else:
-            self.log_info("Скачанных видео в списке нет")
+            self.log_info(tr("window_no_downloaded"))
 
     def _remove_card(self, card: SourceCard) -> None:
         self.cards.pop(card.entry.id, None)
@@ -323,7 +313,7 @@ class MainWindow(QMainWindow):
         card = self.cards.get(entry_id)
         if card is not None:
             card.set_state("downloading")
-            self.log_info(f"Начата загрузка: {name}")
+            self.log_info(tr("window_download_started", title=name))
 
     def _task_progress(self, entry_id: str, done: int, total: int) -> None:
         card = self.cards.get(entry_id)
@@ -335,24 +325,24 @@ class MainWindow(QMainWindow):
         if card is not None:
             self.out_paths[entry_id] = Path(path)
             card.set_result(path)
-        self.log_info(f"Готово: {path}")
+        self.log_info(tr("window_finished", path=path))
 
     def _task_failed(self, entry_id: str, message: str) -> None:
         card = self.cards.get(entry_id)
         if card is not None:
             card.set_error(message)
-        self.log_error(f"Задача не выполнена: {message}")
+        self.log_error(tr("window_task_failed", title=message))
 
     def _open_result_file(self, entry_id: str) -> None:
         """«Открыть файл»: play the downloaded video with the default player."""
         path = self.out_paths.get(entry_id)
         if path is None or not path.is_file():
-            self.log_warning("Файл не найден, открываю папку загрузок")
+            self.log_warning(tr("window_file_missing"))
             folder = path.parent if path is not None else Path(self.settings.download_dir)
             _show_in_explorer(folder)
             return
         if not _open_file(path):
-            self.log_warning(f"Не удалось открыть файл: {path}")
+            self.log_warning(tr("window_open_failed", error=path))
 
     def _open_download_folder(self) -> None:
         _show_in_explorer(Path(self.settings.download_dir))
@@ -363,7 +353,7 @@ class MainWindow(QMainWindow):
 
     def _browser_closed(self) -> None:
         # The browser is closed by the user: the running download continues (spec 3.7).
-        self.log_warning("Браузер закрыт")
+        self.log_warning(tr("window_browser_closed"))
 
     # --- settings --------------------------------------------------------
 
@@ -371,6 +361,7 @@ class MainWindow(QMainWindow):
         dialog = SettingsDialog(self.settings, self)
         if self.updater is not None:
             dialog.check_requested.connect(self.updater.check_now)
+        dialog.restart_requested.connect(self._restart_program)
         if dialog.exec():
             self.settings = dialog.settings
             self.setWindowTitle(f"{APP_TITLE} {VERSION} — {self.settings.download_dir}")
@@ -382,6 +373,20 @@ class MainWindow(QMainWindow):
             if app is not None:
                 apply_theme(cast(QApplication, app), self.settings.theme)
             self._save_settings()
+
+    def _restart_program(self) -> None:
+        """«Перезапустить» in the settings: the language is applied on the next start.
+
+        ``app.py`` owns the restart, and it imports this module, so the helper is
+        imported inside the method to avoid a cycle at import time.
+        """
+        from pydownloader.ui.app import restart_application
+
+        self._save_settings()
+        self.close()
+        app = QApplication.instance()
+        if app is not None:
+            restart_application(cast(QApplication, app))
 
     def _save_settings(self) -> None:
         self.settings.window_geometry = geometry_hex(self.saveGeometry())
@@ -401,7 +406,7 @@ class MainWindow(QMainWindow):
                 answer = QMessageBox.question(
                     self,
                     APP_TITLE,
-                    CLOSE_CONFIRM,
+                    tr("window_quit_question"),
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                     QMessageBox.StandardButton.No,
                 )
@@ -441,5 +446,5 @@ def _open_file(path: Path) -> bool:
 
 def pick_download_dir(start: Path, parent: QWidget | None = None) -> Path | None:
     """The folder dialog of spec 3.1; ``None`` means the user cancelled the start."""
-    path = QFileDialog.getExistingDirectory(parent, "Папка для загрузок", str(start))
+    path = QFileDialog.getExistingDirectory(parent, tr("window_download_folder_title"), str(start))
     return Path(path) if path else None

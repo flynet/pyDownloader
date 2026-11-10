@@ -4,6 +4,9 @@ The check runs in a thread so the window stays responsive. The dialog shows the
 version and the release notes with the buttons «Обновить», «Позже», «Пропустить
 эту версию». The installer is downloaded with a progress dialog, verified by
 SHA-256, started with ``/SILENT /CLOSEAPPLICATIONS``, and the program exits.
+
+The texts are keys of the catalog. The language is chosen at startup, so the
+helpers read the text at the place of use, not at import time.
 """
 
 from __future__ import annotations
@@ -17,19 +20,59 @@ from PySide6.QtCore import QObject, Qt, QThread, Signal, SignalInstance
 from PySide6.QtWidgets import QMessageBox, QProgressDialog
 
 from pydownloader.config.settings import Settings
+from pydownloader.i18n import tr
 from pydownloader.update import checker
 from pydownloader.update.checker import Release, UpdateError
 
-UPDATE_TITLE = "Доступна новая версия"
-DOWNLOAD_TEXT = "Скачивание установщика…"
-INSTALL_TEXT = "Запускается установщик, программа закроется."
-WAIT_TEXT = "Идёт загрузка видео. Дождаться её окончания перед обновлением?"
-SHA_FAIL = "SHA-256 не совпадает, обновление не установлено"
-LATER_BUTTON = "Позже"
-SKIP_BUTTON = "Пропустить эту версию"
-UPDATE_BUTTON = "Обновить"
-CANCEL_BUTTON = "Отмена"
-NOTICES = "Уведомления"
+
+def update_title() -> str:
+    """Title of the dialog and of the waiting question (spec 8.3 p.2)."""
+    return tr("update_title")
+
+
+def download_text() -> str:
+    """Text of the progress dialog while the installer is fetched."""
+    return tr("update_download_text")
+
+
+def install_text() -> str:
+    """Console line printed when the installer is started."""
+    return tr("update_install_text")
+
+
+def wait_text() -> str:
+    """Question asked before the download when a video is running."""
+    return tr("update_wait_text")
+
+
+def sha_fail() -> str:
+    """Console line of a digest that does not match the installer."""
+    return tr("update_sha_fail")
+
+
+def later_label() -> str:
+    """Button that closes the dialog without any action."""
+    return tr("update_later")
+
+
+def skip_label() -> str:
+    """Button that hides this version from the next checks."""
+    return tr("update_skip")
+
+
+def update_label() -> str:
+    """Button that starts the download of the installer."""
+    return tr("update_button")
+
+
+def cancel_label() -> str:
+    """Button that cancels the download in the progress dialog."""
+    return tr("update_cancel")
+
+
+def notices_label() -> str:
+    """Button that opens the release notes."""
+    return tr("update_notices")
 
 
 def release_notes(body: str) -> str:
@@ -116,26 +159,26 @@ class UpdateMonitor(QObject):
             return
         if self.settings.skipped_version == release.version:
             return
-        self.window.set_update_status(f"Доступна версия {release.version}")
+        self.window.set_update_status(tr("update_available", version=release.version))
         self._show_dialog(release)
 
     def _show_dialog(self, release: Release) -> QMessageBox:
         """The dialog of spec 8.3 p.2: version, notes, three buttons."""
         dialog = QMessageBox(self.window)
-        dialog.setWindowTitle(UPDATE_TITLE)
+        dialog.setWindowTitle(update_title())
         dialog.setIcon(QMessageBox.Icon.Information)
         dialog.setStandardButtons(QMessageBox.StandardButton.NoButton)
         dialog.setText(release.version)
         dialog.setInformativeText(release_notes(release.body))
-        dialog.addButton(LATER_BUTTON, QMessageBox.ButtonRole.NoRole)
-        update_button = dialog.addButton(UPDATE_BUTTON, QMessageBox.ButtonRole.AcceptRole)
-        skip = dialog.addButton(SKIP_BUTTON, QMessageBox.ButtonRole.ActionRole)
+        dialog.addButton(later_label(), QMessageBox.ButtonRole.NoRole)
+        accept = dialog.addButton(update_label(), QMessageBox.ButtonRole.AcceptRole)
+        skip = dialog.addButton(skip_label(), QMessageBox.ButtonRole.ActionRole)
         skip.clicked.connect(lambda: self._skip_version(release, dialog))
-        dialog.addButton(NOTICES, QMessageBox.ButtonRole.HelpRole)
-        dialog.setDefaultButton(update_button)
+        dialog.addButton(notices_label(), QMessageBox.ButtonRole.HelpRole)
+        dialog.setDefaultButton(accept)
         self._dialog = dialog
         dialog.exec()
-        if dialog.clickedButton() is update_button:
+        if dialog.clickedButton() is accept:
             self._accept_update(release)
         return dialog
 
@@ -150,8 +193,8 @@ class UpdateMonitor(QObject):
         if worker is not None and worker.pending():
             answer = QMessageBox.question(
                 self.window,
-                UPDATE_TITLE,
-                WAIT_TEXT,
+                update_title(),
+                wait_text(),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No,
             )
@@ -165,7 +208,7 @@ class UpdateMonitor(QObject):
         """Progress dialog, streamed download, then SHA-256 verification."""
         self._release = release
         target = Path(tempfile.mkdtemp(prefix="pydownloader-")) / release.installer.name
-        progress = QProgressDialog(DOWNLOAD_TEXT, CANCEL_BUTTON, 0, 0, self.window)
+        progress = QProgressDialog(download_text(), cancel_label(), 0, 0, self.window)
         progress.setWindowTitle("PyDownloader")
         progress.setWindowModality(Qt.WindowModality.NonModal)
         progress.setMinimumDuration(0)
@@ -196,9 +239,9 @@ class UpdateMonitor(QObject):
             self.window.log_error(str(exc))
             return
         if expected and not checker.verify(installer, expected):
-            self.window.log_error(SHA_FAIL)
+            self.window.log_error(sha_fail())
             return
-        self.window.log_info(INSTALL_TEXT)
+        self.window.log_info(install_text())
         checker.run_installer(installer)
         self.window.exit_after_update()
 
@@ -210,4 +253,18 @@ def _expected_sha(release: Release | None, installer: Path) -> str:
     return checker.fetch_expected_sha(release.sha256_asset.url)
 
 
-__all__ = ["UpdateMonitor", "Worker", "release_notes"]
+__all__ = [
+    "UpdateMonitor",
+    "Worker",
+    "cancel_label",
+    "download_text",
+    "install_text",
+    "later_label",
+    "notices_label",
+    "release_notes",
+    "sha_fail",
+    "skip_label",
+    "update_label",
+    "update_title",
+    "wait_text",
+]

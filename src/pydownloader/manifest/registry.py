@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
 from pydownloader.download.http import capture_headers
+from pydownloader.i18n import tr
 from pydownloader.manifest.detector import Candidate, SourceKind
 from pydownloader.manifest.quality import Choice
 from pydownloader.util.urls import (
@@ -79,10 +80,10 @@ class SourceEntry:
         same segment names from the 720p and 1080p directories, and a name-only
         key would mix the resolutions.
         """
-        key = path_of(url)
-        if key:
-            self.recorded[key] = url
-            logger.debug("Записан URL %s -> %s", key, url)
+        path_key = path_of(url)
+        if path_key:
+            self.recorded[path_key] = url
+            logger.debug(tr("mf_url_recorded", key=path_key, url=url))
 
     def recorded_url(self, url: str) -> str | None:
         """Exact signed URL for a constructed one, ``None`` when nothing was recorded."""
@@ -113,7 +114,7 @@ class SourceEntry:
         return f"{mb:.1f} MB"
 
     def display_quality(self) -> str:
-        return f"{self.height}p" if self.height else "неизвестно"
+        return f"{self.height}p" if self.height else tr("mf_quality_unknown")
 
 
 @dataclass
@@ -121,7 +122,10 @@ class AddResult:
     entry: SourceEntry
     is_new: bool
     merged: bool = False
+    #: Text of the skip, in the language of the program; empty when the source is kept.
     reason: str = ""
+    #: ``True`` when the request is a segment of a manifest already registered.
+    fragment: bool = False
 
 
 def _path_prefix(url: str) -> str:
@@ -188,13 +192,11 @@ class SourceRegistry:
             owner = self.owner_for(candidate.url)
             if owner is not None:
                 owner.record(candidate.url)
-                logger.debug(
-                    "Плейлист %s принадлежит уже найденному потоку %s",
-                    candidate.url,
-                    owner.url,
-                )
+                logger.debug(tr("mf_playlist_owned", url=candidate.url, owner=owner.url))
                 return AddResult(
-                    entry=owner, is_new=False, reason="плейлист уже найденного потока"
+                    entry=owner,
+                    is_new=False,
+                    reason=tr("mf_reason_playlist"),
                 )
         entry = self._entry(candidate, normalized)
         self._entries[normalized] = entry
@@ -202,7 +204,7 @@ class SourceRegistry:
         self._prefixes.add(base_dir_url(candidate.url))
         self._owners[_path_prefix(candidate.url)] = entry
         self.adopt_pending(candidate.url, entry)
-        logger.debug("Новый манифест %s: %s", candidate.kind, candidate.url)
+        logger.debug(tr("mf_new_manifest", kind=candidate.kind, url=candidate.url))
         return AddResult(entry=entry, is_new=True)
 
     def add_mp4(self, candidate: Candidate) -> AddResult:
@@ -225,13 +227,14 @@ class SourceRegistry:
             return AddResult(
                 entry=SourceEntry(id="", kind="mp4", url=candidate.url, normalized=normalized),
                 is_new=False,
-                reason="фрагмент уже найденного манифеста",
+                reason=tr("mf_reason_fragment"),
+                fragment=True,
             )
         if size is not None and size < self.min_mp4_size:
             return AddResult(
                 entry=SourceEntry(id="", kind="mp4", url=candidate.url, normalized=normalized),
                 is_new=False,
-                reason="файл меньше порога, не видео",
+                reason=tr("mf_reason_small_file"),
             )
         entry = self._entry(candidate, normalized)
         entry.size = size
@@ -337,7 +340,7 @@ class SourceRegistry:
         directory = _path_prefix(url)
         self._family.setdefault(directory, {})[name] = url
         self._family_meta.setdefault(directory, event)
-        logger.debug("Сегмент до манифеста (%s): %s", directory, url)
+        logger.debug(tr("mf_segment_before_manifest", dir=directory, url=url))
 
     def synthesize_families(self) -> list[SourceEntry]:
         """Turn directories with enough segment GETs into HLS entries.

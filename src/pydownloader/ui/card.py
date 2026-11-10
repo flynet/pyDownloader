@@ -27,33 +27,50 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from pydownloader.i18n import tr
 from pydownloader.manifest.registry import SourceEntry
 
 CardState = Literal["new", "queued", "downloading", "done", "error"]
 
-#: Text shown in the meta line for each state (spec 4.1 p.2).
-STATE_TEXT: dict[CardState, str] = {
+#: State -> the key of its text in the meta line (spec 4.1 p.2); ``new`` shows none.
+STATE_KEYS: dict[CardState, str] = {
     "new": "",
-    "queued": "В очереди",
-    "downloading": "Скачивание",
-    "done": "Готово",
-    "error": "Ошибка",
+    "queued": "card_state_queued",
+    "downloading": "card_state_downloading",
+    "done": "card_state_done",
+    "error": "card_state_error",
 }
 
-STAGE_LABELS = {
-    "download": "скачивание",
-    "decrypt": "расшифровка",
-    "mux": "склейка",
+#: Stage of the worker -> the key of its text; the stage name comes from the queue.
+STAGE_KEYS: dict[str, str] = {
+    "download": "card_stage_download",
+    "decrypt": "card_stage_decrypt",
+    "mux": "card_stage_mux",
 }
+
+#: The parts of a card line are joined by a plain separator, never by a text.
+SEPARATOR = " · "
 
 BADGE_COLORS = {"hls": "#3b7fd7", "dash": "#7b5cc7", "mp4": "#2e7d32", "youtube": "#c4302b"}
+
+
+def state_text(state: CardState) -> str:
+    """Text of a state in the current language, ``""`` for ``new``."""
+    key = STATE_KEYS[state]
+    return tr(key) if key else ""
+
+
+def stage_label(stage: str) -> str:
+    """Text of a stage; a stage the catalog does not know is shown as it arrives."""
+    key = STAGE_KEYS.get(stage)
+    return tr(key) if key else stage
 
 
 def format_size(size: int | None) -> str:
     """Size in MB, ``размер неизвестен`` when the size was not reported."""
     if size is None:
-        return "размер неизвестен"
-    return f"{size / (1024 * 1024):.1f} МБ"
+        return tr("card_size_unknown")
+    return tr("card_size_mb", mb=size / (1024 * 1024))
 
 
 def format_duration(seconds: float | None) -> str:
@@ -66,7 +83,7 @@ def format_duration(seconds: float | None) -> str:
 
 
 def format_quality(height: int | None) -> str:
-    return f"{height}p" if height else "разрешение неизвестно"
+    return f"{height}p" if height else tr("card_quality_unknown")
 
 
 def elide(url: str, width: int) -> str:
@@ -121,7 +138,7 @@ class SourceCard(QFrame):
             parts.append(format_duration(entry.duration))
         if entry.size:
             parts.append(format_size(entry.size))
-        self.meta_label = QLabel(" · ".join(parts))
+        self.meta_label = QLabel(SEPARATOR.join(parts))
         self.meta_label.setObjectName("cardMeta")
         layout.addWidget(self.meta_label)
         self._meta_base = parts
@@ -140,25 +157,25 @@ class SourceCard(QFrame):
         layout.addWidget(self.stage_label)
 
         row = QHBoxLayout()
-        self.download_button = QPushButton("Скачать")
+        self.download_button = QPushButton(tr("card_download"))
         self.download_button.setObjectName("download")
         self.download_button.clicked.connect(lambda: self.download_clicked.emit(self.entry.id))
         row.addWidget(self.download_button)
 
         self.cancel_button = QToolButton()
-        self.cancel_button.setText("Отмена")
+        self.cancel_button.setText(tr("card_cancel"))
         self.cancel_button.clicked.connect(lambda: self.cancel_clicked.emit(self.entry.id))
         self.cancel_button.hide()
         row.addWidget(self.cancel_button)
 
         self.open_button = QToolButton()
-        self.open_button.setText("Открыть файл")
+        self.open_button.setText(tr("card_open_file"))
         self.open_button.clicked.connect(lambda: self.open_file_clicked.emit(self.entry.id))
         self.open_button.hide()
         row.addWidget(self.open_button)
 
         self.retry_button = QToolButton()
-        self.retry_button.setText("Повторить")
+        self.retry_button.setText(tr("card_retry"))
         self.retry_button.clicked.connect(lambda: self.download_clicked.emit(self.entry.id))
         self.retry_button.hide()
         row.addWidget(self.retry_button)
@@ -168,7 +185,7 @@ class SourceCard(QFrame):
 
     def _copy_menu(self, position) -> None:
         menu = QMenu(self)
-        action = menu.addAction("Копировать ссылку")
+        action = menu.addAction(tr("card_copy_link"))
         action.triggered.connect(self._copy_url)
         menu.exec(self.url_label.mapToGlobal(position))
 
@@ -205,16 +222,16 @@ class SourceCard(QFrame):
         percent = done * 100 // total if total else 0
         self.bar.setRange(0, total)
         self.bar.setValue(done)
-        self.bar.setFormat(f"{percent}% · сегменты {done} из {total}")
-        text = STAGE_LABELS[self.stage]
+        self.bar.setFormat(tr("card_progress", percent=percent, done=done, total=total))
+        text = stage_label(self.stage)
         if speed_mb is not None:
-            text += f" · {speed_mb:.1f} МБ/с"
+            text += SEPARATOR + tr("card_speed_mb", speed=speed_mb)
         self.stage_label.setText(text)
 
     def set_stage(self, stage: str) -> None:
         """Change the stage text: downloading / decrypting / muxing."""
         self.stage = stage
-        self.stage_label.setText(STAGE_LABELS.get(stage, stage))
+        self.stage_label.setText(stage_label(stage))
 
     def set_error(self, message: str) -> None:
         self.set_state("error")
@@ -224,18 +241,26 @@ class SourceCard(QFrame):
 
     def set_result(self, path: str) -> None:
         self.set_state("done")
-        self.meta_label.setText(f"{self._meta_base[0]} · {path}")
+        self.meta_label.setText(f"{self._meta_base[0]}{SEPARATOR}{path}")
 
     def _refresh_meta(self) -> None:
         if self.state == "error":
             return
         parts = list(self._meta_base)
-        label = STATE_TEXT[self.state]
+        label = state_text(self.state)
         if label:
             parts.append(label)
         self.meta_label.setObjectName("cardMeta")
-        self.meta_label.setText(" · ".join(parts))
+        self.meta_label.setText(SEPARATOR.join(parts))
         self.meta_label.style().polish(self.meta_label)
 
 
-__all__ = ["CardState", "SourceCard", "format_duration", "format_quality", "format_size"]
+__all__ = [
+    "CardState",
+    "SourceCard",
+    "format_duration",
+    "format_quality",
+    "format_size",
+    "stage_label",
+    "state_text",
+]

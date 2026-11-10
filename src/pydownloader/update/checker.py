@@ -21,6 +21,7 @@ from packaging.version import InvalidVersion, Version
 
 from pydownloader.config.constants import releases_latest_url
 from pydownloader.config.settings import Settings
+from pydownloader.i18n import tr
 
 #: Name pattern of the installer asset, and the checksum file next to it.
 SETUP_PREFIX = "PyDownloader-Setup-"
@@ -33,7 +34,7 @@ USER_AGENT = "PyDownloader"
 
 
 class UpdateError(RuntimeError):
-    """The release information cannot be read."""
+    """The release information cannot be read; the message is a catalog key."""
 
 
 @dataclass(frozen=True)
@@ -136,7 +137,8 @@ def fetch_release(url: str | None = None, timeout: float = API_TIMEOUT) -> Relea
     """``GET`` the latest release; ``None`` when there is nothing to show.
 
     Raises :class:`UpdateError` on a network failure, so the caller writes a
-    console warning and keeps running (spec 8.3 p.6).
+    console warning and keeps running (spec 8.3 p.6). The text of the error is
+    a key of the ``update`` group, so the warning follows the language.
     """
     target = url or releases_latest_url()
     try:
@@ -145,14 +147,14 @@ def fetch_release(url: str | None = None, timeout: float = API_TIMEOUT) -> Relea
                 target, headers={"User-Agent": USER_AGENT, "Accept": "application/vnd.github+json"}
             )
     except httpx.HTTPError as exc:
-        raise UpdateError(f"Не получен список релизов: {exc}") from exc
+        raise UpdateError(tr("up_release_list_failed", error=exc)) from exc
     if response.status_code == 404:
         # A repository without published releases answers 404: nothing to show.
         return None
     if response.status_code == 403:
-        raise UpdateError("GitHub API: ограничено число запросов (лимит на IP)")
+        raise UpdateError(tr("up_rate_limited"))
     if response.status_code >= 400:
-        raise UpdateError(f"GitHub API: HTTP {response.status_code}")
+        raise UpdateError(tr("up_api_http", status=response.status_code))
     return parse_release(response.json())
 
 
@@ -180,9 +182,9 @@ def fetch_expected_sha(url: str, timeout: float = API_TIMEOUT) -> str:
         with httpx.Client(follow_redirects=True, timeout=timeout) as client:
             response = client.get(url, headers={"User-Agent": USER_AGENT})
     except httpx.HTTPError as exc:
-        raise UpdateError(f"Не получен файл SHA-256: {exc}") from exc
+        raise UpdateError(tr("up_sha_file_failed", error=exc)) from exc
     if response.status_code >= 400:
-        raise UpdateError(f"SHA-256: HTTP {response.status_code}")
+        raise UpdateError(tr("up_sha_http", status=response.status_code))
     return parse_sha(response.text)
 
 
@@ -196,7 +198,7 @@ def download_installer(url: str, target: Path, on_chunk=None) -> Path:
     target.parent.mkdir(parents=True, exist_ok=True)
     with httpx.stream("GET", url, follow_redirects=True, timeout=API_TIMEOUT) as response:
         if response.status_code >= 400:
-            raise UpdateError(f"Скачивание установщика: HTTP {response.status_code}")
+            raise UpdateError(tr("up_installer_http", status=response.status_code))
         with target.open("wb") as handle:
             for chunk in response.iter_bytes(1024 * 1024):
                 handle.write(chunk)

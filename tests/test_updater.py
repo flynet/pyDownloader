@@ -27,11 +27,11 @@ from pydownloader.update.checker import (
     verify,
 )
 from pydownloader.update.ui import (
-    LATER_BUTTON,
-    SKIP_BUTTON,
-    UPDATE_BUTTON,
     UpdateMonitor,
+    later_label,
     release_notes,
+    skip_label,
+    update_label,
 )
 
 
@@ -353,8 +353,8 @@ def test_dialog_shows_the_version_and_skip_writes_the_settings(qtbot, tmp_path, 
     assert "1.2.0" in dialog.text()
     assert "Fixes" in dialog.informativeText()
     names = {b.text() for b in dialog.findChildren(QPushButton)}
-    assert UPDATE_BUTTON in names and SKIP_BUTTON in names and LATER_BUTTON in names
-    skip = next(b for b in dialog.findChildren(QPushButton) if b.text() == SKIP_BUTTON)
+    assert update_label() in names and skip_label() in names and later_label() in names
+    skip = next(b for b in dialog.findChildren(QPushButton) if b.text() == skip_label())
     skip.click()
     assert settings.skipped_version == "1.2.0"
 

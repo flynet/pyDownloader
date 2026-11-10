@@ -1,179 +1,194 @@
 # PyDownloader
 
-Windows-приложение для скачивания видео из браузера: оно открывает управляемый
-браузер, перехватывает сетевые запросы, находит HLS (`.m3u8`), MPEG-DASH (`.mpd`),
-прямые MP4 и YouTube-потоки, а скачанные сегменты склеивает FFmpeg в один `.mp4`.
-Интерфейс по умолчанию тёмный; светлая и системная темы доступны в настройках.
+A Windows application for downloading video from the browser: it opens a controlled
+browser, intercepts network requests, finds HLS (`.m3u8`), MPEG-DASH (`.mpd`),
+direct MP4 and YouTube streams, and joins the downloaded segments with FFmpeg into
+one `.mp4`. The interface is dark by default; light and system themes are available
+in the settings.
 
-## Как это выглядит
+## Screenshots
 
-![Главное окно: карточки найденных видео и консоль](assets/screenshots/window.png)
+![Main window: cards of found videos and the console](assets/screenshots/window.png)
 
-![Диалог настроек](assets/screenshots/settings.png)
+![Settings dialog](assets/screenshots/settings.png)
 
-Снимки рисует скрипт `tools/make_screenshots.py` (`uv run python
-tools/make_screenshots.py`): он заполняет карточки и консоль демонстрационными
-данными, браузера и загрузок в нём нет, поэтому снимки воспроизводимы. Окна не
-показываются на рабочем столе — снимок берётся `QWidget.grab()` на
-offscreen-платформе Qt.
+The screenshots are rendered by the `tools/make_screenshots.py` script (`uv run python
+tools/make_screenshots.py`): it fills the cards and the console with demo data, and
+the script has no browser and no downloads, so the screenshots are reproducible. The
+windows are never shown on the desktop — the snapshot is taken with `QWidget.grab()`
+on the offscreen Qt platform.
 
-## Как это работает
+## How it works
 
-1. Запуск → выбор папки загрузок (только при первом запуске).
-2. Открываются браузер и окно из двух секций: найденные видео (сверху) и консоль (снизу).
-   В браузере уже включён блокировщик рекламы uBlock (см. ниже).
-3. Пользователь сам заходит на сайт и запускает видео — приложение перехватывает
-   манифесты и показывает найденное карточками. Если сайт подписывает каждый URL
-   отдельно (например, phncdn), скачивание идёт по точным подписанным URL из
-   трафика браузера. Если плейлист запрашивается внутри страницы и видны только
-   сегменты, три GET-запроса из одного каталога образуют HLS-карточку.
-4. Скачивание начинается **только после нажатия «Скачать»**; загрузка идёт строго
-   последовательно, сегменты — до 6 потоков.
-5. Сегменты (при необходимости расшифрованные AES-128) склеиваются FFmpeg
-   (`-c copy`) в готовый `.mp4`, временная папка задачи удаляется.
-6. YouTube: страница сама запрашивает inner-tube player API (клиент VISIONOS),
-   поэтому доступны классические подписанные URL. Видео и звук качаются
-   range-блоками по 8 МБ и мультиплексируются без перекодирования.
+1. Launch → pick the downloads folder (first run only).
+2. A browser and a window of two sections open: found videos (top) and console
+   (bottom). The browser already has the uBlock ad blocker enabled (see below).
+3. The user visits the site and starts the video himself — the application intercepts
+   manifests and shows what it found as cards. If the site signs every URL separately
+   (e.g. phncdn), the download uses the exact signed URLs from the browser traffic.
+   If the playlist is requested inside the page and only segments are visible, three
+   GET requests from one directory form an HLS card.
+4. Downloading starts **only after pressing "Download"**; downloads run strictly
+   sequentially, segments use up to 6 threads.
+5. Segments (decrypted with AES-128 when required) are joined by FFmpeg
+   (`-c copy`) into the finished `.mp4`, and the task's temporary folder is deleted.
+6. YouTube: the page itself requests the inner-tube player API (VISIONOS client),
+   so the classic signed URLs are available. Video and audio are downloaded in 8 MB
+   range blocks and muxed without re-encoding.
 
-Live-трансляции, DRM-защищённый контент (Widevine / PlayReady / FairPlay) и потоки
-без варианта 1080p пропускаются; причина пишется в консоль. Обход DRM не поддерживается.
+Live streams, DRM-protected content (Widevine / PlayReady / FairPlay) and streams
+without a 1080p variant are skipped; the reason is written to the console. DRM
+bypass (including Widevine) is not supported.
 
-## Возможные карточки
+## Card states
 
-`Найдено` → `В очереди` → `Скачивается` (прогресс, скорость, сегменты X из Y, этап, «Отмена»)
-→ `Готово` («Открыть файл» — запускает скачанное видео в плеере по умолчанию)
-/ `Ошибка` («Повторить»).
+`Found` → `Queued` → `Downloading` (progress, speed, segments X of Y, stage,
+"Cancel") → `Done` ("Open file" — plays the downloaded video in the default player)
+/ `Error` ("Retry").
 
-Над списком найденных видео есть две кнопки: **«Очистить все»** убирает весь
-список, **«Очистить скачанные»** — только карточки, чьи файлы уже скачаны и
-лежат на диске. Активная загрузка при очистке не отменяется и продолжается в
-фоне.
+Above the list of found videos there are two buttons: **"Clear all"** removes the
+whole list, **"Clear downloaded"** — only the cards whose files are already
+downloaded and lie on disk. An active download is not cancelled when clearing and
+continues in the background.
 
-## Логи
+## Logging
 
-Программа пишет диагностический лог в `<папка установки>\logs\app.log`
-(если папка установки недоступна для записи — в
-`%LOCALAPPDATA%\PyDownloader\logs\app.log`; ротация: 5 МБ × 3 файла). В файл
-попадает всё: каждый перехваченный ответ браузера, запросы манифестов и
-сегментов с кодами ответа, cookies, решения по качеству, выбранный вариант,
-план задачи, команда FFmpeg и ошибки. В консоли окна показываются только
-важные строки (INFO и выше), поэтому окно не тормозит на длинных списках
-сегментов.
+The program writes a diagnostic log to `<install folder>\logs\app.log` (if the
+install folder is not writable — to `%LOCALAPPDATA%\PyDownloader\logs\app.log`;
+rotation: 5 MB × 3 files). Everything goes into the file: every intercepted
+browser response, manifest and segment requests with response codes, cookies,
+quality decisions, the selected variant, the task plan, the FFmpeg command and
+errors. The window console shows only the important lines (INFO and above), so
+the window does not slow down on long segment lists.
 
-Если поток не находится или загрузка падает — нажмите «Открыть лог-файл» в
-окне (путь к логу также пишется в консоль при запуске) и пришлите файл: по
-нему видно, какие URL запрашивал плеер и что ответил сервер.
+If a stream is not found or a download fails — press "Open log file" in the window
+(the log path is also printed to the console at startup) and send the file: the
+log shows which URLs the player requested and what the server answered.
 
-## Настройки
+## Settings
 
-Хранятся в `%APPDATA%\PyDownloader\settings.json`: папка загрузок, число потоков,
-тема, разрешение, минимальный размер MP4, проверка обновлений, размер и положение
-окна. Папка загрузок спрашивается только при первом запуске; при следующих
-запусках программа берёт её из настроек и создаёт, если её удалили. Изменить
-папку можно в «Настройки» → «Папка загрузок» — значение сохраняется сразу после
-нажатия «Сохранить». Диалог настроек занимает 80% ширины и высоты главного окна,
-растягивается вручную, длинный путь виден целиком (и в подсказке при наведении).
+Settings are stored in `%APPDATA%\PyDownloader\settings.json`: downloads folder,
+number of threads, theme, resolution, minimum MP4 size, update check, window size
+and position. The downloads folder is asked only on the first run; on later runs
+the program takes it from the settings and creates it if it was deleted. The
+folder can be changed in "Settings" → "Downloads folder" — the value is saved
+right after pressing "Save". The settings dialog takes 80% of the main window's
+width and height, can be resized manually, and a long path is fully visible (and
+in the tooltip on hover).
 
-## Блокировщик рекламы и профиль браузера
+## Languages
 
-Рядом с программой лежит `uBlock.crx` (uBlock Origin Lite). При запуске он
-распаковывается в `<папка установки>\extensions` и подключается к Chromium от
-Playwright. Современные Chrome и Edge игнорируют расширения, переданные из
-командной строки, поэтому для блокировщика программа предлагает один раз
-скачать Chromium (он ложится в `<папка установки>\browsers`); без его установки
-браузер откроется без блокировщика. Chromium, скачанный прежней версией в
-`%LOCALAPPDATA%\PyDownloader\browsers`, находится и переиспользуется —
-заново он не качается.
+The interface and the log lines are in English, Russian, Chinese, French and
+German; English is the default. The language is chosen in Settings → Language;
+the native names shown in the combo are English, Русский, 中文, Français, Deutsch.
+The choice is stored in `%APPDATA%\PyDownloader\settings.json` as `"language"`
+and is applied after the program restarts — the Settings dialog shows a hint and
+a Restart button.
 
-Профиль браузера хранится в папке программы — `<папка установки>\profile` — и
-содержит cookies, входы в аккаунты и настройки сайтов. Он сохраняется между
-запусками и обновлениями программы. Профиль прежней версии из
-`%LOCALAPPDATA%\PyDownloader\profile` переносится туда автоматически при первом
-запуске. Если папка программы недоступна для записи (например, `Program Files`
-без прав администратора), профиль, логи, Chromium и распакованный блокировщик
-остаются в `%LOCALAPPDATA%\PyDownloader`.
-В «Настройках» можно вместо этого хранить профиль в `<папка загрузок>\.profile`.
+## Ad blocker and browser profile
 
-## Где лежат данные
+Next to the program lies `uBlock.crx` (uBlock Origin Lite). At startup it is
+unpacked into `<install folder>\extensions` and attached to Chromium from
+Playwright. Modern Chrome and Edge ignore extensions passed from the command
+line, so for the blocker the program offers to download Chromium once (it lands
+in `<install folder>\browsers`); without it the browser opens with no blocker.
+Chromium downloaded by a previous version into
+`%LOCALAPPDATA%\PyDownloader\browsers` is found and reused — it is not
+downloaded again.
 
-| Что | Где |
+The browser profile lives in the program folder — `<install folder>\profile` —
+and contains cookies, account logins and site settings. It persists between
+program runs and updates. The profile of a previous version from
+`%LOCALAPPDATA%\PyDownloader\profile` is moved there automatically on the first
+run. If the program folder is not writable (e.g. `Program Files` without
+administrator rights), the profile, logs, Chromium and the unpacked blocker stay
+in `%LOCALAPPDATA%\PyDownloader`. In "Settings" you can instead keep the profile
+in `<downloads folder>\.profile`.
+
+## Where the data lives
+
+| What | Where |
 | --- | --- |
-| Программа, `bin\ffmpeg.exe`, `uBlock.crx` | папка установки |
-| Профиль браузера (cookies, сессии) | `<папка установки>\profile` |
-| Chromium от Playwright | `<папка установки>\browsers` |
-| Распакованный блокировщик | `<папка установки>\extensions` |
-| Лог-файл | `<папка установки>\logs` |
-| Настройки | `%APPDATA%\PyDownloader\settings.json` |
+| Program, `bin\ffmpeg.exe`, `uBlock.crx` | install folder |
+| Browser profile (cookies, sessions) | `<install folder>\profile` |
+| Chromium from Playwright | `<install folder>\browsers` |
+| Unpacked ad blocker | `<install folder>\extensions` |
+| Log file | `<install folder>\logs` |
+| Settings | `%APPDATA%\PyDownloader\settings.json` |
 
-Всё, кроме настроек, живёт в папке установки: удалив её, удаляется и профиль, и
-скачанный браузер, и блокировщик, и логи. Настройки остаются в
-`%APPDATA%`, чтобы пережить переустановку. Если папка установки недоступна для
-записи, эти папки создаются в `%LOCALAPPDATA%\PyDownloader`.
+Everything except the settings lives in the install folder: deleting it deletes
+the profile, the downloaded browser, the blocker and the logs too. The settings
+stay in `%APPDATA%` to survive a reinstall. If the install folder is not
+writable, these folders are created in `%LOCALAPPDATA%\PyDownloader`.
 
-## Требования
+## Requirements
 
-- Windows 10/11 x64; Chrome или Edge, либо Chromium от Playwright (приложение
-  предложит скачать его при первом запуске). Для блокировщика рекламы нужен
-  именно Chromium.
-- Python 3.12 только для сборки; установленное приложение работает без Python.
+- Windows 10/11 x64; Chrome or Edge, or Chromium from Playwright (the
+  application offers to download it on first run). The ad blocker requires
+  Chromium specifically.
+- Python 3.12 only for building; the installed application runs without Python.
 
-## Запуск из исходников
+## Running from source
 
-Двойной щелчок по `run.bat` в корне репозитория (или `run.bat` из консоли).
-Скрипт выставляет `PYTHONPATH=src` и запускает `python -m pydownloader` из
-`.venv`, поэтому всегда работает текущий код — пересборка не нужна. Если
-`.venv` нет, используется `uv run`. Окно консоли остаётся открытым при ошибке,
-чтобы был виден traceback.
+Double-click `run.bat` in the repository root (or run `run.bat` from the
+console). The script sets `PYTHONPATH=src` and runs `python -m pydownloader`
+from `.venv`, so the current code always works — no rebuild is needed. If
+`.venv` is absent, `uv run` is used. The console window stays open on an
+error, so the traceback is visible.
 
-## Сборка
+## Build
 
 ```powershell
 uv sync --extra dev
-winget install -e --id JRSoftware.InnoSetup   # нужно для установщика
-.\build.ps1                                    # версия, PyInstaller, ISCC, SHA-256
+winget install -e --id JRSoftware.InnoSetup   # needed for the installer
+.\build.ps1                                    # version, PyInstaller, ISCC, SHA-256
 ```
 
-Результат: `dist/PyDownloader/PyDownloader.exe` (папка программы, FFmpeg внутри
-`bin`), `dist/install/PyDownloader-Setup-<версия>.exe` и файл `.sha256`.
-`uBlock.crx` лежит в репозитории, копируется в `dist/PyDownloader` и попадает в
-установщик — сборка GitHub Actions тоже содержит блокировщик.
-Версия берётся из `git describe --tags` (в разработке `0.0.0-dev`).
+Result: `dist/PyDownloader/PyDownloader.exe` (the program folder, FFmpeg inside
+`bin`), `dist/install/PyDownloader-Setup-<version>.exe` and the `.sha256` file.
+`uBlock.crx` lies in the repository, is copied into `dist/PyDownloader` and
+lands in the installer — the GitHub Actions build also contains the blocker.
+The version is taken from `git describe --tags` (`0.0.0-dev` in development).
 
-## Установка
+## Installation
 
-`PyDownloader-Setup-<версия>.exe` ставит программу в `Program Files\PyDownloader`,
-создаёт ярлыки и предлагает запустить её. Тихая установка:
-`PyDownloader-Setup-<версия>.exe /SILENT /SUPPRESSMSGBOXES /CLOSEAPPLICATIONS`.
-При удалении удаляется папка установки со всеми её данными (профиль браузера,
-скачанный Chromium, распакованный блокировщик, логи). Настройки
-(`%APPDATA%`) и данные в `%LOCALAPPDATA%` удаляются только по подтверждению в
-диалоге.
+`PyDownloader-Setup-<version>.exe` installs the program to
+`Program Files\PyDownloader`, creates shortcuts and offers to run it. Silent
+install:
+`PyDownloader-Setup-<version>.exe /SILENT /SUPPRESSMSGBOXES /CLOSEAPPLICATIONS`.
+Uninstallation deletes the install folder with all its data (browser profile,
+downloaded Chromium, unpacked blocker, logs). The settings
+(`%APPDATA%`) and the data in `%LOCALAPPDATA%` are deleted only after
+confirmation in the dialog.
 
-## Обновления
+## Updates
 
-Приложение проверяет `GitHub Releases` репозитория `flynet/pyDownloader`, показывает
-release notes, скачивает установщик, проверяет SHA-256 и запускает его с
-`/SILENT /CLOSEAPPLICATIONS`. Автопроверка отключается в настройках.
+The application checks `GitHub Releases` of the `flynet/pyDownloader` repository,
+shows the release notes, downloads the installer, verifies SHA-256 and runs it
+with `/SILENT /CLOSEAPPLICATIONS`. The automatic check is disabled in the
+settings.
 
-## Структура
+## Structure
 
 ```
 src/pydownloader/
-  hls/      парсер и модель .m3u8
-  dash/     парсер и модель .mpd
-  manifest/ детект кандидатов, DRM, качество 1080p, реестр источников
-  util/     URL, имена файлов, диапазоны, логирование
-  config/   настройки, пути, константы репозитория
-  browser/  запуск браузера и перехват сети
-  download/ очередь, сегменты, AES-128, прямой MP4
-  youtube/  inner-tube player API, разбор форматов, range-план
-  ffmpeg/   поиск ffmpeg.exe и запуск склейки
-  update/   проверка релизов и запуск установщика
-  ui/       окно, карточки, консоль, настройки, темы
-tests/      pytest + примеры плейлистов и MPD
+  i18n.py   language of the interface and of the log lines, ``tr`` lookup
+  locales/  catalog of texts: English, Russian, Chinese, French, German
+  hls/      .m3u8 parser and model
+  dash/     .mpd parser and model
+  manifest/ candidate detection, DRM, 1080p quality, source registry
+  util/     URLs, file names, ranges, logging
+  config/   settings, paths, repository constants
+  browser/  browser launch and network interception
+  download/ queue, segments, AES-128, direct MP4
+  youtube/  inner-tube player API, format parsing, range plan
+  ffmpeg/   locating ffmpeg.exe and running the join
+  update/   release checks and installer launch
+  ui/       window, cards, console, settings, themes
+tests/      pytest + sample playlists and MPDs
 ```
 
-## Тесты
+## Tests
 
 ```powershell
 ruff check src tests
@@ -181,7 +196,7 @@ mypy src
 pytest
 ```
 
-## Лицензии
+## Licenses
 
-Сторонние компоненты и их лицензии — в файле `NOTICE`. Техническое задание —
-`docs/TZ_HLS_Grabber_Python.md`.
+Third-party components and their licenses are listed in the `NOTICE` file. The
+technical specification is in `docs/TZ_HLS_Grabber_Python.md`.

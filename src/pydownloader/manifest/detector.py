@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
+from pydownloader.i18n import tr
 from pydownloader.util.urls import (
     MP4_CONTENT_TYPE,
     is_manifest_url,
@@ -62,7 +63,7 @@ def mp4_size_skip(
     if not (normalize_content_type(content_type) == MP4_CONTENT_TYPE or ext == ".mp4"):
         return None
     if content_length is not None and content_length < min_mp4_size:
-        return "файл меньше порога, не видео"
+        return tr("mf_reason_small_file")
     return None
 
 

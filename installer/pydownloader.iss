@@ -43,13 +43,13 @@ PrivilegesRequiredOverridesAllowed=dialog commandline
 CloseApplications=yes
 RestartApplications=no
 
+; The installer is English only (spec 7.3); the program itself switches language
+; in the settings (spec 8.1), so the pages of the wizard are kept in one language.
 [Languages]
 Name: "eng"; MessagesFile: "compiler:Default.isl"
-Name: "ru"; MessagesFile: "compiler:Languages\Russian.isl"
 
 [CustomMessages]
 eng.DeleteUserData=Delete %1 settings, logs and browser profile?
-ru.DeleteUserData=Удалить настройки, логи и профиль браузера %1?
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"

@@ -22,6 +22,7 @@ from pydownloader.download.engine import CancelledError, DownloadError, Task
 from pydownloader.download.http import FetchError, fetch_bytes, fetch_text, merge_cookies
 from pydownloader.download.runner import RunContext, build_task, output_path, run_task
 from pydownloader.ffmpeg.locate import Ffmpeg, FfmpegNotFoundError
+from pydownloader.i18n import tr
 from pydownloader.manifest.registry import SourceEntry
 from pydownloader.util.urls import dir_prefix, path_extension
 
@@ -70,7 +71,7 @@ class QueueWorker(QThread):
         with self._cond:
             self._queue.append(task)
             self._cond.notify()
-        logger.debug("В очередь добавлена задача %s: %s", task.id, entry.url)
+        logger.debug(tr("dl_task_queued", id=task.id, url=entry.url))
         return task.id
 
     def cancel(self, task_id: str) -> None:
@@ -79,7 +80,7 @@ class QueueWorker(QThread):
             self._cancelled.add(task_id)
             self._queue = [task for task in self._queue if task.id != task_id]
             self._cond.notify_all()
-        logger.debug("Отмена задачи %s", task_id)
+        logger.debug(tr("dl_cancel_task", id=task_id))
 
     def stop(self) -> None:
         """Ask the worker to finish (the window is closing)."""
@@ -96,7 +97,7 @@ class QueueWorker(QThread):
         return Path(self.download_dir)
 
     def run(self) -> None:
-        logger.debug("Очередь запущена, ожидание задач")
+        logger.debug(tr("dl_queue_started"))
         while True:
             with self._cond:
                 # The thread outlives the queue: it waits here until the user
@@ -105,7 +106,7 @@ class QueueWorker(QThread):
                 while not self._stop and not self._queue:
                     self._cond.wait()
                 if self._stop:
-                    logger.debug("Очередь остановлена")
+                    logger.debug(tr("dl_queue_stopped"))
                     return
                 task = self._queue.pop(0)
                 self._current = task
@@ -117,28 +118,32 @@ class QueueWorker(QThread):
         task.out_path = output_path(self._root(), task.entry)
         ctx = self._context(task)
         logger.info(
-            "Задача %s: %s (%s, %s)",
-            task.id,
-            task.entry.title or task.entry.url,
-            task.entry.kind,
-            task.out_path.name,
+            tr(
+                "dl_task_start",
+                id=task.id,
+                title=task.entry.title or task.entry.url,
+                kind=task.entry.kind,
+                name=task.out_path.name,
+            )
         )
         self.task_started.emit(task.id, task.out_path.name)
         try:
             path = run_task(task, ctx)
-            logger.info("Задача %s готова: %s", task.id, path)
+            logger.info(tr("dl_task_ready", id=task.id, path=path))
             self.task_finished.emit(task.id, str(path))
         except CancelledError:
-            logger.info("Задача %s отменена", task.id)
-            self.log.emit(f"Отменено: {task.entry.title or task.entry.url}")
-            self.task_failed.emit(task.id, "отменено")
+            logger.info(tr("dl_task_cancelled_log", id=task.id))
+            self.log.emit(tr("dl_cancelled_title", title=task.entry.title or task.entry.url))
+            self.task_failed.emit(task.id, tr("dl_cancelled"))
         except (DownloadError, FetchError, FfmpegNotFoundError) as exc:
-            logger.error("Задача %s не выполнена: %s", task.id, exc)
-            self.log.emit(f"Ошибка задачи {task.entry.title or task.entry.url}: {exc}")
+            logger.error(tr("dl_task_failed", id=task.id, error=exc))
+            title = task.entry.title or task.entry.url
+            self.log.emit(tr("dl_task_error", title=title, error=exc))
             self.task_failed.emit(task.id, str(exc))
         except Exception as exc:  # an unexpected failure must reach the console
-            logger.exception("Задача %s упала неожиданно", task.id)
-            self.log.emit(f"Ошибка задачи {task.entry.title or task.entry.url}: {exc}")
+            logger.exception(tr("dl_task_crashed", id=task.id))
+            title = task.entry.title or task.entry.url
+            self.log.emit(tr("dl_task_error", title=title, error=exc))
             self.task_failed.emit(task.id, str(exc))
 
     def _context(self, task: Task) -> RunContext:
@@ -167,31 +172,31 @@ class QueueWorker(QThread):
     def _fetch_text(self, entry: SourceEntry, url: str, headers: dict) -> str | None:
         recorded = self._recorded_url(entry, url)
         if recorded is not None and recorded != url:
-            logger.debug("Манифест по записанному URL: %s", recorded)
+            logger.debug(tr("dl_manifest_recorded_url", url=recorded))
             try:
                 text = fetch_text(recorded, headers)
                 entry.effective[url] = recorded
                 return text
             except FetchError as exc:
-                logger.debug("Записанный URL не сработал (%s): %s", exc, recorded)
+                logger.debug(tr("dl_recorded_url_failed", error=exc, url=recorded))
         try:
             text = fetch_text(url, headers)
             entry.effective[url] = url
             return text
         except FetchError as exc:
-            logger.debug("Манифест не получен: %s (%s)", url, exc)
+            logger.debug(tr("dl_manifest_fetch_failed", url=url, error=exc))
             # The browser may have fetched another playlist of the same stream
             # (a nested master next to the media playlist). phncdn signs every
             # path, so a constructed URL is rejected while the recorded one works.
             alt = self._recorded_in_dir(entry, url)
             if alt is not None and alt != url:
-                logger.debug("Пробую записанный плейлист из того же каталога: %s", alt)
+                logger.debug(tr("dl_try_recorded_playlist", url=alt))
                 try:
                     text = fetch_text(alt, headers)
                     entry.effective[url] = alt
                     return text
                 except FetchError as second:
-                    logger.debug("Записанный плейлист не сработал (%s): %s", second, alt)
+                    logger.debug(tr("dl_recorded_playlist_failed", error=second, url=alt))
             self.log.emit(str(exc))
             return None
 
@@ -216,7 +221,7 @@ class QueueWorker(QThread):
             try:
                 return fetch_bytes(recorded, headers, byte_range)
             except FetchError as exc:
-                logger.debug("Сегмент по записанному URL не получен (%s): %s", exc, recorded)
+                logger.debug(tr("dl_recorded_segment_failed", error=exc, url=recorded))
         return fetch_bytes(url, headers, byte_range)
 
     def _recorded_url(self, entry: SourceEntry, url: str) -> str | None:
@@ -235,7 +240,7 @@ class QueueWorker(QThread):
             for value in entry.recorded.values()
         ):
             return None
-        logger.debug("Жду записанный URL (%.0f с): %s", RECORDED_POLL, url)
+        logger.debug(tr("dl_waiting_recorded_url", seconds=RECORDED_POLL, url=url))
         deadline = time.monotonic() + RECORDED_POLL
         while time.monotonic() < deadline:
             time.sleep(RECORDED_POLL_STEP)

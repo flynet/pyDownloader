@@ -1,0 +1,108 @@
+"""French texts of the ui group: the keys come from ui_en.py.
+
+Keys of the card (spec 4.1), the main window (spec 4.2, 4.3), the settings
+dialog (spec 4.3, 8.1), the startup messages (spec 4.4, 7.1) and the update
+dialog (spec 8.3). Placeholders are filled by ``tr`` with keyword arguments.
+"""
+
+TEXTS: dict[str, str] = {
+    # --- card (spec 4.1) ----------------------------------------------------
+    "card_state_queued": "En file d'attente",
+    "card_state_downloading": "Téléchargement",
+    "card_state_done": "Terminé",
+    "card_state_error": "Erreur",
+    "card_stage_download": "téléchargement",
+    "card_stage_decrypt": "déchiffrement",
+    "card_stage_mux": "assemblage",
+    "card_size_unknown": "taille inconnue",
+    "card_size_mb": "{mb:.1f} Mo",
+    "card_quality_unknown": "résolution inconnue",
+    "card_download": "Télécharger",
+    "card_cancel": "Annuler",
+    "card_open_file": "Ouvrir le fichier",
+    "card_retry": "Réessayer",
+    "card_copy_link": "Copier le lien",
+    "card_progress": "{percent}% · segments {done} sur {total}",
+    "card_speed_mb": "{speed:.1f} Mo/s",
+    "card_cancelled": "annulé",
+    # --- main window (spec 4.2, 4.3) ---------------------------------------
+    "window_empty": "Aucune vidéo trouvée. Ouvrez un site dans le navigateur et lancez la vidéo.",
+    "window_clear": "Effacer",
+    "window_clear_all": "Tout effacer",
+    "window_clear_downloaded": "Effacer les téléchargés",
+    "window_open_download_folder": "Ouvrir le dossier de téléchargement",
+    "window_open_log": "Ouvrir le fichier journal",
+    "window_settings": "⚙ Réglages",
+    "window_quit_question": "Un téléchargement est en cours. L'annuler et quitter ?",
+    "window_download_folder_title": "Dossier de téléchargement",
+    "window_found_videos": "Vidéos trouvées",
+    "window_clear_all_tip": "Retirer toutes les vidéos trouvées de la liste",
+    "window_clear_downloaded_tip": "Retirer seulement les vidéos déjà téléchargées",
+    "window_list_cleared": "La liste des vidéos trouvées est vidée",
+    "window_active_kept": "Les téléchargements actifs continuent, leurs cartes sont retirées",
+    "window_no_downloaded": "Aucune vidéo téléchargée dans la liste",
+    "window_removed_count": "Vidéos téléchargées retirées : {count}",
+    "window_finished": "Terminé : {path}",
+    "window_browser_closed": "Navigateur fermé",
+    "window_shown": "Affiché dans la liste : {url}",
+    "window_queued": "Mis en file d'attente : {title}",
+    "window_download_started": "Téléchargement démarré : {title}",
+    "window_task_failed": "Échec de la tâche : {title}",
+    "window_file_missing": "Fichier introuvable, ouverture du dossier de téléchargement",
+    "window_open_failed": "Impossible d'ouvrir le fichier : {error}",
+    # --- settings dialog (spec 4.3, 8.1) -----------------------------------
+    "settings_title": "Réglages de PyDownloader",
+    "settings_download_folder": "Dossier des vidéos téléchargées",
+    "settings_folder_row": "Dossier de téléchargement :",
+    "settings_threads_row": "Threads de segments :",
+    "settings_height_row": "Résolution (p) :",
+    "settings_min_mp4_row": "MP4 minimum (Mo) :",
+    "settings_theme_row": "Thème :",
+    "settings_language_row": "Langue :",
+    "settings_check_updates": "Vérifier les mises à jour",
+    "settings_browse": "Parcourir…",
+    "settings_save": "Enregistrer",
+    "settings_cancel": "Annuler",
+    "settings_check_updates_button": "Vérifier les mises à jour",
+    "settings_restart_hint": "La langue est appliquée après le redémarrage du programme.",
+    "settings_restart": "Redémarrer",
+    "theme_dark": "Sombre",
+    "theme_light": "Clair",
+    "theme_system": "Système",
+    # --- startup (spec 4.4, 7.1) -------------------------------------------
+    "app_started": "PyDownloader {version}, dossier de téléchargement : {dir}",
+    "app_log_file": "Fichier journal : {path}",
+    "app_data_dir": "Données du programme : {path}",
+    "app_profile_dir": "Profil du navigateur : {path}",
+    "app_blocker_state": "Bloqueur de publicités : {state}",
+    "app_chromium_offer": (
+        "Chrome et Edge sont introuvables. Télécharger Chromium depuis Playwright "
+        "(environ 170 Mo, une seule fois) ?"
+    ),
+    "app_chromium_offer_blocker": (
+        "Le bloqueur de publicités a besoin de Chromium de Playwright "
+        "(environ 170 Mo, une seule fois).\n\nLe télécharger ? Sans lui le navigateur "
+        "s'ouvre sans bloqueur : Chrome et Edge ignorent les extensions chargées "
+        "depuis la ligne de commande."
+    ),
+    "app_blocker_not_loaded": (
+        "Bloqueur de publicités non chargé : Chrome et Edge n'acceptent pas les "
+        "extensions depuis la ligne de commande. Pour l'activer, autorisez le "
+        "téléchargement de Chromium au prochain démarrage."
+    ),
+    "app_blocker_on": "connecté",
+    "app_blocker_off": "non connecté",
+    # --- update dialog (spec 8.3) ------------------------------------------
+    "update_title": "Une nouvelle version est disponible",
+    "update_download_text": "Téléchargement de l'installeur…",
+    "update_install_text": "L'installeur démarre, le programme va se fermer.",
+    "update_wait_text": "Une vidéo se télécharge. Attendre sa fin avant de mettre à jour ?",
+    "update_sha_fail": "SHA-256 différent, la mise à jour n'est pas installée",
+    "update_later": "Plus tard",
+    "update_skip": "Ignorer cette version",
+    "update_button": "Mettre à jour",
+    "update_cancel": "Annuler",
+    "update_notices": "Notes de version",
+    "update_available": "La version {version} est disponible",
+    "update_none": "Aucune mise à jour · {time}",
+}

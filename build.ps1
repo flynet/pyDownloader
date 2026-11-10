@@ -75,7 +75,7 @@ if (Test-Path "uBlock.crx") {
     Copy-Item -Force "uBlock.crx" "dist\PyDownloader\uBlock.crx"
     Write-Host "uBlock: uBlock.crx"
 } else {
-    Write-Warning "uBlock.crx не найден: сборка без блокировщика рекламы"
+    Write-Warning "uBlock.crx not found: the build ships without the ad blocker"
 }
 
 # --- 4. Inno Setup ------------------------------------------------------------
@@ -91,7 +91,7 @@ if (-not $iscc) {
     }
 }
 if (-not $iscc) {
-    Write-Warning "Inno Setup не найден: установщик не собран. Установите: winget install -e --id JRSoftware.InnoSetup"
+    Write-Warning "Inno Setup not found: the installer is not built. Install it with: winget install -e --id JRSoftware.InnoSetup"
     exit 0
 }
 

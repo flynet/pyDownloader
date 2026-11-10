@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from pydownloader.dash.parser import parse_mpd
 from pydownloader.hls.parser import parse_playlist
-from pydownloader.manifest.drm import DRM_MESSAGE, detect_dash, detect_drm, detect_hls
+from pydownloader.i18n import set_language
+from pydownloader.manifest.drm import detect_dash, detect_drm, detect_hls, drm_message
 from tests.conftest import HLS_URL, MPD_URL
 
 
@@ -26,7 +27,11 @@ def test_hls_sample_aes_is_drm(read):
     verdict = detect_hls(playlist)
     assert verdict.is_drm
     assert verdict.system == "SAMPLE-AES"
-    assert verdict.message == DRM_MESSAGE
+    assert verdict.message == drm_message()
+    # the text follows the language of the program (spec 4.3)
+    english = set_language("en")
+    assert verdict.message == "Content is protected by DRM, downloading is not possible"
+    set_language(english)
 
 
 def test_hls_fairplay_keyformat_is_drm():

@@ -1,0 +1,106 @@
+"""Russian texts of the ui group: the keys come from ui_en.py.
+
+Keys of the card (spec 4.1), the main window (spec 4.2, 4.3), the settings
+dialog (spec 4.3, 8.1), the startup messages (spec 4.4, 7.1) and the update
+dialog (spec 8.3). Placeholders are filled by ``tr`` with keyword arguments.
+"""
+
+TEXTS: dict[str, str] = {
+    # --- card (spec 4.1) ----------------------------------------------------
+    "card_state_queued": "В очереди",
+    "card_state_downloading": "Скачивание",
+    "card_state_done": "Готово",
+    "card_state_error": "Ошибка",
+    "card_stage_download": "скачивание",
+    "card_stage_decrypt": "расшифровка",
+    "card_stage_mux": "склейка",
+    "card_size_unknown": "размер неизвестен",
+    "card_size_mb": "{mb:.1f} МБ",
+    "card_quality_unknown": "разрешение неизвестно",
+    "card_download": "Скачать",
+    "card_cancel": "Отмена",
+    "card_open_file": "Открыть файл",
+    "card_retry": "Повторить",
+    "card_copy_link": "Копировать ссылку",
+    "card_progress": "{percent}% · сегменты {done} из {total}",
+    "card_speed_mb": "{speed:.1f} МБ/с",
+    "card_cancelled": "отменено",
+    # --- main window (spec 4.2, 4.3) ---------------------------------------
+    "window_empty": "Видео пока не найдены. Откройте сайт в браузере и запустите видео.",
+    "window_clear": "Очистить",
+    "window_clear_all": "Очистить все",
+    "window_clear_downloaded": "Очистить скачанные",
+    "window_open_download_folder": "Открыть папку загрузки",
+    "window_open_log": "Открыть лог-файл",
+    "window_settings": "⚙ Настройки",
+    "window_quit_question": "Идёт загрузка. Отменить загрузку и выйти?",
+    "window_download_folder_title": "Папка для загрузок",
+    "window_found_videos": "Найденные видео",
+    "window_clear_all_tip": "Убрать все найденные видео из списка",
+    "window_clear_downloaded_tip": "Убрать из списка видео, которые уже скачаны и лежат на диске",
+    "window_list_cleared": "Список найденных видео очищен",
+    "window_active_kept": "Активные загрузки продолжатся, но их карточки убраны",
+    "window_no_downloaded": "Скачанных видео в списке нет",
+    "window_removed_count": "Убрано скачанных видео: {count}",
+    "window_finished": "Готово: {path}",
+    "window_browser_closed": "Браузер закрыт",
+    "window_shown": "Показано в списке: {url}",
+    "window_queued": "В очереди: {title}",
+    "window_download_started": "Начата загрузка: {title}",
+    "window_task_failed": "Задача не выполнена: {title}",
+    "window_file_missing": "Файл не найден, открываю папку загрузок",
+    "window_open_failed": "Не удалось открыть файл: {error}",
+    # --- settings dialog (spec 4.3, 8.1) -----------------------------------
+    "settings_title": "Настройки PyDownloader",
+    "settings_download_folder": "Папка для скачанных видео",
+    "settings_folder_row": "Папка загрузок:",
+    "settings_threads_row": "Потоков сегментов:",
+    "settings_height_row": "Разрешение (p):",
+    "settings_min_mp4_row": "Минимальный MP4 (МБ):",
+    "settings_theme_row": "Тема:",
+    "settings_language_row": "Язык:",
+    "settings_check_updates": "Проверять обновления",
+    "settings_browse": "Обзор…",
+    "settings_save": "Сохранить",
+    "settings_cancel": "Отмена",
+    "settings_check_updates_button": "Проверить обновления",
+    "settings_restart_hint": "Язык применяется после перезапуска программы.",
+    "settings_restart": "Перезапустить",
+    "theme_dark": "Тёмная",
+    "theme_light": "Светлая",
+    "theme_system": "Системная",
+    # --- startup (spec 4.4, 7.1) -------------------------------------------
+    "app_started": "PyDownloader {version}, папка загрузок: {dir}",
+    "app_log_file": "Лог-файл: {path}",
+    "app_data_dir": "Данные программы: {path}",
+    "app_profile_dir": "Профиль браузера: {path}",
+    "app_blocker_state": "Блокировщик рекламы: {state}",
+    "app_chromium_offer": (
+        "Chrome и Edge не найдены. Скачать Chromium от Playwright (около 170 МБ, один раз)?"
+    ),
+    "app_chromium_offer_blocker": (
+        "Для блокировщика рекламы нужен Chromium от Playwright (около 170 МБ, один раз).\n\n"
+        "Скачать его? Без него браузер откроется без блокировщика: Chrome и Edge "
+        "игнорируют расширения, загруженные из командной строки."
+    ),
+    "app_blocker_not_loaded": (
+        "Блокировщик рекламы не загружен: Chrome и Edge не принимают расширения "
+        "из командной строки. Чтобы включить его, разрешите скачать Chromium "
+        "при следующем запуске."
+    ),
+    "app_blocker_on": "подключён",
+    "app_blocker_off": "не подключён",
+    # --- update dialog (spec 8.3) ------------------------------------------
+    "update_title": "Доступна новая версия",
+    "update_download_text": "Скачивание установщика…",
+    "update_install_text": "Запускается установщик, программа закроется.",
+    "update_wait_text": "Идёт загрузка видео. Дождаться её окончания перед обновлением?",
+    "update_sha_fail": "SHA-256 не совпадает, обновление не установлено",
+    "update_later": "Позже",
+    "update_skip": "Пропустить эту версию",
+    "update_button": "Обновить",
+    "update_cancel": "Отмена",
+    "update_notices": "Уведомления",
+    "update_available": "Доступна версия {version}",
+    "update_none": "Нет обновлений · {time}",
+}

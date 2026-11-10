@@ -14,12 +14,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+from pydownloader.i18n import tr
+
 BrowserKind = Literal["chrome", "msedge", "chromium"]
 
 LABELS = {"chrome": "Chrome", "msedge": "Edge", "chromium": "Chromium (Playwright)"}
+#: English reference of the key ``browser_codec_warning``: the warning shown to
+#: the user is taken from the catalog, the constant is only its default text.
 CHROMIUM_WARNING = (
-    "Chromium от Playwright может не проигрывать H.264/AAC на части сайтов: "
-    "лучше использовать установленный Chrome или Edge"
+    "Chromium from Playwright may not play H.264/AAC on some sites: "
+    "the installed Chrome or Edge is a better choice"
 )
 
 #: Standard install locations of Chrome and Edge, including the per-user installs
@@ -133,10 +137,7 @@ def resolve_browser(
         return installed[0]
     if chromium is not None:
         return _chromium_choice(chromium)
-    raise NoBrowserError(
-        "Не найдены Chrome и Edge, Chromium от Playwright не установлен. "
-        "Установите Chrome или Edge, либо разрешите скачать Chromium."
-    )
+    raise NoBrowserError(tr("browser_no_browser"))
 
 
 def launch_kwargs(
