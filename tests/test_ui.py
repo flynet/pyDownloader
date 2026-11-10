@@ -142,6 +142,33 @@ def test_open_result_file_falls_back_to_the_folder(tmp_path: Path, qtbot, monkey
     assert folders == [tmp_path]
 
 
+def test_clear_all_button_removes_every_card(tmp_path: Path, qtbot):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    window.add_source(entry("s1"))
+    window.add_source(entry("s2"))
+
+    window.clear_all_button.click()
+    assert window.cards == {}
+    assert window.hint_label.isVisible()
+
+
+def test_clear_downloaded_button_keeps_videos_that_are_not_on_disk(tmp_path: Path, qtbot):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    window.add_source(entry("s1"))
+    window.add_source(entry("s2"))
+    saved = tmp_path / "s1.mp4"
+    saved.write_bytes(b"data")
+    window.out_paths["s1"] = saved
+    window.out_paths["s2"] = tmp_path / "gone.mp4"
+
+    window.clear_downloaded_button.click()
+    assert set(window.cards) == {"s2"}
+    assert "s1" not in window.out_paths
+    assert "s2" in window.out_paths
+
+
 def test_formats():
     assert format_size(None) == "размер неизвестен"
     assert format_size(1024 * 1024) == "1.0 МБ"
