@@ -122,7 +122,11 @@ def installed_extension(crx: Path, cache_dir: Path) -> Path:
 
 def extension_dir(app_dir: Path, cache_dir: Path) -> Path | None:
     """Folder of the extension to load, ``None`` when it is not shipped or broken."""
-    crx = find_crx(app_dir)
+    try:
+        crx = find_crx(app_dir)
+    except OSError as exc:
+        logger.warning("Не удалось прочитать папку программы %s: %s", app_dir, exc)
+        return None
     if crx is None:
         return None
     try:
