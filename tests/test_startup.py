@@ -119,7 +119,7 @@ def test_declining_the_extension_falls_back_to_chrome(tmp_path: Path, monkeypatc
     monkeypatch.setattr(
         app_mod,
         "resolve_browser",
-        lambda browsers_dir, prefer_chromium=False, legacy_dir=None: CHROME,
+        lambda browsers_dir, prefer_chromium=False, legacy_dir=None, name="auto": CHROME,
     )
     monkeypatch.setattr(app_mod, "launch_sniffer", record_launch(launched))
 
@@ -139,7 +139,7 @@ def test_extension_is_passed_to_the_bundled_chromium(tmp_path: Path, monkeypatch
     monkeypatch.setattr(
         app_mod,
         "resolve_browser",
-        lambda browsers_dir, prefer_chromium=False, legacy_dir=None: CHROMIUM,
+        lambda browsers_dir, prefer_chromium=False, legacy_dir=None, name="auto": CHROMIUM,
     )
     monkeypatch.setattr(app_mod, "launch_sniffer", record_launch(launched))
 

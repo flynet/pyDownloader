@@ -73,6 +73,15 @@ TEXTS: dict[str, str] = {
     "settings_threads_row": "Threads de segments :",
     "settings_height_row": "Résolution (p) :",
     "settings_min_mp4_row": "MP4 minimum (Mo) :",
+    "settings_browser_row": "Navigateur :",
+    "settings_user_agent_row": "Agent utilisateur :",
+    "settings_user_agent_hint": "Vide : l'agent utilisateur Chrome de la version",
+    "settings_anti_bot": "Masquer les drapeaux d'un pilote de bot (anti-bot)",
+    "settings_ad_blocker": "Charger le bloqueur de publicités intégré",
+    "browser_auto": "Auto (Chrome, Edge, Chromium)",
+    "browser_chrome": "Chrome",
+    "browser_edge": "Edge",
+    "browser_chromium": "Chromium (Playwright)",
     "settings_theme_row": "Thème :",
     "settings_language_row": "Langue :",
     "settings_check_updates": "Vérifier les mises à jour",
@@ -93,6 +102,7 @@ TEXTS: dict[str, str] = {
     "app_data_dir": "Données du programme : {path}",
     "app_profile_dir": "Profil du navigateur : {path}",
     "app_blocker_state": "Bloqueur de publicités : {state}",
+    "app_blocker_disabled": "Le bloqueur de publicités est désactivé dans les réglages",
     "app_chromium_offer": (
         "Chrome et Edge sont introuvables. Télécharger Chromium depuis Playwright "
         "(environ 170 Mo, une seule fois) ?"

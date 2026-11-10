@@ -14,6 +14,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+from pydownloader.browser.stealth import (
+    DEFAULT_LOCALE,
+    browser_version,
+    chrome_user_agent,
+    launch_args,
+    stealth_kwargs,
+)
 from pydownloader.i18n import tr
 
 BrowserKind = Literal["chrome", "msedge", "chromium"]
@@ -119,8 +126,15 @@ def resolve_browser(
     exists: Callable[[str], bool] = os.path.isfile,
     prefer_chromium: bool = False,
     legacy_dir: Path | None = None,
+    name: str = "auto",
 ) -> BrowserChoice:
-    """Chrome → Edge → the Chromium installed in ``browsers_dir``.
+    """The browser to launch, from the name the user chose in the settings.
+
+    ``auto`` is Chrome → Edge → the Chromium installed in ``browsers_dir``, the
+    order of the spec. A chosen name is honoured: ``chromium`` is the browser
+    that loads the ad blocker, ``chrome``/``msedge`` are the installed ones.
+    When the chosen browser is not on the disk, the next one of the spec order
+    is taken, so a choice does not stop the program.
 
     With ``prefer_chromium`` the bundled Chromium wins over installed browsers:
     it is the only one that loads the ad blocker from the command line.
@@ -130,9 +144,15 @@ def resolve_browser(
     offer the Chromium download (spec 7.2).
     """
     chromium = chromium_executable(browsers_dir, legacy_dir)
-    if chromium is not None and prefer_chromium:
-        return _chromium_choice(chromium)
     installed = installed_browsers(candidates, exists)
+    if name != "auto":
+        chosen = [choice for choice in installed if choice.kind == name]
+        if chosen:
+            return chosen[0]
+    # The browser the user named is not on the disk: launch the order of the spec,
+    # so a choice does not stop the program.
+    if chromium is not None and (name == "chromium" or prefer_chromium):
+        return _chromium_choice(chromium)
     if installed:
         return installed[0]
     if chromium is not None:
@@ -140,8 +160,29 @@ def resolve_browser(
     raise NoBrowserError(tr("browser_no_browser"))
 
 
+def auto_user_agent(choice: BrowserChoice) -> str:
+    """User agent for the browser: the Chrome form for the bundled Chromium.
+
+    Playwright Chromium reports ``Chromium`` in the string, which is the second
+    thing a bot detector reads; the version of ``chrome.exe`` gives the major
+    number, so the user agent says Chrome of the same version (spec 7.2).
+    Installed Chrome and Edge send their own user agent, nothing is set here.
+    """
+    if not choice.is_bundled_chromium or not choice.executable:
+        return ""
+    version = browser_version(choice.executable)
+    if not version:
+        return ""
+    return chrome_user_agent(version)
+
+
 def launch_kwargs(
-    choice: BrowserChoice, profile_dir: Path, extension: Path | None = None
+    choice: BrowserChoice,
+    profile_dir: Path,
+    extension: Path | None = None,
+    anti_bot: bool = True,
+    user_agent: str = "",
+    locale: str = DEFAULT_LOCALE,
 ) -> dict[str, Any]:
     """Arguments of ``launch_persistent_context`` for the chosen browser.
 
@@ -151,17 +192,30 @@ def launch_kwargs(
     ``extension`` is the unpacked folder of the ad blocker. Recent Chrome and
     Edge ignore ``--load-extension``, so the flags are passed to the bundled
     Chromium only; the caller keeps the extension out of that browser.
+
+    ``anti_bot`` is the stealth of spec 7.2: the flags Playwright adds for a
+    driver are dropped, the automation marker is turned off, the sandbox flag is
+    taken out, and the locale of the interface is used, so the browser looks
+    like the Chrome of a person. ``user_agent`` is the string the user chose;
+    when it is empty the Chrome form of the same version is taken.
     """
-    args = ["--no-first-run", "--no-default-browser-check", "--start-maximized"]
-    if extension is not None and choice.is_bundled_chromium:
-        args.append(f"--disable-extensions-except={extension}")
-        args.append(f"--load-extension={extension}")
+    args = launch_args(
+        ["--no-first-run", "--no-default-browser-check", "--start-maximized"],
+        extension if extension is not None and choice.is_bundled_chromium else None,
+        anti_bot,
+    )
+    agent = user_agent or auto_user_agent(choice)
     kwargs: dict[str, Any] = {
         "user_data_dir": str(profile_dir),
         "headless": False,
         "no_viewport": True,
         "args": args,
+        **stealth_kwargs(anti_bot, locale),
     }
+    # A user agent is a string a site reads, so it is sent even when the stealth
+    # is off: the choice of the user is the point, not the flags of the launch.
+    if agent:
+        kwargs["user_agent"] = agent
     if choice.channel:
         kwargs["channel"] = choice.channel
     elif choice.executable:

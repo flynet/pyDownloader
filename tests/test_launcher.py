@@ -6,8 +6,10 @@ from pathlib import Path
 
 import pytest
 
+import pydownloader.browser.launcher as launcher_mod
 from pydownloader.browser.launcher import (
     CHROMIUM_WARNING,
+    BrowserChoice,
     NoBrowserError,
     chromium_executable,
     installed_browsers,
@@ -161,3 +163,88 @@ def test_extension_flags_are_not_passed_to_chrome(tmp_path: Path):
     choice = resolve_browser(tmp_path, [("chrome", CHROME)], exists=lambda path: path == CHROME)
     kwargs = launch_kwargs(choice, tmp_path / "profile", tmp_path / "uBlock")
     assert not any("load-extension" in arg for arg in kwargs["args"])
+
+
+def make_chrome(tmp_path: Path) -> BrowserChoice:
+    return resolve_browser(tmp_path, [("chrome", CHROME)], exists=lambda path: path == CHROME)
+
+
+def make_chromium(tmp_path: Path) -> BrowserChoice:
+    executable = tmp_path / "chromium-1248" / "chrome-win64" / "chrome.exe"
+    executable.parent.mkdir(parents=True, exist_ok=True)
+    executable.write_bytes(b"MZ")
+    return resolve_browser(
+        tmp_path, [("chrome", str(tmp_path / "none.exe"))], exists=lambda path: False
+    )
+
+
+def test_the_stealth_flags_of_a_driver_are_in_the_launch(tmp_path: Path):
+    kwargs = launch_kwargs(make_chrome(tmp_path), tmp_path / "profile")
+    assert "--disable-blink-features=AutomationControlled" in kwargs["args"]
+    assert kwargs["chromium_sandbox"] is True
+    # --disable-extensions is the flag Chrome uses to ignore the ad blocker.
+    assert "--disable-extensions" in kwargs["ignore_default_args"]
+    assert kwargs["locale"] == "en-US"
+
+
+def test_stealth_off_keeps_the_defaults_of_playwright(tmp_path: Path):
+    kwargs = launch_kwargs(make_chrome(tmp_path), tmp_path / "profile", None, anti_bot=False)
+    assert not any("AutomationControlled" in arg for arg in kwargs["args"])
+    assert "ignore_default_args" not in kwargs
+
+
+def test_bundled_chromium_sends_the_chrome_user_agent(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(
+        launcher_mod, "browser_version", lambda executable: "Chromium 156.0.3304.0"
+    )
+    kwargs = launch_kwargs(make_chromium(tmp_path), tmp_path / "profile")
+    assert "Chrome/156.0.0.0" in kwargs["user_agent"]
+    assert "Chromium" not in kwargs["user_agent"]
+
+
+def test_installed_chrome_keeps_the_user_agent_of_its_own_version(tmp_path: Path):
+    # Chrome sends the string of its install; nothing is overridden (spec 7.2).
+    assert "user_agent" not in launch_kwargs(make_chrome(tmp_path), tmp_path / "profile")
+
+
+def test_the_user_agent_of_the_settings_is_sent(tmp_path: Path):
+    kwargs = launch_kwargs(
+        make_chrome(tmp_path), tmp_path / "profile", None, True, "My player 1.0"
+    )
+    assert kwargs["user_agent"] == "My player 1.0"
+
+
+def test_a_browser_of_the_choice_is_used(tmp_path: Path):
+    choice = resolve_browser(
+        tmp_path,
+        [("chrome", CHROME), ("msedge", EDGE)],
+        exists=lambda path: path in (CHROME, EDGE),
+        name="msedge",
+    )
+    assert choice.kind == "msedge"
+
+
+def test_chromium_of_the_choice_wins_over_installed_chrome(tmp_path: Path):
+    chromium = tmp_path / "chromium-1248" / "chrome-win64" / "chrome.exe"
+    chromium.parent.mkdir(parents=True)
+    chromium.write_bytes(b"MZ")
+    choice = resolve_browser(
+        tmp_path, [("chrome", CHROME)], exists=lambda path: path == CHROME, name="chromium"
+    )
+    assert choice.kind == "chromium"
+
+
+def test_a_choice_that_is_not_installed_falls_back_to_the_spec_order(tmp_path: Path):
+    # The user asked for Edge, it is not on the disk: Chrome is launched, so a
+    # choice in the settings cannot stop the program.
+    choice = resolve_browser(
+        tmp_path, [("chrome", CHROME)], exists=lambda path: path == CHROME, name="msedge"
+    )
+    assert choice.kind == "chrome"
+
+
+def test_no_browser_at_all_raises(tmp_path: Path):
+    with pytest.raises(NoBrowserError):
+        resolve_browser(
+            tmp_path, [("chrome", CHROME)], exists=lambda path: False, name="msedge"
+        )

@@ -116,6 +116,22 @@ def test_settings_fall_back_to_english(tmp_path: Path):
     assert load_settings(tmp_path / "absent.json").language == DEFAULT_LANGUAGE
 
 
+def test_settings_keep_the_browser_choice(tmp_path: Path):
+    path = tmp_path / "settings.json"
+    save_settings(Settings(browser_name="chromium", user_agent="Dev 1.0", anti_bot=False), path)
+    back = load_settings(path)
+    # The browser, the user agent and the stealth are saved as the user set them.
+    assert back.browser_name == "chromium"
+    assert back.user_agent == "Dev 1.0"
+    assert not back.anti_bot
+    assert back.ad_blocker
+    # an edited file names a browser that does not exist: launch the spec order
+    body = json.loads(path.read_text(encoding="utf-8"))
+    body["browser_name"] = "opera"
+    path.write_text(json.dumps(body), encoding="utf-8")
+    assert load_settings(path).browser_name == "auto"
+
+
 def test_settings_dialog_shows_the_languages(qtbot):
     dialog = SettingsDialog(Settings())
     qtbot.addWidget(dialog)

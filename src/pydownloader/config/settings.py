@@ -12,6 +12,9 @@ from pydownloader.i18n import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, Language
 ThemeName = Literal["dark", "light", "system"]
 #: Dark first: it is the default, the system theme is the fallback choice.
 THEMES: tuple[ThemeName, ...] = ("dark", "light", "system")
+BrowserName = Literal["auto", "chrome", "msedge", "chromium"]
+#: «Auto» first: Chrome → Edge → Chromium, the order of the spec (spec 7.2).
+BROWSERS: tuple[BrowserName, ...] = ("auto", "chrome", "msedge", "chromium")
 
 DEFAULT_THREADS = 6
 DEFAULT_TARGET_HEIGHT = 1080
@@ -27,6 +30,15 @@ class Settings:
     theme: ThemeName = "dark"
     #: Language of the interface and of the log lines, applied at startup (spec 8.1).
     language: Language = DEFAULT_LANGUAGE
+    #: Browser to launch: «auto» is the order of the spec, a name is the choice
+    #: of the user (spec 7.2).
+    browser_name: BrowserName = "auto"
+    #: User agent the browser sends, ``""`` takes the Chrome form of the version.
+    user_agent: str = ""
+    #: Stealth of the launch: the flags of a driver are dropped (spec 7.2).
+    anti_bot: bool = True
+    #: Load the bundled ad blocker when the browser is able to load it (spec 6.4).
+    ad_blocker: bool = True
     target_height: int = DEFAULT_TARGET_HEIGHT
     min_mp4_size: int = DEFAULT_MIN_MP4_SIZE
     profile_in_downloads: bool = False
@@ -58,6 +70,10 @@ def load_settings(path: Path) -> Settings:
             setattr(settings, key, value)
     if settings.theme not in THEMES:
         settings.theme = "dark"
+    # A browser the settings name is not in the list (an edited file): launch the
+    # order of the spec, which is the same as before the setting existed.
+    if settings.browser_name not in BROWSERS:
+        settings.browser_name = "auto"
     # An old settings file has no language at all, an edited one a value that is
     # not in the list: both fall back to the default language.
     if settings.language not in SUPPORTED_LANGUAGES:

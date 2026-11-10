@@ -74,6 +74,15 @@ TEXTS: dict[str, str] = {
     "settings_threads_row": "分段线程数:",
     "settings_height_row": "分辨率 (p):",
     "settings_min_mp4_row": "最小 MP4 (MB):",
+    "settings_browser_row": "浏览器:",
+    "settings_user_agent_row": "用户代理:",
+    "settings_user_agent_hint": "空: 所用版本的 Chrome 用户代理",
+    "settings_anti_bot": "隐藏机器人驱动的参数 (反机器人)",
+    "settings_ad_blocker": "加载内置广告拦截器",
+    "browser_auto": "自动 (Chrome, Edge, Chromium)",
+    "browser_chrome": "Chrome",
+    "browser_edge": "Edge",
+    "browser_chromium": "Chromium (Playwright)",
     "settings_theme_row": "主题:",
     "settings_language_row": "语言:",
     "settings_check_updates": "检查更新",
@@ -94,6 +103,7 @@ TEXTS: dict[str, str] = {
     "app_data_dir": "程序数据: {path}",
     "app_profile_dir": "浏览器配置: {path}",
     "app_blocker_state": "广告拦截器: {state}",
+    "app_blocker_disabled": "设置中已关闭广告拦截器",
     "app_chromium_offer": (
         "未找到 Chrome 和 Edge。从 Playwright 下载 Chromium (约 170 MB, 仅需一次)?"
     ),
