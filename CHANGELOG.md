@@ -6,6 +6,8 @@ on `main`.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-10
+
 ### Added
 - Screenshots of the main window and of the settings dialog: they live in
   `assets/screenshots` and are shown in the README and in the release text. The
@@ -14,6 +16,8 @@ on `main`.
 - The interface and the log messages are localized (English, Russian, Chinese,
   French, German), English is the default, the language is chosen in Settings and
   is applied after a restart.
+- The installer wizard, the README, the changelog and the release notes are
+  English only; the program itself switches the language in the settings.
 
 ### Fixed
 - Cards keep their height in the list: a resizable scroll area resized its widget
@@ -129,6 +133,7 @@ on `main`.
   (`installer/pydownloader.iss`), `release.yml` publishing the installer and
   release notes from the CHANGELOG.
 
-[Unreleased]: https://github.com/flynet/pyDownloader/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/flynet/pyDownloader/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/flynet/pyDownloader/releases/tag/v0.3.0
 [0.2.0]: https://github.com/flynet/pyDownloader/releases/tag/v0.2.0
 [0.1.0]: https://github.com/flynet/pyDownloader/releases/tag/v0.1.0
