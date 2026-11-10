@@ -19,6 +19,26 @@ on `main`.
   the icon shows the window, and the first minimize shows a balloon that explains
   the tray. The tray and the «X» behaviour are settings, and a platform without a
   notification area (Windows Server, the offscreen CI) runs without the icon.
+- Anti-bot stealth of the launched browser (spec 7.2): the flags Playwright adds
+  for a driver are dropped (`--disable-extensions`, `--disable-sync`,
+  `--metrics-recording-only`, `--force-color-profile=srgb`, ...), the sandbox
+  flag is taken out, `--disable-blink-features=AutomationControlled` is added so
+  `navigator.webdriver` is not true, and an init script fixes the markers a
+  detector reads on its first check: `navigator.webdriver`, the list of
+  languages, `navigator.plugins`, `hardwareConcurrency`, `deviceMemory`,
+  `window.chrome`, the notification permission and the brands of
+  `navigator.userAgentData`. The bundled Chromium sends the Chrome user agent of
+  the same major version, and the locale of the browser is the language of the
+  interface, so `Accept-Language` matches the user's machine. Stealth is a
+  setting; the launch flags, the user agent, `navigator.webdriver` and the
+  extensions of the page are written to `app.log`, so a report of
+  "JavaScript is disabled" can be analysed after a user test.
+- Settings: the browser to launch is chosen (Auto = Chrome → Edge → Chromium,
+  Chrome, Edge, Chromium of Playwright), a browser that is not installed falls
+  back to the Auto order, so a choice cannot stop the program; the Chromium of
+  Playwright is the only browser that loads the bundled ad blocker, and the
+  blocker can be switched off. A User agent field imitates another device, an
+  empty field takes the Chrome string of the version that is launched.
 
 ### Fixed
 - `build.ps1` writes the `.sha256` file of the installer without a byte-order

@@ -29,6 +29,7 @@ from pydownloader.browser.launcher import (
     resolve_browser,
 )
 from pydownloader.browser.sniffer import SnifferThread
+from pydownloader.browser.stealth import locale_of
 from pydownloader.config.constants import APP_NAME
 from pydownloader.config.paths import (
     Paths,
@@ -119,6 +120,11 @@ def make_sniffer(
         start_url=start_url,
         probe_height=lambda url, headers: probe_height(url, ffmpeg, headers),
         extension_dir=extension,
+        # The stealth of the launch is a setting, so a site that is unhappy with
+        # it can be run without it (spec 7.2).
+        anti_bot=settings.anti_bot,
+        user_agent=settings.user_agent,
+        locale=locale_of(settings.language),
     )
 
 
@@ -162,13 +168,18 @@ def start_browser(window: MainWindow, settings: Settings, paths: Paths) -> None:
     browser» starts the same kind without asking again (spec 4.3).
     """
     extension = extension_dir(application_dir(), paths.data_dir / "extensions")
+    if extension is not None and not settings.ad_blocker:
+        # The blocker is switched off in the settings: nothing to load (spec 6.4).
+        extension = None
+        window.log_info(tr("app_blocker_disabled"))
     if extension is not None:
         window.log_info(tr("app_blocker_state", state=extension))
+    want_chromium = settings.browser_name == "chromium"
+    have_chromium = chromium_executable(paths.browsers_dir, paths.legacy_browsers_dir) is not None
     offered = False
-    if (
-        extension is not None
-        and chromium_executable(paths.browsers_dir, paths.legacy_browsers_dir) is None
-    ):
+    if (extension is not None or want_chromium) and not have_chromium:
+        # The browser that can load the blocker is missing: ask for the download
+        # first, so a decline falls back to Chrome/Edge without the blocker.
         offered = True
         if _ask_install(window, tr("app_chromium_offer_blocker")):
             _start_install(window, settings, paths)
@@ -180,6 +191,7 @@ def start_browser(window: MainWindow, settings: Settings, paths: Paths) -> None:
             paths.browsers_dir,
             prefer_chromium=extension is not None,
             legacy_dir=paths.legacy_browsers_dir,
+            name=settings.browser_name,
         )
     except NoBrowserError as exc:
         window.log_warning(str(exc))

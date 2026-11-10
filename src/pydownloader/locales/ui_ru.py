@@ -73,6 +73,15 @@ TEXTS: dict[str, str] = {
     "settings_threads_row": "Потоков сегментов:",
     "settings_height_row": "Разрешение (p):",
     "settings_min_mp4_row": "Минимальный MP4 (МБ):",
+    "settings_browser_row": "Браузер:",
+    "settings_user_agent_row": "User-Agent:",
+    "settings_user_agent_hint": "Пусто: юзер-агент Chrome той же версии",
+    "settings_anti_bot": "Прятать флаги бот-драйвера (анти-бот)",
+    "settings_ad_blocker": "Загружать встроенный блокировщик рекламы",
+    "browser_auto": "Авто (Chrome, Edge, Chromium)",
+    "browser_chrome": "Chrome",
+    "browser_edge": "Edge",
+    "browser_chromium": "Chromium (Playwright)",
     "settings_theme_row": "Тема:",
     "settings_language_row": "Язык:",
     "settings_check_updates": "Проверять обновления",
@@ -93,6 +102,7 @@ TEXTS: dict[str, str] = {
     "app_data_dir": "Данные программы: {path}",
     "app_profile_dir": "Профиль браузера: {path}",
     "app_blocker_state": "Блокировщик рекламы: {state}",
+    "app_blocker_disabled": "Блокировщик рекламы выключен в настройках",
     "app_chromium_offer": (
         "Chrome и Edge не найдены. Скачать Chromium от Playwright (около 170 МБ, один раз)?"
     ),

@@ -25,6 +25,7 @@ from PySide6.QtWidgets import QWidget
 
 from pydownloader.browser.events import CookieRequest, ResponseEvent
 from pydownloader.browser.launcher import BrowserChoice, launch_kwargs
+from pydownloader.browser.stealth import DEFAULT_LOCALE, stealth_script
 from pydownloader.download.http import (
     FetchError,
     capture_headers,
@@ -83,6 +84,9 @@ class SnifferThread(QThread):
         start_url: str = "",
         probe_height: ProbeHeight | None = None,
         extension_dir: Path | None = None,
+        anti_bot: bool = True,
+        user_agent: str = "",
+        locale: str = DEFAULT_LOCALE,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -93,6 +97,12 @@ class SnifferThread(QThread):
         self.quality = quality
         self.start_url = start_url
         self.probe_height = probe_height
+        #: Stealth of the launch (spec 7.2): the flags of a driver are dropped.
+        self.anti_bot = anti_bot
+        #: User agent the user chose, ``""`` means the Chrome form of the browser.
+        self.user_agent = user_agent
+        #: ``Accept-Language`` of the browser, the language of the interface.
+        self.locale = locale
         self._events: queue.Queue[ResponseEvent | CookieRequest] = queue.Queue()
         self._stop = False
         self._context: BrowserContext | None = None
@@ -111,6 +121,34 @@ class SnifferThread(QThread):
     def is_browser_open(self) -> bool:
         """Whether the browser window is up: the top panel buttons use this."""
         return self._context is not None and not self._stop
+
+    def _log_page_state(self, page: Any) -> None:
+        """What a bot detector reads on its first check, written for analysis.
+
+        ``navigator.webdriver`` is the marker Playwright leaves, the user agent
+        tells whether the browser reports Chrome, the list of languages tells
+        whether the locale of the user is set (spec 7.2).
+        """
+        try:
+            ua = page.evaluate("navigator.userAgent")
+            driver = page.evaluate("!!navigator.webdriver")
+            languages = page.evaluate("navigator.languages.join(',')")
+        except Exception as exc:
+            logger.debug(tr("browser_state_failed", error=exc))
+            return
+        logger.info(
+            tr("browser_page_state", ua=ua, driver=driver, languages=languages)
+        )
+
+    def _log_extensions(self, context: BrowserContext) -> None:
+        """The ad blocker: Chrome and Edge ignore ``--load-extension`` (spec 6.4).
+
+        The service workers of the context are the visible sign of an extension
+        that was loaded, so they are logged; an empty list means the blocker is
+        not running in this browser.
+        """
+        urls = ", ".join(worker.url for worker in context.service_workers)
+        logger.info(tr("browser_ext_state", state=urls or tr("browser_none")))
 
     def request_cookies(
         self, url: str, timeout: float = COOKIES_TIMEOUT
@@ -137,10 +175,33 @@ class SnifferThread(QThread):
             asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
         try:
             with sync_playwright() as playwright:
-                context = playwright.chromium.launch_persistent_context(
-                    **launch_kwargs(self.browser, self.profile_dir, self.extension_dir)
+                kwargs = launch_kwargs(
+                    self.browser,
+                    self.profile_dir,
+                    self.extension_dir,
+                    self.anti_bot,
+                    self.user_agent,
+                    self.locale,
                 )
+                # The flags are the answer to a "JavaScript is disabled" report,
+                # so the launch is written in the log as it was sent (spec 7.2).
+                logger.info(tr("browser_launch_args", args=" ".join(kwargs["args"])))
+                logger.info(
+                    tr(
+                        "browser_stealth",
+                        stealth=tr("browser_on") if self.anti_bot else tr("browser_off"),
+                        locale=self.locale,
+                        ua=kwargs.get("user_agent") or tr("browser_auto_ua"),
+                    )
+                )
+                context = playwright.chromium.launch_persistent_context(**kwargs)
                 self._context = context
+                if self.anti_bot:
+                    # The init script runs before every page of the context, so a
+                    # detector reads navigator on a browser that already looks human.
+                    context.add_init_script(
+                        stealth_script(str(kwargs.get("user_agent", "")), self.locale)
+                    )
                 context.on("response", self._on_response)
                 logger.info(
                     tr(
@@ -157,8 +218,11 @@ class SnifferThread(QThread):
                     self.message.emit(tr("browser_codec_warning"))
                 pages = context.pages
                 page = pages[0] if pages else context.new_page()
+                self._log_page_state(page)
                 if self.start_url:
                     page.goto(self.start_url)
+                    self._log_page_state(page)
+                self._log_extensions(context)
                 self.started.emit()
                 while not self._stop:
                     pages = context.pages

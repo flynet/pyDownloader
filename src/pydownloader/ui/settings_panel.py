@@ -27,7 +27,13 @@ from PySide6.QtWidgets import (
 )
 
 from pydownloader.config.paths import download_dir_default
-from pydownloader.config.settings import THEMES, Settings, ThemeName
+from pydownloader.config.settings import (
+    BROWSERS,
+    THEMES,
+    BrowserName,
+    Settings,
+    ThemeName,
+)
 from pydownloader.i18n import LANGUAGE_NAMES, SUPPORTED_LANGUAGES, Language, current_language, tr
 
 MIN_THREADS = 1
@@ -43,11 +49,23 @@ THEME_KEYS: dict[ThemeName, str] = {
     "light": "theme_light",
     "system": "theme_system",
 }
+#: Browser value -> the key of its name, the names are the ones the vendors use.
+BROWSER_KEYS: dict[BrowserName, str] = {
+    "auto": "browser_auto",
+    "chrome": "browser_chrome",
+    "msedge": "browser_edge",
+    "chromium": "browser_chromium",
+}
 
 
 def theme_label(name: ThemeName) -> str:
     """Name of a theme in the current language."""
     return tr(THEME_KEYS[name])
+
+
+def browser_label(name: BrowserName) -> str:
+    """Name of a browser in the current language."""
+    return tr(BROWSER_KEYS[name])
 
 
 class SettingsDialog(QDialog):
@@ -90,6 +108,29 @@ class SettingsDialog(QDialog):
         self.size_box.setRange(1, 1024)
         self.size_box.setValue(max(1, settings.min_mp4_size // (1024 * 1024)))
         self._form.addRow(tr("settings_min_mp4_row"), self.size_box)
+
+        # The browser the program opens: «auto» is the order of spec 7.2, and the
+        # Chromium of Playwright is the one that can load the ad blocker (spec 7.2).
+        self.browser_box = QComboBox()
+        for choice in BROWSERS:
+            self.browser_box.addItem(browser_label(choice), choice)
+        self.browser_box.setCurrentIndex(max(0, self.browser_box.findData(settings.browser_name)))
+        self._form.addRow(tr("settings_browser_row"), self.browser_box)
+
+        # The text a bot reads first; an empty field takes the Chrome form of the
+        # version that is launched, so the field is a way to imitate a device.
+        self.agent_edit = QLineEdit(settings.user_agent)
+        self.agent_edit.setPlaceholderText(tr("settings_user_agent_hint"))
+        self.agent_edit.textChanged.connect(self.agent_edit.setToolTip)
+        self.agent_edit.setToolTip(self.agent_edit.text())
+        self._form.addRow(tr("settings_user_agent_row"), self.agent_edit)
+
+        self.anti_bot_check = QCheckBox(tr("settings_anti_bot"))
+        self.anti_bot_check.setChecked(settings.anti_bot)
+        self._form.addRow("", self.anti_bot_check)
+        self.blocker_check = QCheckBox(tr("settings_ad_blocker"))
+        self.blocker_check.setChecked(settings.ad_blocker)
+        self._form.addRow("", self.blocker_check)
 
         # The name of a language is written in its own language, so the combo is
         # readable whatever the current language is (spec 8.1).
@@ -187,7 +228,17 @@ class SettingsDialog(QDialog):
         target.auto_update = self.update_check.isChecked()
         target.tray_enabled = self.tray_check.isChecked()
         target.close_to_tray = self.close_tray_check.isChecked()
+        target.browser_name = cast(BrowserName, self.browser_box.currentData())
+        target.user_agent = self.agent_edit.text().strip()
+        target.anti_bot = self.anti_bot_check.isChecked()
+        target.ad_blocker = self.blocker_check.isChecked()
         return target
 
 
-__all__ = ["THEME_KEYS", "SettingsDialog", "theme_label"]
+__all__ = [
+    "BROWSER_KEYS",
+    "THEME_KEYS",
+    "SettingsDialog",
+    "browser_label",
+    "theme_label",
+]

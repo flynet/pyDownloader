@@ -357,6 +357,42 @@ def test_settings_dialog_shows_the_saved_tray_state(qtbot, tmp_path):
     assert not dialog.close_tray_check.isChecked()
 
 
+def test_settings_dialog_writes_the_browser_choice(qtbot, tmp_path):
+    settings = Settings(download_dir=str(tmp_path))
+    dialog = SettingsDialog(settings)
+    qtbot.addWidget(dialog)
+    dialog.browser_box.setCurrentIndex(dialog.browser_box.findData("msedge"))
+    dialog.agent_edit.setText("My player 1.0")
+    dialog.anti_bot_check.setChecked(False)
+    dialog.blocker_check.setChecked(False)
+    target = dialog.apply_to(Settings())
+    # The browser of the settings is the one the program launches (spec 7.2).
+    assert target.browser_name == "msedge"
+    assert target.user_agent == "My player 1.0"
+    assert not target.anti_bot
+    assert not target.ad_blocker
+
+
+def test_the_browser_names_are_localized(qtbot, tmp_path):
+    dialog = SettingsDialog(Settings(download_dir=str(tmp_path)))
+    qtbot.addWidget(dialog)
+    names = [dialog.browser_box.itemText(i) for i in range(dialog.browser_box.count())]
+    # «Auto» is first, the order of spec 7.2; the names are the ones the vendors use.
+    assert names[0] == tr("browser_auto")
+    assert tr("browser_chromium") in names
+    assert dialog.browser_box.currentData() == "auto"
+
+
+def test_the_saved_browser_choice_is_shown(qtbot, tmp_path):
+    settings = Settings(download_dir=str(tmp_path), browser_name="chromium", user_agent="Dev 1.0")
+    dialog = SettingsDialog(settings)
+    qtbot.addWidget(dialog)
+    assert dialog.browser_box.currentData() == "chromium"
+    assert dialog.agent_edit.text() == "Dev 1.0"
+    assert dialog.anti_bot_check.isChecked()
+    assert dialog.blocker_check.isChecked()
+
+
 def test_settings_dialog_is_wide_and_resizable(tmp_path: Path, qtbot):
     window = make_window(tmp_path)
     qtbot.addWidget(window)
