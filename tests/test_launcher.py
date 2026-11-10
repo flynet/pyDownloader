@@ -99,3 +99,51 @@ def test_launch_kwargs_for_bundled_chromium(tmp_path: Path):
     kwargs = launch_kwargs(choice, tmp_path / "profile")
     assert "channel" not in kwargs
     assert kwargs["executable_path"] == str(executable)
+
+
+def test_bundled_chromium_is_found_in_the_new_layout(tmp_path: Path):
+    executable = tmp_path / "chromium-1248" / "chrome-win64" / "chrome.exe"
+    executable.parent.mkdir(parents=True)
+    executable.write_bytes(b"MZ")
+    choice = resolve_browser(
+        tmp_path, [("chrome", str(tmp_path / "none.exe"))], exists=lambda path: False
+    )
+    assert choice.kind == "chromium"
+    assert choice.executable == str(executable)
+
+
+def test_prefer_chromium_wins_over_installed_chrome(tmp_path: Path):
+    executable = tmp_path / "chromium-1248" / "chrome-win64" / "chrome.exe"
+    executable.parent.mkdir(parents=True)
+    executable.write_bytes(b"MZ")
+    choice = resolve_browser(
+        tmp_path, [("chrome", CHROME)], exists=lambda path: path == CHROME, prefer_chromium=True
+    )
+    assert choice.kind == "chromium"
+    assert choice.is_bundled_chromium
+
+
+def test_prefer_chromium_falls_back_to_chrome(tmp_path: Path):
+    choice = resolve_browser(
+        tmp_path, [("chrome", CHROME)], exists=lambda path: path == CHROME, prefer_chromium=True
+    )
+    assert choice.channel == "chrome"
+
+
+def test_extension_flags_are_passed_to_bundled_chromium(tmp_path: Path):
+    executable = tmp_path / "chromium-1248" / "chrome-win64" / "chrome.exe"
+    executable.parent.mkdir(parents=True)
+    executable.write_bytes(b"MZ")
+    choice = resolve_browser(
+        tmp_path, [("chrome", str(tmp_path / "none.exe"))], exists=lambda path: False
+    )
+    extension = tmp_path / "uBlock"
+    kwargs = launch_kwargs(choice, tmp_path / "profile", extension)
+    assert f"--load-extension={extension}" in kwargs["args"]
+    assert f"--disable-extensions-except={extension}" in kwargs["args"]
+
+
+def test_extension_flags_are_not_passed_to_chrome(tmp_path: Path):
+    choice = resolve_browser(tmp_path, [("chrome", CHROME)], exists=lambda path: path == CHROME)
+    kwargs = launch_kwargs(choice, tmp_path / "profile", tmp_path / "uBlock")
+    assert not any("load-extension" in arg for arg in kwargs["args"])

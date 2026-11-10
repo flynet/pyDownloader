@@ -2,7 +2,8 @@
 
 Order of attempts: installed Chrome → installed Edge → Chromium from Playwright.
 Chromium is not shipped in the installer, so it is downloaded on demand by
-``chromium_installer.py``.
+``chromium_installer.py``. When the bundled ad blocker must be loaded, Chromium
+is preferred: Chrome and Edge ignore ``--load-extension`` from the command line.
 """
 
 from __future__ import annotations
@@ -82,12 +83,17 @@ def chromium_executable(browsers_dir: Path) -> Path | None:
     """Path of the Playwright Chromium downloaded earlier, ``None`` if absent.
 
     ``PLAYWRIGHT_BROWSERS_PATH`` lays files out as
-    ``chromium-<revision>/chrome-win/chrome.exe`` (and ``chrome.exe`` directly
-    in older revisions).
+    ``chromium-<revision>/chrome-win64/chrome.exe`` (``chrome-win`` and
+    ``chrome.exe`` directly in older revisions).
     """
     if not browsers_dir.is_dir():
         return None
-    patterns = ("chromium-*/chrome-win/chrome.exe", "chromium-*/chrome.exe", "chromium*/chrome.exe")
+    patterns = (
+        "chromium-*/chrome-win64/chrome.exe",
+        "chromium-*/chrome-win/chrome.exe",
+        "chromium-*/chrome.exe",
+        "chromium*/chrome.exe",
+    )
     for pattern in patterns:
         for candidate in sorted(browsers_dir.glob(pattern)):
             if candidate.is_file():
@@ -95,37 +101,56 @@ def chromium_executable(browsers_dir: Path) -> Path | None:
     return None
 
 
+def _chromium_choice(executable: Path) -> BrowserChoice:
+    return BrowserChoice(
+        kind="chromium", channel=None, executable=str(executable), label=LABELS["chromium"]
+    )
+
+
 def resolve_browser(
     browsers_dir: Path,
     candidates: list[tuple[BrowserKind, str]] | None = None,
     exists: Callable[[str], bool] = os.path.isfile,
+    prefer_chromium: bool = False,
 ) -> BrowserChoice:
     """Chrome → Edge → the Chromium installed in ``browsers_dir``.
+
+    With ``prefer_chromium`` the bundled Chromium wins over installed browsers:
+    it is the only one that loads the ad blocker from the command line.
 
     Raises :class:`NoBrowserError` when nothing is available, so the caller can
     offer the Chromium download (spec 7.2).
     """
+    chromium = chromium_executable(browsers_dir)
+    if chromium is not None and prefer_chromium:
+        return _chromium_choice(chromium)
     installed = installed_browsers(candidates, exists)
     if installed:
         return installed[0]
-    chromium = chromium_executable(browsers_dir)
     if chromium is not None:
-        return BrowserChoice(
-            kind="chromium", channel=None, executable=str(chromium), label=LABELS["chromium"]
-        )
+        return _chromium_choice(chromium)
     raise NoBrowserError(
         "Не найдены Chrome и Edge, Chromium от Playwright не установлен. "
         "Установите Chrome или Edge, либо разрешите скачать Chromium."
     )
 
 
-def launch_kwargs(choice: BrowserChoice, profile_dir: Path) -> dict[str, Any]:
+def launch_kwargs(
+    choice: BrowserChoice, profile_dir: Path, extension: Path | None = None
+) -> dict[str, Any]:
     """Arguments of ``launch_persistent_context`` for the chosen browser.
 
     The profile is a separate directory (spec 7.2), so the user's own browser
     profile is not touched and there is no "profile is in use" conflict.
+
+    ``extension`` is the unpacked folder of the ad blocker. Recent Chrome and
+    Edge ignore ``--load-extension``, so the flags are passed to the bundled
+    Chromium only; the caller keeps the extension out of that browser.
     """
     args = ["--no-first-run", "--no-default-browser-check", "--start-maximized"]
+    if extension is not None and choice.is_bundled_chromium:
+        args.append(f"--disable-extensions-except={extension}")
+        args.append(f"--load-extension={extension}")
     kwargs: dict[str, Any] = {
         "user_data_dir": str(profile_dir),
         "headless": False,

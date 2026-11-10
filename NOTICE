@@ -10,6 +10,7 @@ PyDownloader распространяет бинарник FFmpeg и испол�
 | PySide6 (Qt 6) | LGPLv3 (Qt LGPL license agreement) | https://www.qt.io/qt-licensing |
 | Playwright for Python | Apache-2.0 | https://github.com/microsoft/playwright-python |
 | Chromium (запасной вариант, скачивается по запросу) | BSD-3 (Chromium project) | https://www.chromium.org |
+| uBlock Origin Lite (`uBlock.crx`, распространяется без изменений) | GPLv3 | https://github.com/uBlockOrigin/uBOL-home |
 | httpx | BSD-3 | https://github.com/encode/httpx |
 | cryptography | Apache-2.0/BSD | https://github.com/pyca/cryptography |
 | lxml | BSD-2 | https://lxml.de |
