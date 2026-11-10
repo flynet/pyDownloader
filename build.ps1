@@ -68,6 +68,15 @@ New-Item -ItemType Directory -Force -Path "dist\PyDownloader\bin" | Out-Null
 Copy-Item -Force $ffmpeg "dist\PyDownloader\bin\ffmpeg.exe"
 Write-Host "FFmpeg: $ffmpeg"
 
+# --- 3c. the ad blocker next to the program -----------------------------------
+# uBlock.crx is not kept in git; a build without it simply ships no blocker.
+if (Test-Path "uBlock.crx") {
+    Copy-Item -Force "uBlock.crx" "dist\PyDownloader\uBlock.crx"
+    Write-Host "uBlock: uBlock.crx"
+} else {
+    Write-Warning "uBlock.crx не найден: сборка без блокировщика рекламы"
+}
+
 # --- 4. Inno Setup ------------------------------------------------------------
 $iscc = Get-Command "iscc.exe" -ErrorAction SilentlyContinue
 if (-not $iscc) {

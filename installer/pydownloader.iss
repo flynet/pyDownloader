@@ -71,6 +71,7 @@ procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   AppDataDir: String;
   LocalDataDir: String;
+  ProfileDir: String;
 begin
   if CurUninstallStep <> usPostUninstall then
     exit;
@@ -81,6 +82,8 @@ begin
     exit;
   AppDataDir := ExpandConstant('{userappdata}\{#AppName}');
   LocalDataDir := ExpandConstant('{localappdata}\{#AppName}');
+  ProfileDir := ExpandConstant('{app}\profile');
   DelTree(AppDataDir, True, True, True);
   DelTree(LocalDataDir, True, True, True);
+  DelTree(ProfileDir, True, True, True);
 end;

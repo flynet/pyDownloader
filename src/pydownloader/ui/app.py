@@ -17,14 +17,21 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 
 from pydownloader._version import VERSION
 from pydownloader.browser.chromium_installer import InstallResult, install_chromium
+from pydownloader.browser.extensions import extension_dir
 from pydownloader.browser.launcher import (
     BrowserChoice,
     NoBrowserError,
+    chromium_executable,
     resolve_browser,
 )
 from pydownloader.browser.sniffer import SnifferThread
 from pydownloader.config.constants import APP_NAME
-from pydownloader.config.paths import Paths, default_paths, download_dir_default
+from pydownloader.config.paths import (
+    Paths,
+    application_dir,
+    default_paths,
+    download_dir_default,
+)
 from pydownloader.config.settings import Settings, load_settings, save_settings
 from pydownloader.download.worker import QueueWorker
 from pydownloader.ffmpeg.locate import Ffmpeg, FfmpegNotFoundError, locate_ffmpeg
@@ -38,6 +45,16 @@ from pydownloader.util.logging_setup import setup_logging
 
 INSTALL_QUESTION = (
     "Chrome и Edge не найдены. Скачать Chromium от Playwright (около 170 МБ, один раз)?"
+)
+INSTALL_QUESTION_EXTENSION = (
+    "Для блокировщика рекламы нужен Chromium от Playwright (около 170 МБ, один раз).\n\n"
+    "Скачать его? Без него браузер откроется без блокировщика: Chrome и Edge "
+    "игнорируют расширения, загруженные из командной строки."
+)
+EXTENSION_SKIPPED = (
+    "Блокировщик рекламы не загружен: Chrome и Edge не принимают расширения "
+    "из командной строки. Чтобы включить его, разрешите скачать Chromium "
+    "при следующем запуске."
 )
 
 
@@ -59,7 +76,7 @@ class ChromiumInstallWorker(QThread):
 def app_root() -> Path | None:
     """Folder of the installed program (``{app}\\bin`` is inside it), ``None`` in a checkout."""
     if getattr(sys, "frozen", False):
-        return Path(sys.executable).parent
+        return application_dir()
     return None
 
 
@@ -78,6 +95,7 @@ def make_sniffer(
     paths: Paths,
     browser: BrowserChoice,
     ffmpeg: Ffmpeg,
+    extension: Path | None = None,
 ) -> SnifferThread:
     registry = SourceRegistry(min_mp4_size=settings.min_mp4_size)
     quality = QualityFilter(target_height=settings.target_height)
@@ -87,6 +105,7 @@ def make_sniffer(
         registry=registry,
         quality=quality,
         probe_height=lambda url, headers: probe_height(url, ffmpeg, headers),
+        extension_dir=extension,
     )
 
 
@@ -108,43 +127,77 @@ def create_window(app: QApplication, settings: Settings, paths: Paths) -> MainWi
     setup_logging(paths.log_file, bridge.line.emit)
     window.logger.info(f"PyDownloader {VERSION}, папка загрузок: {settings.download_dir}")
     window.logger.info(f"Лог-файл: {paths.log_file}")
+    window.logger.info(f"Профиль браузера: {paths.profile_dir}")
     window.logger.info(f"FFmpeg: {ffmpeg.path}")
     return window
 
 
 def start_browser(window: MainWindow, settings: Settings, paths: Paths) -> None:
-    """Launch the browser thread, downloading Chromium when it is the only option."""
+    """Launch the browser thread, downloading Chromium when it is needed.
+
+    The bundled ad blocker is loaded only by the Chromium downloaded by
+    Playwright: Chrome and Edge ignore ``--load-extension``. When the extension
+    is shipped but Chromium is missing, the user is offered the download first;
+    declining falls back to Chrome/Edge without the blocker.
+    """
+    extension = extension_dir(application_dir(), paths.data_dir / "extensions")
+    if extension is not None:
+        window.log_info(f"Блокировщик рекламы: {extension}")
+    offered = False
+    if extension is not None and chromium_executable(paths.browsers_dir) is None:
+        offered = True
+        if _ask_install(window, INSTALL_QUESTION_EXTENSION):
+            _start_install(window, settings, paths)
+            return
+        extension = None
+        window.log_warning(EXTENSION_SKIPPED)
     try:
-        browser = resolve_browser(paths.browsers_dir)
+        browser = resolve_browser(
+            paths.browsers_dir, prefer_chromium=extension is not None
+        )
     except NoBrowserError as exc:
         window.log_warning(str(exc))
-        answer = QMessageBox.question(
-            window,
-            APP_NAME,
-            INSTALL_QUESTION,
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if answer != QMessageBox.StandardButton.Yes:
-            return
-        installer = ChromiumInstallWorker(paths.browsers_dir, window)
-        installer.line.connect(window.log_info)
-        installer.finished_install.connect(
-            lambda ok, message: _after_install(window, settings, paths, ok, message)
-        )
-        window.install_worker = installer
-        installer.start()
+        if not offered and _ask_install(window, INSTALL_QUESTION):
+            _start_install(window, settings, paths)
         return
-    launch_sniffer(window, settings, paths, browser)
+    if extension is not None and not browser.is_bundled_chromium:
+        window.log_warning(EXTENSION_SKIPPED)
+        extension = None
+    launch_sniffer(window, settings, paths, browser, extension)
+
+
+def _ask_install(window: MainWindow, question: str) -> bool:
+    answer = QMessageBox.question(
+        window,
+        APP_NAME,
+        question,
+        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        QMessageBox.StandardButton.No,
+    )
+    return answer == QMessageBox.StandardButton.Yes
+
+
+def _start_install(window: MainWindow, settings: Settings, paths: Paths) -> None:
+    installer = ChromiumInstallWorker(paths.browsers_dir, window)
+    installer.line.connect(window.log_info)
+    installer.finished_install.connect(
+        lambda ok, message: _after_install(window, settings, paths, ok, message)
+    )
+    window.install_worker = installer
+    installer.start()
 
 
 def launch_sniffer(
-    window: MainWindow, settings: Settings, paths: Paths, browser: BrowserChoice
+    window: MainWindow,
+    settings: Settings,
+    paths: Paths,
+    browser: BrowserChoice,
+    extension: Path | None = None,
 ) -> None:
     """Start the sniffer thread with the resolved browser (spec 7.2)."""
     if window.ffmpeg is None:
         return
-    sniffer = make_sniffer(settings, paths, browser, window.ffmpeg)
+    sniffer = make_sniffer(settings, paths, browser, window.ffmpeg, extension)
     window.sniffer = sniffer
     window.attach_sniffer()
     sniffer.start()
@@ -155,14 +208,15 @@ def _after_install(
 ) -> None:
     if not ok:
         window.log_error(message)
+        # The download failed: use Chrome/Edge without the blocker when present.
+        try:
+            browser = resolve_browser(paths.browsers_dir)
+        except NoBrowserError:
+            return
+        launch_sniffer(window, settings, paths, browser)
         return
     window.log_info(message)
-    try:
-        browser = resolve_browser(paths.browsers_dir)
-    except NoBrowserError as exc:
-        window.log_error(str(exc))
-        return
-    launch_sniffer(window, settings, paths, browser)
+    start_browser(window, settings, paths)
 
 
 def resolve_download_dir(settings: Settings) -> Path | None:
@@ -198,7 +252,7 @@ def main(argv: list[str] | None = None) -> int:
     if chosen is None:
         return 0
     settings.download_dir = str(chosen)
-    paths = default_paths(settings.profile_in_downloads, chosen)
+    paths = default_paths(settings.profile_in_downloads, chosen, application_dir())
     save_settings(settings, paths.settings_file)
     window = create_window(app, settings, paths)
     apply_theme(app, settings.theme)

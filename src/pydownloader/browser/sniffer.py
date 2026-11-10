@@ -80,11 +80,13 @@ class SnifferThread(QThread):
         quality: QualityFilter,
         start_url: str = "",
         probe_height: ProbeHeight | None = None,
+        extension_dir: Path | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.browser = browser
         self.profile_dir = profile_dir
+        self.extension_dir = extension_dir
         self.registry = registry
         self.quality = quality
         self.start_url = start_url
@@ -123,12 +125,19 @@ class SnifferThread(QThread):
         try:
             with sync_playwright() as playwright:
                 context = playwright.chromium.launch_persistent_context(
-                    **launch_kwargs(self.browser, self.profile_dir)
+                    **launch_kwargs(self.browser, self.profile_dir, self.extension_dir)
                 )
                 self._context = context
                 context.on("response", self._on_response)
-                logger.info("Браузер: %s, профиль %s", self.browser.label, self.profile_dir)
+                logger.info(
+                    "Браузер: %s, профиль %s, расширение %s",
+                    self.browser.label,
+                    self.profile_dir,
+                    self.extension_dir or "нет",
+                )
                 self.message.emit(f"Браузер запущен: {self.browser.label}")
+                if self.extension_dir is not None:
+                    self.message.emit("Блокировщик рекламы подключён")
                 if self.browser.is_bundled_chromium:
                     self.message.emit(CHROMIUM_WARNING)
                 pages = context.pages
