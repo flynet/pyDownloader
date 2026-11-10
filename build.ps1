@@ -69,7 +69,8 @@ Copy-Item -Force $ffmpeg "dist\PyDownloader\bin\ffmpeg.exe"
 Write-Host "FFmpeg: $ffmpeg"
 
 # --- 3c. the ad blocker next to the program -----------------------------------
-# uBlock.crx is not kept in git; a build without it simply ships no blocker.
+# uBlock.crx is in the repository, so GitHub Actions ships the blocker too.
+# A checkout without the file simply ships no blocker.
 if (Test-Path "uBlock.crx") {
     Copy-Item -Force "uBlock.crx" "dist\PyDownloader\uBlock.crx"
     Write-Host "uBlock: uBlock.crx"

@@ -17,10 +17,9 @@ work/
 .ruff_cache/
 .coverage
 
-# The browser profile (kept next to the program) and the local ad blocker
+# The browser profile (kept next to the program)
 /profile/
 /.profile/
-/uBlock.crx
 
 # IDE
 .idea/
