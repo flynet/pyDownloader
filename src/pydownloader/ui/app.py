@@ -31,7 +31,7 @@ from pydownloader.ffmpeg.locate import Ffmpeg, FfmpegNotFoundError, locate_ffmpe
 from pydownloader.ffmpeg.probe import probe_height
 from pydownloader.manifest.quality import QualityFilter
 from pydownloader.manifest.registry import SourceRegistry
-from pydownloader.ui.main_window import MainWindow, pick_download_dir
+from pydownloader.ui.main_window import LogBridge, MainWindow, pick_download_dir
 from pydownloader.ui.theme import apply_theme
 from pydownloader.update.ui import UpdateMonitor
 from pydownloader.util.logging_setup import setup_logging
@@ -96,7 +96,10 @@ def create_window(app: QApplication, settings: Settings, paths: Paths) -> MainWi
     window.ffmpeg = ffmpeg
     worker.start()  # the queue runs in its own thread (spec 4.4)
     window.updater = UpdateMonitor(window, settings)
-    setup_logging(paths.log_file, window.console.append_line)
+    bridge = LogBridge(window)
+    bridge.line.connect(window.console.append_line)
+    window.log_bridge = bridge
+    setup_logging(paths.log_file, bridge.line.emit)
     window.logger.info(f"PyDownloader {VERSION}, папка загрузок: {settings.download_dir}")
     window.logger.info(f"FFmpeg: {ffmpeg.path}")
     return window

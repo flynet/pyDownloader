@@ -25,7 +25,7 @@ from pydownloader.config.settings import Settings
 #: Name pattern of the installer asset, and the checksum file next to it.
 SETUP_PREFIX = "PyDownloader-Setup-"
 SHA_SUFFIX = ".sha256"
-INSTALLER_ARGS = ["/SILENT", "/CLOSEAPPLICATIONS"]
+INSTALLER_ARGS = ["/SILENT", "/SUPPRESSMSGBOXES", "/CLOSEAPPLICATIONS"]
 #: Windows flag: the installer runs detached, no console window is shown.
 DETACHED_PROCESS = 0x00000008
 API_TIMEOUT = 15.0

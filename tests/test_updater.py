@@ -168,6 +168,7 @@ def test_installer_command_is_silent_and_closes_apps(tmp_path: Path, monkeypatch
     command, flags = calls[0]
     assert command[0] == str(path)
     assert "/SILENT" in command
+    assert "/SUPPRESSMSGBOXES" in command
     assert "/CLOSEAPPLICATIONS" in command
     assert flags == 0x00000008
 

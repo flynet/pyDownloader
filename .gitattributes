@@ -9,6 +9,7 @@
 
 *.ico  binary
 *.png  binary
+*.bmp  binary
 *.jpg  binary
 *.ttf  binary
 *.exe  binary
