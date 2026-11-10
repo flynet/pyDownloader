@@ -144,6 +144,12 @@ def _family_plan(entry: SourceEntry, ctx: RunContext) -> list:
 def _hls_plan(entry: SourceEntry, choice: Choice, ctx: RunContext) -> list:
     playlist = _media_playlist(entry, choice.url, ctx)
     if playlist is None:
+        # The chosen quality is not signed for this client: take the best
+        # variant the browser really fetched (a lower quality is still a video).
+        fallback = _recorded_variant(entry, choice, ctx)
+        if fallback is not None:
+            choice, playlist = fallback
+    if playlist is None:
         raise DownloadError(f"Не получен манифест: {choice.url}")
     audio: Playlist | None = None
     if choice.audio_url:
@@ -151,6 +157,34 @@ def _hls_plan(entry: SourceEntry, choice: Choice, ctx: RunContext) -> list:
         if audio is None:
             ctx.log(f"Аудио-дорожка не получена: {choice.audio_url}")
     return build_plan(video_playlist=playlist, audio_playlist=audio)
+
+
+def _recorded_variant(
+    entry: SourceEntry, choice: Choice, ctx: RunContext
+) -> tuple[Choice, Playlist] | None:
+    """Best master variant whose exact URL the browser requested.
+
+    phncdn signs every path: the URL of a quality the player did not request is
+    rejected (HTTP 410), while the requested one is recorded from the traffic.
+    """
+    candidates = [variant for variant in entry.variants if variant.url != choice.url]
+    candidates.sort(key=lambda variant: (variant.height or 0, variant.bandwidth or 0), reverse=True)
+    for variant in candidates:
+        recorded = entry.recorded_url(variant.url)
+        if recorded is None:
+            continue
+        playlist = _media_playlist(entry, recorded, ctx)
+        if playlist is None:
+            continue
+        logger.info(
+            "Вариант %sp недоступен, скачиваю %sp: %s",
+            choice.height,
+            variant.height,
+            recorded,
+        )
+        ctx.log(f"Вариант {choice.height}p недоступен, скачиваю {variant.height}p")
+        return variant, playlist
+    return None
 
 
 def _media_playlist(
@@ -165,8 +199,11 @@ def _media_playlist(
     text = ctx.fetch_text(url, ctx.headers)
     if text is None:
         return None
+    # The body may come from another recorded URL (a signed playlist of the same
+    # stream), so its relative links must be resolved against that URL.
+    base = entry.effective_url(url)
     try:
-        playlist = parse_playlist(text, url)
+        playlist = parse_playlist(text, base)
     except PlaylistParseError as exc:
         raise DownloadError(f"Манифест не разобран: {exc}") from exc
     if playlist.kind == "media":
@@ -200,7 +237,7 @@ def _dash_plan(entry: SourceEntry, choice: Choice, ctx: RunContext) -> list:
     try:
         # The body is re-parsed: the plan uses the representations chosen by the filters,
         # and a broken manifest must fail the task here, not in the middle of the download.
-        mpd = parse_mpd(text, entry.url)
+        mpd = parse_mpd(text, entry.effective_url(entry.url))
     except ManifestParseError as exc:
         raise DownloadError(f"Манифест не разобран: {exc}") from exc
     if mpd.is_live:

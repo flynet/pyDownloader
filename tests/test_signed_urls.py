@@ -12,6 +12,7 @@ from pydownloader.download.plan import plan_family
 from pydownloader.download.runner import RunContext, make_plan
 from pydownloader.ffmpeg.locate import Ffmpeg
 from pydownloader.manifest.detector import Candidate
+from pydownloader.manifest.quality import Choice
 from pydownloader.manifest.registry import SourceEntry, SourceRegistry
 from pydownloader.util.urls import resolve_url
 
@@ -165,6 +166,86 @@ def make_context(texts: dict[str, str], calls: list[str] | None = None) -> RunCo
         log=lambda message: None,
         progress=lambda done, total: None,
     )
+
+
+def test_variant_playlist_in_a_subdirectory_belongs_to_the_master():
+    """phncdn puts every quality in its own directory under the master (720P_...)."""
+    registry = SourceRegistry()
+    registry.add_manifest(
+        Candidate(url="https://cdn.example.com/v/master.m3u8?h=1", kind="hls")
+    )
+    result = registry.add_manifest(
+        Candidate(url="https://cdn.example.com/v/720P/master.m3u8?h=2", kind="hls")
+    )
+    assert result.is_new is False
+    assert result.reason == "плейлист уже найденного потока"
+    assert len(registry.entries()) == 1
+    entry = registry.entries()[0]
+    assert entry.recorded["/v/720P/master.m3u8"].endswith("h=2")
+    # A segment of that variant is a fragment of the stream, not a direct MP4.
+    assert registry.is_fragment_of_known("https://cdn.example.com/v/720P/seg-1.m4s")
+
+
+def test_recorded_urls_are_shared_by_the_rows_of_one_page():
+    registry = SourceRegistry()
+    master = registry.add_manifest(
+        Candidate(url="https://cdn.example.com/v/master.m3u8", kind="hls")
+    ).entry
+    other = registry.add_custom(kind="mp4", url="https://cdn.example.com/f.mp4", normalized="f")
+    other.entry.record("https://cdn.example.com/v/seg-1.m4s?h=7")
+    assert master.recorded_url("https://cdn.example.com/v/seg-1.m4s") is not None
+
+
+def test_plan_falls_back_to_the_variant_the_browser_fetched():
+    variant_1080 = "https://cdn.example.com/v/1080P/master.m3u8?h=1"
+    master_720 = "https://cdn.example.com/v/720P/master.m3u8"
+    index_720 = "https://cdn.example.com/v/720P/index-v1-a1.m3u8"
+    entry = SourceEntry(
+        id="s1",
+        kind="hls",
+        url="https://cdn.example.com/v/master.m3u8",
+        normalized="m",
+        height=1080,
+    )
+    entry.choice = Choice(kind="hls-variant", url=variant_1080, height=1080)
+    entry.variants = [
+        Choice(kind="hls-variant", url=variant_1080, height=1080),
+        Choice(kind="hls-variant", url=master_720, height=720),
+    ]
+    entry.record(master_720 + "?h=2")
+    entry.record(index_720 + "?h=3")
+    texts = {
+        master_720 + "?h=2": (
+            "#EXTM3U\n"
+            "#EXT-X-STREAM-INF:BANDWIDTH=4000000,RESOLUTION=1280x720\n"
+            "index-v1-a1.m3u8\n"
+        ),
+        index_720 + "?h=3": (
+            "#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:10,\nseg-1.m4s\n#EXT-X-ENDLIST\n"
+        ),
+    }
+    plan = make_plan(entry, make_context(texts))
+    # The 1080p URL inherited from the master is rejected by the CDN; the signed
+    # URL of the variant the player really fetched is used instead.
+    assert [item.url for item in plan] == ["https://cdn.example.com/v/720P/seg-1.m4s?h=3"]
+
+
+def test_plan_does_not_guess_an_unrecorded_variant():
+    variant_1080 = "https://cdn.example.com/v/1080P/master.m3u8?h=1"
+    entry = SourceEntry(
+        id="s1",
+        kind="hls",
+        url="https://cdn.example.com/v/master.m3u8",
+        normalized="m",
+        height=1080,
+    )
+    entry.choice = Choice(kind="hls-variant", url=variant_1080, height=1080)
+    entry.variants = [
+        Choice(kind="hls-variant", url=variant_1080, height=1080),
+        Choice(kind="hls-variant", url="https://cdn.example.com/v/720P/master.m3u8", height=720),
+    ]
+    with pytest.raises(DownloadError, match="Не получен манифест"):
+        make_plan(entry, make_context({}))
 
 
 def test_family_plan_prefers_the_recorded_playlist(read):
