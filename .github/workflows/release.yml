@@ -56,7 +56,7 @@ jobs:
         run: |
           $version = "${{ steps.version.outputs.version }}"
           $text = Get-Content CHANGELOG.md -Raw
-          $pattern = '(?ms)^## \[' + [regex]::Escape($version) + '\].*?(?=^## |\z)'
+          $pattern = '(?ms)^## \[' + [regex]::Escape($version) + '\].*?(?=^## |^\[[^\]]+\]:|\z)'
           $match = [regex]::Match($text, $pattern)
           $body = if ($match.Success) { $match.Value.Trim() } else { "См. CHANGELOG.md" }
           New-Item -ItemType Directory -Force build | Out-Null
