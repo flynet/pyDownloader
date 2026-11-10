@@ -13,7 +13,8 @@ import subprocess
 from pathlib import Path
 from typing import cast
 
-from PySide6.QtCore import QByteArray, QObject, Qt, QThread, Signal
+from PySide6.QtCore import QByteArray, QObject, Qt, QThread, QUrl, Signal
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -243,7 +244,7 @@ class MainWindow(QMainWindow):
         card = SourceCard(entry)
         card.download_clicked.connect(self._start_download)
         card.cancel_clicked.connect(self._cancel_download)
-        card.open_folder_clicked.connect(self._open_result_folder)
+        card.open_file_clicked.connect(self._open_result_file)
         self.cards[entry.id] = card
         self.cards_layout.insertWidget(self.cards_layout.count() - 1, card)
         self.hint_label.hide()
@@ -289,10 +290,16 @@ class MainWindow(QMainWindow):
             card.set_error(message)
         self.log_error(f"Задача не выполнена: {message}")
 
-    def _open_result_folder(self, entry_id: str) -> None:
+    def _open_result_file(self, entry_id: str) -> None:
+        """«Открыть файл»: play the downloaded video with the default player."""
         path = self.out_paths.get(entry_id)
-        folder = path.parent if path else Path(self.settings.download_dir)
-        _show_in_explorer(folder)
+        if path is None or not path.is_file():
+            self.log_warning("Файл не найден, открываю папку загрузок")
+            folder = path.parent if path is not None else Path(self.settings.download_dir)
+            _show_in_explorer(folder)
+            return
+        if not _open_file(path):
+            self.log_warning(f"Не удалось открыть файл: {path}")
 
     def _open_download_folder(self) -> None:
         _show_in_explorer(Path(self.settings.download_dir))
@@ -372,6 +379,11 @@ def _show_in_explorer(folder: Path) -> None:
     """Open the folder in Explorer, creating it when it does not exist."""
     folder.mkdir(parents=True, exist_ok=True)
     subprocess.Popen(["explorer", str(folder)])
+
+
+def _open_file(path: Path) -> bool:
+    """Open the video with the program associated with ``.mp4``."""
+    return QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
 
 def pick_download_dir(start: Path, parent: QWidget | None = None) -> Path | None:

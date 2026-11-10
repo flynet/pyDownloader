@@ -10,6 +10,7 @@ from PySide6.QtWidgets import QApplication
 from pydownloader.config.paths import Paths, default_paths
 from pydownloader.config.settings import Settings
 from pydownloader.manifest.registry import SourceEntry
+from pydownloader.ui import main_window as main_window_mod
 from pydownloader.ui.card import SourceCard, format_duration, format_quality, format_size
 from pydownloader.ui.console import MAX_LINES, ConsolePanel
 from pydownloader.ui.main_window import (
@@ -103,6 +104,42 @@ def test_card_cancel_button_emits_the_id(qtbot):
     with qtbot.waitSignal(card.cancel_clicked) as signal:
         card.cancel_button.click()
     assert signal.args == ["s1"]
+
+
+def test_card_open_button_opens_the_file(qtbot):
+    card = SourceCard(entry())
+    qtbot.addWidget(card)
+    card.set_state("done")
+    assert card.open_button.text() == "Открыть файл"
+    with qtbot.waitSignal(card.open_file_clicked) as signal:
+        card.open_button.click()
+    assert signal.args == ["s1"]
+
+
+def test_open_result_file_plays_the_downloaded_video(tmp_path: Path, qtbot, monkeypatch):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    video = tmp_path / "video.mp4"
+    video.write_bytes(b"data")
+    window.out_paths["s1"] = video
+    opened: list[Path] = []
+    monkeypatch.setattr(
+        main_window_mod, "_open_file", lambda path: opened.append(path) or True
+    )
+
+    window._open_result_file("s1")
+    assert opened == [video]
+
+
+def test_open_result_file_falls_back_to_the_folder(tmp_path: Path, qtbot, monkeypatch):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    window.out_paths["s1"] = tmp_path / "gone.mp4"
+    folders: list[Path] = []
+    monkeypatch.setattr(main_window_mod, "_show_in_explorer", folders.append)
+
+    window._open_result_file("s1")
+    assert folders == [tmp_path]
 
 
 def test_formats():
