@@ -17,10 +17,16 @@ from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import QWidget
 
 from pydownloader.browser.sniffer import SnifferThread, browser_cookies
-from pydownloader.config.settings import DEFAULT_TARGET_HEIGHT
+from pydownloader.config.settings import DEFAULT_MP3_BITRATE, DEFAULT_TARGET_HEIGHT
 from pydownloader.download.engine import CancelledError, DownloadError, Task
 from pydownloader.download.http import FetchError, fetch_bytes, fetch_text, merge_cookies
-from pydownloader.download.runner import RunContext, build_task, output_path, run_task
+from pydownloader.download.runner import (
+    RunContext,
+    build_task,
+    output_path,
+    output_suffix,
+    run_task,
+)
 from pydownloader.ffmpeg.locate import Ffmpeg, FfmpegNotFoundError
 from pydownloader.i18n import tr
 from pydownloader.manifest.registry import SourceEntry
@@ -49,6 +55,7 @@ class QueueWorker(QThread):
         download_dir: str,
         parallel: int = 6,
         target_height: int = DEFAULT_TARGET_HEIGHT,
+        mp3_bitrate: int = DEFAULT_MP3_BITRATE,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -57,6 +64,8 @@ class QueueWorker(QThread):
         self.download_dir = download_dir
         self.parallel = parallel
         self.target_height = target_height
+        #: MP3 bitrate of an audio source, the setting of the program (spec 5.2 p.4).
+        self.mp3_bitrate = mp3_bitrate
         self._queue: list[Task] = []
         self._cancelled: set[str] = set()
         self._lock = threading.Lock()
@@ -114,8 +123,9 @@ class QueueWorker(QThread):
 
     def _run_one(self, task: Task) -> None:
         # The destination name is decided when the task starts, so a file created by
-        # an earlier task in the queue does not get overwritten.
-        task.out_path = output_path(self._root(), task.entry)
+        # an earlier task in the queue does not get overwritten. The suffix follows
+        # the source: an audio source is saved as ``.mp3`` (spec 5.2 p.4).
+        task.out_path = output_path(self._root(), task.entry, output_suffix(task.entry))
         ctx = self._context(task)
         logger.info(
             tr(
@@ -164,6 +174,7 @@ class QueueWorker(QThread):
             progress=lambda done, total: self.progress.emit(task.id, done, total),
             parallel=self.parallel,
             target_height=self.target_height,
+            mp3_bitrate=self.mp3_bitrate,
         )
 
     def _should_stop(self, task: Task) -> bool:

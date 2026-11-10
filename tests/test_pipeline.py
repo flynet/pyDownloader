@@ -7,7 +7,9 @@ browser and without a network.
 from __future__ import annotations
 
 from pydownloader.browser.events import ResponseEvent
-from pydownloader.manifest.pipeline import Fetch, process_event
+from pydownloader.ffmpeg.probe import MediaInfo
+from pydownloader.i18n import tr
+from pydownloader.manifest.pipeline import Fetch, ProbeMedia, process_event
 from pydownloader.manifest.quality import QualityFilter
 from pydownloader.manifest.registry import SourceRegistry
 from tests.conftest import HLS_URL, MPD_URL
@@ -51,6 +53,27 @@ def run(
 ) -> tuple[SourceRegistry, list]:
     registry = registry if registry is not None else SourceRegistry(min_mp4_size=MIN_SIZE)
     outcomes = process_event(response, registry, make_fetch(events_text), QUALITY)
+    return registry, outcomes
+
+
+def probe_of(**info: object) -> ProbeMedia:
+    """Fixed FFmpeg probe: the same stream report for every URL (spec 5.2 p.4)."""
+
+    def probe(url: str, headers: dict[str, str]) -> MediaInfo:
+        return MediaInfo(**info)  # type: ignore[arg-type]
+
+    return probe
+
+
+def run_probe(
+    texts: dict[str, str],
+    response: ResponseEvent,
+    probe: ProbeMedia | None,
+    quality: QualityFilter = QUALITY,
+    registry: SourceRegistry | None = None,
+) -> tuple[SourceRegistry, list]:
+    registry = registry if registry is not None else SourceRegistry(min_mp4_size=MIN_SIZE)
+    outcomes = process_event(response, registry, make_fetch(texts), quality, probe)
     return registry, outcomes
 
 
@@ -268,6 +291,101 @@ def test_manifest_duplicate_is_reported(read):
     registry, outcomes = run(texts, event(HLS_URL, content_type="application/x-mpegURL"), registry)
     assert outcomes[0].action == "duplicate"
     assert len(registry.entries()) == 1
+
+
+def test_an_audio_master_is_shown_as_an_audio_source(read):
+    """SoundCloud master: audio variants with no RESOLUTION (spec 5.2 p.4)."""
+    best = "https://cdn.example.com/video/audio-128.m3u8"
+    texts = {HLS_URL: read("audio_master.m3u8"), best: read("audio_media.m3u8")}
+    registry, outcomes = run(texts, event(HLS_URL, content_type="application/vnd.apple.mpegurl"))
+    assert outcomes[0].action == "show"
+    assert outcomes[0].message == tr("mf_found_audio", url=HLS_URL)
+    entry = registry.entries()[0]
+    assert entry.is_audio
+    assert entry.height is None
+    assert entry.choice.audio_only
+    # The variant with the highest bandwidth is the one to download.
+    assert entry.choice.url == best
+
+
+def test_a_media_playlist_is_audio_when_ffmpeg_sees_no_video(read):
+    """A single media playlist has no CODECS list: the FFmpeg probe decides (spec 5.2 p.4)."""
+    texts = {HLS_URL: read("audio_media.m3u8")}
+    probe = probe_of(has_audio=True, audio_bitrate=128)
+    registry, outcomes = run_probe(texts, event(HLS_URL), probe)
+    entry = registry.entries()[0]
+    assert entry.is_audio
+    assert outcomes[0].message == tr("mf_found_audio", url=HLS_URL)
+
+
+def test_a_media_playlist_with_video_stays_a_video_source(read):
+    texts = {HLS_URL: read("audio_media.m3u8")}
+    probe = probe_of(has_audio=True, has_video=True, height=1080)
+    registry, outcomes = run_probe(texts, event(HLS_URL), probe)
+    entry = registry.entries()[0]
+    assert not entry.is_audio
+    assert outcomes[0].message == tr("mf_found_hls_unknown", url=HLS_URL)
+
+
+def test_a_probe_that_read_nothing_keeps_the_source_as_video(read):
+    """FFmpeg failed to open the playlist: it is not called audio on an empty probe."""
+    texts = {HLS_URL: read("media.m3u8")}
+    registry, _ = run_probe(texts, event(HLS_URL), probe_of())
+    assert not registry.entries()[0].is_audio
+
+
+def test_a_direct_audio_file_is_shown_as_mp3():
+    url = "https://cdn.example.com/track.mp3"
+    registry, outcomes = run({}, event(url, content_type="audio/mpeg", content_length=6_000_000))
+    entry = registry.entries()[0]
+    assert entry.is_audio
+    assert entry.display_quality() == tr("mf_quality_mp3")
+    assert outcomes[0].message == tr("mf_found_mp4", quality="MP3", url=url)
+
+
+def test_an_audio_probe_turns_a_direct_mp4_into_audio(read):
+    """A direct MP4 with an audio stream and no video is saved as ``.mp3``."""
+    url = "https://cdn.example.com/sound.mp4"
+    probe = probe_of(has_audio=True, audio_bitrate=96)
+    response = event(url, content_type="video/mp4", content_length=6_000_000)
+    registry, outcomes = run_probe({}, response, probe)
+    entry = registry.entries()[0]
+    assert entry.is_audio
+    assert entry.choice is not None and entry.choice.audio_only
+    assert outcomes[0].message == tr("mf_found_mp4", quality=tr("mf_quality_mp3"), url=url)
+
+
+def test_audio_only_mode_hides_the_video_and_keeps_the_audio(read):
+    """«Audio only (MP3)» mode: HLS video is skipped, an audio row is shown (spec 5.2 p.4)."""
+    audio = QualityFilter(audio_only=True)
+    texts = {HLS_URL: read("master.m3u8"), VARIANT_1080: read("media.m3u8")}
+    registry, outcomes = run_probe(texts, event(HLS_URL), None, audio)
+    assert outcomes[0].action == "skip-quality"
+    assert outcomes[0].message == tr("mf_quality_video_skipped")
+    assert registry.entries() == []
+    best = "https://cdn.example.com/video/audio-128.m3u8"
+    texts = {HLS_URL: read("audio_master.m3u8"), best: read("audio_media.m3u8")}
+    registry, outcomes = run_probe(texts, event(HLS_URL), None, audio, registry)
+    assert outcomes[0].action == "show"
+    assert registry.entries()[0].is_audio
+
+
+def test_a_dash_manifest_of_audio_only_is_shown_as_audio(read):
+    mpd_url = "https://cdn.example.com/audio/manifest.mpd"
+    registry, outcomes = run({mpd_url: read("audio_mpd.mpd")}, event(mpd_url))
+    entry = registry.entries()[0]
+    assert entry.is_audio
+    assert outcomes[0].message == tr("mf_found_audio", url=mpd_url)
+
+
+def test_a_dash_manifest_without_audio_is_skipped_in_audio_mode(read):
+    """A video manifest in audio mode gets the console line naming the reason."""
+    audio = QualityFilter(audio_only=True)
+    mpd = "https://cdn.example.com/video/manifest.mpd"
+    registry, outcomes = run_probe({mpd: read("video_only.mpd")}, event(mpd), None, audio)
+    assert outcomes[0].action == "skip-quality"
+    assert outcomes[0].message == tr("mf_quality_video_skipped")
+    assert registry.entries() == []
 
 
 def test_non_video_and_errors_are_ignored():

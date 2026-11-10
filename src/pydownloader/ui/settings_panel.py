@@ -29,6 +29,8 @@ from PySide6.QtWidgets import (
 from pydownloader.config.paths import download_dir_default
 from pydownloader.config.settings import (
     BROWSERS,
+    MP3_BITRATES,
+    QUALITY_PRESETS,
     THEMES,
     BrowserName,
     Settings,
@@ -99,15 +101,34 @@ class SettingsDialog(QDialog):
         self.threads_box.setValue(settings.threads)
         self._form.addRow(tr("settings_threads_row"), self.threads_box)
 
-        self.height_box = QSpinBox()
-        self.height_box.setRange(144, 4320)
-        self.height_box.setValue(settings.target_height)
+        # Quality presets (spec 5.2 p.3): the settings offer 1080, 720, 480, and the
+        # match is exact, so a source of another height is not shown in the list.
+        self.height_box = QComboBox()
+        for preset in QUALITY_PRESETS:
+            self.height_box.addItem(f"{preset}p", preset)
+        if settings.target_height not in QUALITY_PRESETS:
+            # A height from an edited settings.json is not silently dropped: the
+            # combo gets one extra entry so saving keeps the value the user had.
+            self.height_box.addItem(f"{settings.target_height}p", settings.target_height)
+        self.height_box.setCurrentIndex(max(0, self.height_box.findData(settings.target_height)))
         self._form.addRow(tr("settings_height_row"), self.height_box)
 
         self.size_box = QSpinBox()
         self.size_box.setRange(1, 1024)
         self.size_box.setValue(max(1, settings.min_mp4_size // (1024 * 1024)))
         self._form.addRow(tr("settings_min_mp4_row"), self.size_box)
+
+        # The bitrate of the MP3 file an audio source is written with (spec 5.2 p.4).
+        self.bitrate_box = QComboBox()
+        for rate in MP3_BITRATES:
+            self.bitrate_box.addItem(f"{rate} kbps", rate)
+        self.bitrate_box.setCurrentIndex(max(0, self.bitrate_box.findData(settings.mp3_bitrate)))
+        self._form.addRow(tr("settings_bitrate_row"), self.bitrate_box)
+
+        # «Audio only (MP3)»: the video sources are not shown in the list (spec 5.2 p.4).
+        self.audio_check = QCheckBox(tr("settings_audio_only"))
+        self.audio_check.setChecked(settings.audio_only)
+        self._form.addRow("", self.audio_check)
 
         # The browser the program opens: «auto» is the order of spec 7.2, and the
         # Chromium of Playwright is the one that can load the ad blocker (spec 7.2).
@@ -221,8 +242,10 @@ class SettingsDialog(QDialog):
         """Write the values of the form into a settings object."""
         target.download_dir = self.download_edit.text().strip()
         target.threads = self.threads_box.value()
-        target.target_height = self.height_box.value()
+        target.target_height = int(self.height_box.currentData())
         target.min_mp4_size = self.size_box.value() * 1024 * 1024
+        target.mp3_bitrate = int(self.bitrate_box.currentData())
+        target.audio_only = self.audio_check.isChecked()
         target.theme = cast(ThemeName, self.theme_box.currentData())
         target.language = cast(Language, self.language_box.currentData())
         target.auto_update = self.update_check.isChecked()

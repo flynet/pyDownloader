@@ -68,6 +68,7 @@ TEXTS: dict[str, str] = {
     "ffmpeg_failed": "FFmpeg 以代码 {code} 退出: {tail}",
     "ffmpeg_done_output": "FFmpeg 完成, 输出 {lines} 行",
     "ffmpeg_direct_mp4": "直接 MP4",
+    "ffmpeg_direct_mp3": "直接 MP3",
     # 字节范围 (spec 5.1)
     "range_bad_byterange": "BYTERANGE 无效: {value!r}",
     "range_no_offset": "BYTERANGE 没有偏移, 且同一文件中没有前一个范围",

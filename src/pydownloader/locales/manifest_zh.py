@@ -19,6 +19,9 @@ TEXTS: dict[str, str] = {
     "mf_segment_before_manifest": "清单之前的片段 ({dir}): {url}",
     # 质量过滤 (spec 5.2 p.3)
     "mf_quality_unknown": "未知",
+    "mf_quality_mp3": "MP3",
+    "mf_quality_no_audio": "找到没有音频轨的流: 跳过",
+    "mf_quality_video_skipped": "视频流: 跳过 (仅音频模式)",
     "mf_quality_no_heights": "找到没有 {target}p 的流: 已跳过 (无法确定分辨率)",
     "mf_quality_available": "找到没有 {target}p 的流: 已跳过 (可用: {listed})",
     "mf_quality_debug": "质量不符合 ({url}): {message}",
@@ -31,6 +34,7 @@ TEXTS: dict[str, str] = {
     "mf_drm_message": "内容受 DRM 保护, 无法下载",
     "mf_drm_detected": "{message} ({system})",
     "mf_found_mp4": "找到 MP4 {quality}: {url}",
+    "mf_found_audio": "找到音频: {url}",
     "mf_found_dash": "找到 DASH 流 {height}p: {url}",
     "mf_found_hls_unknown": "找到 HLS 流 (分辨率未知): {url}",
     "mf_found_hls": "找到 HLS 流 {height}p: {url}",

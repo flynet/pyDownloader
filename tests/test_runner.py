@@ -15,6 +15,7 @@ from pydownloader.download.runner import (
     build_task,
     make_plan,
     output_path,
+    output_suffix,
     run_task,
     task_root,
 )
@@ -34,6 +35,17 @@ MASTER = (DATA / "master.m3u8").read_text(encoding="utf-8")
 MEDIA = (DATA / "media.m3u8").read_text(encoding="utf-8")
 FMP4 = (DATA / "fmp4.m3u8").read_text(encoding="utf-8")
 MPD = (DATA / "template.mpd").read_text(encoding="utf-8")
+AUDIO_MASTER = (DATA / "audio_master.m3u8").read_text(encoding="utf-8")
+AUDIO_MEDIA = (DATA / "audio_media.m3u8").read_text(encoding="utf-8")
+AUDIO_MPD = (DATA / "audio_mpd.mpd").read_text(encoding="utf-8")
+#: SoundCloud master: the highest bandwidth variant is the one to download.
+AUDIO_VARIANT = "https://cdn.example.com/video/audio-128.m3u8"
+AUDIO_TEXTS = {HLS_URL: AUDIO_MASTER, AUDIO_VARIANT: AUDIO_MEDIA}
+AUDIO_BODIES = {
+    "https://cdn.example.com/video/init.mp4": b"I",
+    "https://cdn.example.com/video/seg-0.m4a": b"S0",
+    "https://cdn.example.com/video/seg-1.m4a": b"S1",
+}
 #: A relative segment reference inherits the token of the variant playlist.
 SEGMENTS = {
     "https://cdn.example.com/video/video/seg100.ts?token=abc": b"A",
@@ -95,10 +107,14 @@ class FakeMux:
     def __init__(self) -> None:
         self.video: list[Path] = []
         self.audio: list[Path] = []
+        self.bitrate: int | None = None
 
-    def __call__(self, files, out_path, ffmpeg, work_dir, audio_files=(), on_line=None):
+    def __call__(
+        self, files, out_path, ffmpeg, work_dir, audio_files=(), mp3_bitrate=None, on_line=None
+    ):
         self.video = list(files)
         self.audio = list(audio_files)
+        self.bitrate = mp3_bitrate
         out_path.write_bytes(b"merged")
         return MuxResult(out_path=out_path, log="ok")
 
@@ -235,3 +251,112 @@ def test_playlists_are_parsed_for_the_plan():
     plan = make_plan(entry, make_context(TEXTS, {}))
     assert [item.name for item in plan] == ["video-00000.ts", "video-00001.ts", "video-00002.ts"]
     assert task_root(Path("D:/x"), entry).name == entry.id
+
+
+def test_output_suffix_is_mp3_only_for_audio_sources(tmp_path):
+    url = "https://cdn.example.com/track.mp3"
+    entry = SourceEntry(id="s1", kind="mp4", url=url, normalized=url, title="Трек")
+    assert output_suffix(entry) == ".mp4"
+    entry.is_audio = True
+    assert output_suffix(entry) == ".mp3"
+    assert build_task(entry, tmp_path).out_path.suffix == ".mp3"
+
+
+def test_an_audio_hls_source_is_saved_as_an_mp3_file(tmp_path, mux):
+    """The plan of an audio-only variant has no video stream, target is ``.mp3``."""
+    entry = entry_for(AUDIO_TEXTS, HLS_URL, "hls")
+    assert entry.is_audio
+    task = build_task(entry, tmp_path)
+    out = run_task(task, make_context(AUDIO_TEXTS, AUDIO_BODIES))
+    assert out.suffix == ".mp3"
+    assert out.read_bytes() == b"merged"
+    assert mux.video == []
+    assert [f.name for f in mux.audio] == [
+        "audio-init.mp4",
+        "audio-00000.m4a",
+        "audio-00001.m4a",
+    ]
+
+
+def test_the_mp3_bitrate_of_the_settings_is_passed_to_ffmpeg(tmp_path, mux):
+    entry = entry_for(AUDIO_TEXTS, HLS_URL, "hls")
+    ctx = make_context(AUDIO_TEXTS, AUDIO_BODIES)
+    ctx.mp3_bitrate = 320
+    run_task(build_task(entry, tmp_path), ctx)
+    assert mux.bitrate == 320
+
+
+def test_a_video_task_is_remuxed_with_no_bitrate(tmp_path, mux):
+    """A video source keeps ``-c copy``: the MP3 bitrate is not part of its command."""
+    entry = entry_for(TEXTS, HLS_URL, "hls")
+    ctx = make_context(TEXTS, SEGMENTS)
+    ctx.mp3_bitrate = 320
+    run_task(build_task(entry, tmp_path), ctx)
+    assert mux.bitrate is None
+
+
+def test_a_direct_audio_file_goes_through_the_mp3_step(tmp_path, monkeypatch):
+    """A direct MP3 download is written by :func:`to_mp3`, not by the remux path."""
+    url = "https://cdn.example.com/track.mp3"
+    entry = SourceEntry(id="s1", kind="mp4", url=url, normalized=url, title="Трек", is_audio=True)
+    entry.choice = Choice(kind="mp4", url=url, height=None, audio_only=True)
+    seen: dict[str, object] = {}
+
+    def fake_to_mp3(src, out_path, ffmpeg, bitrate):
+        seen["src"] = src.name
+        seen["bitrate"] = bitrate
+        out_path.write_bytes(b"ID3")
+        return MuxResult(out_path=out_path, log="ok")
+
+    monkeypatch.setattr(runner, "to_mp3", fake_to_mp3)
+    ctx = make_context({}, {url: b"ID3"})
+    ctx.mp3_bitrate = 128
+    task = build_task(entry, tmp_path)
+    out = run_task(task, ctx)
+    # The plan fetches one file, named by the URL of the source.
+    assert seen["src"] == "file.mp3"
+    assert seen["bitrate"] == 128
+    assert out.suffix == ".mp3"
+    assert not task.tmp_dir.exists()
+
+
+def test_a_dash_audio_manifest_is_planned_as_audio(tmp_path, mux):
+    mpd_url = "https://cdn.example.com/audio/manifest.mpd"
+    texts = {mpd_url: AUDIO_MPD}
+    bodies = {"https://cdn.example.com/audio/init-audio.m4s": b"AI"}
+    for number in range(1, 6):
+        bodies[f"https://cdn.example.com/audio/audio/audio-{number}.m4s"] = b"A"
+    entry = entry_for(texts, mpd_url, "dash")
+    assert entry.is_audio
+    task = build_task(entry, tmp_path)
+    assert task.out_path.suffix == ".mp3"
+    run_task(task, make_context(texts, bodies))
+    assert mux.video == []
+    assert mux.audio[0].name == "audio-init.m4s"
+    assert len(mux.audio) == 6
+
+
+def test_the_family_of_audio_segments_is_planned_as_audio(tmp_path):
+    """A segment family of an audio stream is named as audio, so the MP3 step finds it."""
+    entry = SourceEntry(
+        id="s1",
+        kind="hls",
+        url="https://cdn.example.com/audio/master.m3u8",
+        normalized="https://cdn.example.com/audio/master.m3u8",
+        title="Трек",
+        is_audio=True,
+        family=True,
+    )
+    for url in (
+        "https://cdn.example.com/audio/init.mp4",
+        "https://cdn.example.com/audio/a-1.m4a",
+        "https://cdn.example.com/audio/a-2.m4a",
+    ):
+        entry.record(url)
+    plan = make_plan(entry, make_context({}, {}))
+    # The init segment is first, the media segments keep the capture order (spec 6.2 p.2).
+    assert [item.name for item in plan] == [
+        "audio-init.mp4",
+        "audio-00001.m4a",
+        "audio-00002.m4a",
+    ]

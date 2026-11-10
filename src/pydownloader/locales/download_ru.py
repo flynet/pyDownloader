@@ -71,6 +71,7 @@ TEXTS: dict[str, str] = {
     "ffmpeg_failed": "FFmpeg завершился с кодом {code}: {tail}",
     "ffmpeg_done_output": "FFmpeg готов, вывод: {lines} строк",
     "ffmpeg_direct_mp4": "прямой MP4",
+    "ffmpeg_direct_mp3": "прямой MP3",
     # --- байтовые диапазоны (спецификация 5.1) ---------------------------
     "range_bad_byterange": "Некорректный BYTERANGE: {value!r}",
     "range_no_offset": "BYTERANGE без offset и без предыдущего диапазона в том же файле",

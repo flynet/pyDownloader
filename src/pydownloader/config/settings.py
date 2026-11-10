@@ -20,6 +20,12 @@ DEFAULT_THREADS = 6
 DEFAULT_TARGET_HEIGHT = 1080
 DEFAULT_MIN_MP4_SIZE = 1024 * 1024  # files under 1 MB are treated as not video
 DEFAULT_UPDATE_CHECK_HOURS = 12
+#: MP3 bitrate of an audio source, the middle choice of the settings (spec 5.2 p.4).
+DEFAULT_MP3_BITRATE = 192
+#: Bitrates the settings offer for an audio source, the values FFmpeg accepts.
+MP3_BITRATES: tuple[int, ...] = (128, 192, 320)
+#: Quality presets the settings offer: the heights of the quality dropdown (spec 5.2 p.3).
+QUALITY_PRESETS: tuple[int, ...] = (1080, 720, 480)
 
 
 @dataclass
@@ -41,6 +47,11 @@ class Settings:
     ad_blocker: bool = True
     target_height: int = DEFAULT_TARGET_HEIGHT
     min_mp4_size: int = DEFAULT_MIN_MP4_SIZE
+    #: «Audio only (MP3)»: video sources are not shown, audio sources are saved
+    #: as ``.mp3`` (spec 5.2 p.4).
+    audio_only: bool = False
+    #: Bitrate of the MP3 file an audio source is written with (spec 5.2 p.4).
+    mp3_bitrate: int = DEFAULT_MP3_BITRATE
     profile_in_downloads: bool = False
     #: Tray icon of the program (spec 4.3): the window is hidden, the menu is used.
     tray_enabled: bool = True
@@ -81,6 +92,10 @@ def load_settings(path: Path) -> Settings:
     settings.threads = max(1, min(32, int(settings.threads)))
     settings.target_height = max(0, int(settings.target_height))
     settings.min_mp4_size = max(0, int(settings.min_mp4_size))
+    # FFmpeg accepts the bitrates the settings offer; an edited file with another
+    # number falls back to the middle choice, so the MP3 command is always valid.
+    if settings.mp3_bitrate not in MP3_BITRATES:
+        settings.mp3_bitrate = DEFAULT_MP3_BITRATE
     return settings
 
 

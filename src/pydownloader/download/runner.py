@@ -13,7 +13,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from pydownloader.config.settings import DEFAULT_TARGET_HEIGHT
+from pydownloader.config.settings import DEFAULT_MP3_BITRATE, DEFAULT_TARGET_HEIGHT
 from pydownloader.dash.models import DashRepresentation
 from pydownloader.dash.parser import ManifestParseError, parse_mpd
 from pydownloader.download.engine import (
@@ -26,9 +26,9 @@ from pydownloader.download.engine import (
     cleanup_tmp,
     download_plan,
 )
-from pydownloader.download.plan import build_plan, plan_family, plan_hls, plan_mp4
+from pydownloader.download.plan import StreamId, build_plan, plan_family, plan_hls, plan_mp4
 from pydownloader.ffmpeg.locate import Ffmpeg
-from pydownloader.ffmpeg.mux import assemble, copy_single
+from pydownloader.ffmpeg.mux import assemble, copy_single, to_mp3
 from pydownloader.hls.models import Playlist
 from pydownloader.hls.parser import PlaylistParseError, parse_playlist
 from pydownloader.i18n import tr
@@ -64,11 +64,22 @@ class RunContext:
     sleep: Sleep | None = None
     #: Quality cap for sources without a manifest (YouTube adaptive formats).
     target_height: int = DEFAULT_TARGET_HEIGHT
+    #: MP3 bitrate of an audio source, the setting of the program (spec 5.2 p.4).
+    mp3_bitrate: int = DEFAULT_MP3_BITRATE
 
 
 def task_root(root: Path, entry: SourceEntry) -> Path:
     """Directory of the segments: ``<downloads>/.tmp/<id>/`` (spec 6.2 p.2)."""
     return root / TMP_DIR_NAME / entry.id
+
+
+def output_suffix(entry: SourceEntry) -> str:
+    """Suffix of the destination file: ``.mp3`` for an audio source, ``.mp4`` for a video.
+
+    The audio sources are the ones the FFmpeg probe or the content type marked as
+    audio-only, and they are saved as MP3 (spec 5.2 p.4).
+    """
+    return ".mp3" if entry.is_audio else ".mp4"
 
 
 def output_path(root: Path, entry: SourceEntry, suffix: str = ".mp4") -> Path:
@@ -79,14 +90,14 @@ def output_path(root: Path, entry: SourceEntry, suffix: str = ".mp4") -> Path:
 def build_task(
     entry: SourceEntry,
     root: Path,
-    suffix: str = ".mp4",
+    suffix: str | None = None,
 ) -> Task:
     """Task with the temporary and destination paths of the source."""
     return Task(
         id=entry.id,
         entry=entry,
         tmp_dir=task_root(root, entry),
-        out_path=output_path(root, entry, suffix),
+        out_path=output_path(root, entry, suffix if suffix is not None else output_suffix(entry)),
         plan=[],
     )
 
@@ -118,7 +129,11 @@ def _family_plan(entry: SourceEntry, ctx: RunContext) -> list:
     real segment order, the media sequence used for the AES-128 IV and every
     segment, including the ones the browser did not play. Otherwise the recorded
     segment URLs are the plan, in capture order with the init segment first.
+
+    An audio family (the segments of an audio stream, no playlist) is planned as
+    the audio stream, so the MP3 target of the task finds the files it needs.
     """
+    stream: StreamId = "audio" if entry.is_audio else "video"
     playlist_url = next(
         (url for url in entry.recorded.values() if path_extension(url) == ".m3u8"),
         None,
@@ -140,8 +155,8 @@ def _family_plan(entry: SourceEntry, ctx: RunContext) -> list:
                             tr("dl_drm_detected", message=verdict.message, system=verdict.system)
                         )
                     if playlist.segments:
-                        return plan_hls(playlist)
-    return plan_family(entry.recorded)
+                        return plan_hls(playlist, stream)
+    return plan_family(entry.recorded, stream)
 
 
 def _hls_plan(entry: SourceEntry, choice: Choice, ctx: RunContext) -> list:
@@ -154,6 +169,14 @@ def _hls_plan(entry: SourceEntry, choice: Choice, ctx: RunContext) -> list:
             choice, playlist = fallback
     if playlist is None:
         raise DownloadError(tr("dl_manifest_not_fetched", url=choice.url))
+    if choice.audio_only:
+        # The stream carries audio only: the variant playlist is planned as the
+        # audio stream, and an ``EXT-X-MEDIA`` track of the same variant is the
+        # better source, because that is where the player reads the audio.
+        track = None
+        if choice.audio_url:
+            track = _media_playlist(entry, choice.audio_url, ctx)
+        return build_plan(audio_playlist=track or playlist)
     audio: Playlist | None = None
     if choice.audio_url:
         audio = _media_playlist(entry, choice.audio_url, ctx)
@@ -255,6 +278,10 @@ def _dash_plan(entry: SourceEntry, choice: Choice, ctx: RunContext) -> list:
     video: DashRepresentation | None = choice.video
     audio: DashRepresentation | None = choice.audio
     if video is None:
+        if audio is not None:
+            # The manifest has no video representation: the audio of the stream is
+            # the whole source, and the task saves it as ``.mp3`` (spec 5.2 p.4).
+            return build_plan(audio_rep=audio)
         raise DownloadError(tr("dl_no_video_track"))
     return build_plan(video_rep=video, audio_rep=audio)
 
@@ -299,12 +326,26 @@ def run_task(task: Task, ctx: RunContext) -> Path:
         raise CancelledError(tr("dl_task_cancelled"))
     streams = [path for path in files if path.stem != "file"]
     single = [path for path in files if path.stem == "file"]
+    # The MP3 target is the audio source: the stream is decoded once with the
+    # bitrate of the settings (spec 5.2 p.4), a video source is remuxed with copy.
+    mp3_target = task.out_path.suffix == ".mp3"
     if single:
-        result = copy_single(single[0], task.out_path)
+        if mp3_target:
+            result = to_mp3(single[0], task.out_path, ctx.ffmpeg, ctx.mp3_bitrate)
+        else:
+            result = copy_single(single[0], task.out_path)
         cleanup_tmp(task.tmp_dir)
         return result.out_path
     audio_files = [path for path in streams if path.name.startswith("audio-")]
     video_files = [path for path in streams if not path.name.startswith("audio-")]
-    result = assemble(video_files, task.out_path, ctx.ffmpeg, task.tmp_dir, audio_files, ctx.log)
+    result = assemble(
+        video_files,
+        task.out_path,
+        ctx.ffmpeg,
+        task.tmp_dir,
+        audio_files,
+        ctx.mp3_bitrate if mp3_target else None,
+        ctx.log,
+    )
     cleanup_tmp(task.tmp_dir)
     return result.out_path

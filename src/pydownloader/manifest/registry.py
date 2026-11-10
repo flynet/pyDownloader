@@ -57,6 +57,8 @@ class SourceEntry:
     duration: float | None = None
     range_requests: int = 1
     skipped: bool = False
+    #: ``True`` for an audio-only source: the file is saved as ``.mp3`` (spec 5.2 p.4).
+    is_audio: bool = False
     #: Selected video/audio track, filled by the pipeline after the manifest is parsed.
     choice: Choice | None = None
     #: Signed URLs seen in browser traffic: path -> URL, in capture order.
@@ -114,6 +116,9 @@ class SourceEntry:
         return f"{mb:.1f} MB"
 
     def display_quality(self) -> str:
+        """Quality of the card line: ``1080p``, ``MP3`` for an audio source (spec 4.1 p.2)."""
+        if self.is_audio:
+            return tr("mf_quality_mp3")
         return f"{self.height}p" if self.height else tr("mf_quality_unknown")
 
 

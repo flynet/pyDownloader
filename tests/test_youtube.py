@@ -189,7 +189,7 @@ def test_youtube_runner_builds_the_plan():
 def test_youtube_task_is_muxed(tmp_path, monkeypatch):
     seen: dict[str, list[str]] = {}
 
-    def assemble(files, out_path, ffmpeg, work_dir, audio_files=(), on_line=None):
+    def assemble(files, out_path, ffmpeg, work_dir, audio_files=(), mp3_bitrate=None, on_line=None):
         seen["video"] = [path.name for path in files]
         seen["audio"] = [path.name for path in audio_files]
         out_path.write_bytes(b"merged")
