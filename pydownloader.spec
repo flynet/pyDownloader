@@ -37,6 +37,10 @@ hiddenimports.append("imageio_ffmpeg")
 
 icon_path = os.path.join(app_dir, "assets", "icon.ico")
 icon = icon_path if os.path.exists(icon_path) else None
+# The tray icon is read by the program at runtime, so the file is shipped next to
+# the sources inside ``_internal`` (``sys._MEIPASS/assets/icon.ico``).
+if icon is not None:
+    datas.append((icon_path, "assets"))
 # build.ps1 fills the placeholders of version_info.template.txt into this file.
 version_file = os.path.join(app_dir, "build", "version_info.txt")
 

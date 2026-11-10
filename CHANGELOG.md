@@ -6,6 +6,20 @@ on `main`.
 
 ## [Unreleased]
 
+### Added
+- «Open browser» and «Close browser» in the top panel and in the tray menu: the
+  browser window is no longer tied to the program. Closing it stops the sniffer
+  thread and the running downloads continue; «Open browser» starts the same
+  browser on the page the user was on last, so the profile, the cookies and the
+  login are read back from disk and the page can be played again.
+- The program lives in the Windows notification area: closing the window with «X»
+  hides it to the tray, the downloads keep running, and «Exit» in the tray menu
+  is the only way to quit. The menu shows the window, opens and closes the
+  browser, checks for an update and opens the download folder; a double click on
+  the icon shows the window, and the first minimize shows a balloon that explains
+  the tray. The tray and the «X» behaviour are settings, and a platform without a
+  notification area (Windows Server, the offscreen CI) runs without the icon.
+
 ### Fixed
 - `build.ps1` writes the `.sha256` file of the installer without a byte-order
   mark, so the file is plain text and hash verification tools read it directly.

@@ -65,13 +65,18 @@ def make_window() -> SimpleNamespace:
         log_info=messages.append,
         log_warning=messages.append,
         ffmpeg=Ffmpeg(Path("ffmpeg.exe"), "FFmpeg"),
+        # «Open browser» reuses what the first start resolved (spec 4.3).
+        browser_choice=None,
+        extension_dir=None,
+        last_url="",
+        sniffer=None,
     )
 
 
 def record_launch(launched: list[object]):
     """Stand-in for ``launch_sniffer`` that remembers the extension argument."""
 
-    def launch(window, settings, paths, browser, extension=None):
+    def launch(window, settings, paths, browser, extension=None, start_url=""):
         launched.append(extension)
 
     return launch
@@ -158,7 +163,9 @@ def test_chromium_of_an_older_version_is_used_without_a_new_download(
     monkeypatch.setattr(
         app_mod,
         "launch_sniffer",
-        lambda window, settings, paths, browser, ext=None: launched.append((browser, ext)),
+        lambda window, settings, paths, browser, ext=None, start_url="": launched.append(
+            (browser, ext)
+        ),
     )
 
     paths = replace(make_paths(tmp_path), legacy_browsers_dir=legacy)
@@ -167,3 +174,97 @@ def test_chromium_of_an_older_version_is_used_without_a_new_download(
     assert started == []
     assert launched[0][0].kind == "chromium"
     assert launched[0][1] == extension
+
+
+class FakeSniffer:
+    """Stand-in for the browser thread: the buttons ask it to start and stop."""
+
+    def __init__(self, running: bool, open_now: bool) -> None:
+        self._running = running
+        self._open = open_now
+        self.stops = 0
+
+    def isRunning(self) -> bool:
+        return self._running
+
+    def is_browser_open(self) -> bool:
+        return self._open
+
+    def stop(self) -> None:
+        self.stops += 1
+        self._running = False
+
+
+def test_close_browser_stops_the_thread(tmp_path: Path, monkeypatch):
+    window = make_window()
+    sniffer = FakeSniffer(running=True, open_now=True)
+    window.sniffer = sniffer
+
+    app_mod.close_browser(window)
+    assert sniffer.stops == 1
+    assert any("Закрываю" in message for message in window.messages)
+
+
+def test_close_browser_without_a_thread_is_a_plain_message(tmp_path: Path, monkeypatch):
+    window = make_window()
+    window.sniffer = None
+
+    app_mod.close_browser(window)
+    assert any("не запущен" in message for message in window.messages)
+
+
+def test_open_browser_reuses_the_resolved_browser_on_the_last_page(
+    tmp_path: Path, monkeypatch
+):
+    window = make_window()
+    window.browser_choice = CHROME
+    window.extension_dir = tmp_path / "uBlock"
+    window.last_url = "https://example.com/player"
+    # A thread that finished cannot be reused: its Playwright objects are bound
+    # to the event loop of the old thread, so a new one is launched.
+    window.sniffer = FakeSniffer(running=False, open_now=False)
+    launched: list[object] = []
+    monkeypatch.setattr(
+        app_mod,
+        "launch_sniffer",
+        lambda window, settings, paths, browser, ext=None, start_url="": launched.append(
+            (browser, ext, start_url)
+        ),
+    )
+
+    app_mod.open_browser(window, Settings(), make_paths(tmp_path))
+
+    assert launched == [(CHROME, tmp_path / "uBlock", "https://example.com/player")]
+
+
+def test_open_browser_does_not_start_a_second_thread(tmp_path: Path, monkeypatch):
+    window = make_window()
+    window.browser_choice = CHROME
+    window.sniffer = FakeSniffer(running=True, open_now=True)
+    launched: list[object] = []
+    monkeypatch.setattr(
+        app_mod,
+        "launch_sniffer",
+        lambda window, settings, paths, browser, ext=None, start_url="": launched.append(browser),
+    )
+
+    app_mod.open_browser(window, Settings(), make_paths(tmp_path))
+
+    assert launched == []
+    assert any("уже открыт" in message for message in window.messages)
+
+
+def test_open_browser_without_a_resolved_browser_starts_the_first_one(
+    tmp_path: Path, monkeypatch
+):
+    window = make_window()
+    started: list[str] = []
+    monkeypatch.setattr(app_mod, "chromium_executable", lambda folder, legacy=None: None)
+    monkeypatch.setattr(app_mod, "extension_dir", lambda app, cache: None)
+    monkeypatch.setattr(app_mod, "_ask_install", lambda window, question: False)
+    monkeypatch.setattr(app_mod, "resolve_browser", lambda *args, **kwargs: CHROME)
+    monkeypatch.setattr(app_mod, "launch_sniffer", lambda *args, **kwargs: started.append("launch"))
+
+    app_mod.open_browser(window, Settings(), make_paths(tmp_path))
+
+    assert started == ["launch"]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 from pydownloader.browser.events import ResponseEvent
@@ -57,3 +58,48 @@ def test_drain_parses_the_intercepted_body_without_a_second_request(qapp, monkey
     entries = registry.entries()
     assert len(entries) == 1
     assert entries[0].height == 1080
+
+
+def make_sniffer(start_url: str = "") -> SnifferThread:
+    return SnifferThread(FakeBrowser(), Path("."), SourceRegistry(), QualityFilter(1080), start_url)
+
+
+def test_the_browser_is_not_open_before_the_thread_runs(qapp):
+    sniffer = make_sniffer("https://site.example/player")
+    # The address of the page is known from the start, so «Open browser» has an
+    # address to reopen before any page was seen.
+    assert sniffer.last_url == "https://site.example/player"
+    assert not sniffer.is_browser_open()
+
+
+def test_last_page_of_the_browser_is_remembered(qapp):
+    sniffer = make_sniffer("https://site.example/player")
+    event = ResponseEvent(
+        url="https://cdn.example.com/video/master.m3u8",
+        page_url="https://site.example/watch/42",
+        page_title="Clip",
+        content_type="application/json",
+        request_headers={},
+    )
+    sniffer._events.put(event)
+
+    sniffer._drain(FakeContext())
+
+    assert sniffer.last_url == "https://site.example/watch/42"
+
+
+def test_cookies_of_a_closed_browser_are_answered_without_a_timeout(qapp):
+    """No context means nothing to read: waiting 10 s per segment stalls the task."""
+    sniffer = make_sniffer()
+    started = time.monotonic()
+
+    assert sniffer.request_cookies("https://site.example") == []
+    assert time.monotonic() - started < 1.0
+
+
+def test_open_browser_state_follows_the_context(qapp):
+    sniffer = make_sniffer()
+    sniffer._context = FakeContext()
+    assert sniffer.is_browser_open()
+    sniffer.stop()
+    assert not sniffer.is_browser_open()

@@ -49,6 +49,24 @@ def application_dir() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
+def resource_dir() -> Path:
+    """Folder of the files shipped with the program.
+
+    A PyInstaller build unpacks its data into ``_MEIPASS``; a checkout keeps the
+    files in the repository root, so ``assets/icon.ico`` is found the same way.
+    """
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        return Path(meipass)
+    return application_dir()
+
+
+def icon_path() -> Path | None:
+    """The tray and window icon, ``None`` when the build did not ship it."""
+    path = resource_dir() / "assets" / "icon.ico"
+    return path if path.is_file() else None
+
+
 @dataclass(frozen=True)
 class Paths:
     settings_file: Path

@@ -105,6 +105,14 @@ class SettingsDialog(QDialog):
         self.theme_box.setCurrentIndex(max(0, self.theme_box.findData(settings.theme)))
         self._form.addRow(tr("settings_theme_row"), self.theme_box)
 
+        # The tray keeps the program running when the window is hidden (spec 4.3).
+        self.tray_check = QCheckBox(tr("settings_tray"))
+        self.tray_check.setChecked(settings.tray_enabled)
+        self._form.addRow("", self.tray_check)
+        self.close_tray_check = QCheckBox(tr("settings_close_tray"))
+        self.close_tray_check.setChecked(settings.close_to_tray)
+        self._form.addRow("", self.close_tray_check)
+
         self.update_check = QCheckBox(tr("settings_check_updates"))
         self.update_check.setChecked(settings.auto_update)
         self._form.addRow("", self.update_check)
@@ -177,6 +185,8 @@ class SettingsDialog(QDialog):
         target.theme = cast(ThemeName, self.theme_box.currentData())
         target.language = cast(Language, self.language_box.currentData())
         target.auto_update = self.update_check.isChecked()
+        target.tray_enabled = self.tray_check.isChecked()
+        target.close_to_tray = self.close_tray_check.isChecked()
         return target
 
 

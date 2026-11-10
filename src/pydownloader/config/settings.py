@@ -30,6 +30,12 @@ class Settings:
     target_height: int = DEFAULT_TARGET_HEIGHT
     min_mp4_size: int = DEFAULT_MIN_MP4_SIZE
     profile_in_downloads: bool = False
+    #: Tray icon of the program (spec 4.3): the window is hidden, the menu is used.
+    tray_enabled: bool = True
+    #: «X» in the title bar hides the window to the tray instead of quitting.
+    close_to_tray: bool = True
+    #: The balloon that explains the tray is shown once (spec 4.3).
+    tray_hint_seen: bool = False
     update_check_hours: int = DEFAULT_UPDATE_CHECK_HOURS
     skipped_version: str = ""
     #: Timestamp of the last successful API check, cached for ``update_check_hours``.
