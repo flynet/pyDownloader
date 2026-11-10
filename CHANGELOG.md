@@ -15,6 +15,13 @@ on `main`.
   French, German), English is the default, the language is chosen in Settings and
   is applied after a restart.
 
+### Fixed
+- Cards keep their height in the list: a resizable scroll area resized its widget
+  to the viewport, and the layout squeezed the cards to a few pixels, so the
+  download button lost its text and the cards below the viewport were unreachable.
+  The floors of the card layout and of the button are written into `minimumSize`,
+  and the card list gets the floor of its cards, so the scroll area scrolls.
+
 ## [0.2.0] - 2026-11-10
 
 ### Added
