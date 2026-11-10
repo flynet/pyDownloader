@@ -413,3 +413,9 @@ def test_bad_sha_blocks_the_install(qtbot, tmp_path, monkeypatch):
     mon.downloaded.emit(file, "")
     assert calls == []
     assert window.logs[-1][0] == "error"
+
+
+def test_fetch_release_without_releases_is_silent(monkeypatch):
+    """A repository with no published releases answers 404: no warning, no update."""
+    monkeypatch.setattr(httpx.Client, "get", lambda self, url, headers=None: FakeResponse(404, {}))
+    assert fetch_release("https://api.example/latest") is None

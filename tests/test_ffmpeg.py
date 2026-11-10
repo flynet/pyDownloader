@@ -119,3 +119,20 @@ def test_headers_option_is_crlf_separated():
     text = headers_option({"Referer": "https://site.example/a", "User-Agent": "UA"})
     assert text == "Referer: https://site.example/a\r\nUser-Agent: UA\r\n"
     assert headers_option({"Empty": ""}) == ""
+
+
+def test_missing_packaged_binary_is_not_an_error(monkeypatch):
+    """The frozen build drops imageio-ffmpeg's binary: the lookup returns None."""
+    import sys
+    import types
+
+    from pydownloader.ffmpeg.locate import imageio_ffmpeg_path
+
+    fake = types.ModuleType("imageio_ffmpeg")
+
+    def boom():
+        raise RuntimeError("no ffmpeg exe")
+
+    fake.get_ffmpeg_exe = boom  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "imageio_ffmpeg", fake)
+    assert imageio_ffmpeg_path() is None

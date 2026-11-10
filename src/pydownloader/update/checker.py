@@ -146,6 +146,9 @@ def fetch_release(url: str | None = None, timeout: float = API_TIMEOUT) -> Relea
             )
     except httpx.HTTPError as exc:
         raise UpdateError(f"Не получен список релизов: {exc}") from exc
+    if response.status_code == 404:
+        # A repository without published releases answers 404: nothing to show.
+        return None
     if response.status_code == 403:
         raise UpdateError("GitHub API: ограничено число запросов (лимит на IP)")
     if response.status_code >= 400:
