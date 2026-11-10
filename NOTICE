@@ -1,0 +1,25 @@
+# Third-party components and their licenses
+
+PyDownloader распространяет бинарник FFmpeg и использует сторонние библиотеки.
+Список ниже составляется при добавлении зависимостей; полная текст лицензии
+распространяется вместе с установщиком в папке `{app}\licenses`.
+
+| Компонент | Лицензия | Источник |
+|---|---|---|
+| FFmpeg (`ffmpeg.exe`) | GPLv2+/LGPL2.1+ (сборка BtbN/gyan.dev, GPL version 2) | https://ffmpeg.org , https://github.com/BtbN/FFmpeg-Builds |
+| PySide6 (Qt 6) | LGPLv3 (Qt LGPL license agreement) | https://www.qt.io/qt-licensing |
+| Playwright for Python | Apache-2.0 | https://github.com/microsoft/playwright-python |
+| Chromium (запасной вариант, скачивается по запросу) | BSD-3 (Chromium project) | https://www.chromium.org |
+| httpx | BSD-3 | https://github.com/encode/httpx |
+| cryptography | Apache-2.0/BSD | https://github.com/pyca/cryptography |
+| lxml | BSD-2 | https://lxml.de |
+| imageio-ffmpeg | BSD-2 | https://github.com/imageio/imageio-ffmpeg |
+| packaging | MIT/Apache-2.0 | https://github.com/pypa/packaging |
+| Inno Setup (инструмент сборки) | libpriyut / GNU GPL, свободно используется для сборки установщика | https://www.innosetup.com |
+
+Примечания:
+- FFmpeg вызывается как отдельный процесс (`subprocess`), приложение не linking'ует
+  его библиотеки; в установщике FFmpeg идёт отдельным бинарником в `{app}\bin`.
+- DRM-контент (Widevine/PlayReady/FairPlay) приложением не обрабатывается: такие
+  потоки пропускаются, обход защит не выполняется.
+- При сборке версия каждой библиотеки фиксируется в `requirements.txt`.
