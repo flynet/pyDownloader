@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import queue
 import sys
 import time
@@ -34,6 +35,7 @@ from pydownloader.download.http import (
 from pydownloader.manifest.pipeline import Outcome, ProbeHeight, process_event
 from pydownloader.manifest.quality import Choice, QualityFilter
 from pydownloader.manifest.registry import SourceRegistry
+from pydownloader.util.urls import is_manifest_url, normalize_content_type
 from pydownloader.youtube.api import (
     API_KEY,
     CLIENT_NAME,
@@ -50,6 +52,15 @@ PUMP_MS = 200
 COOKIES_TIMEOUT = 10.0
 #: Pause between two inner-tube player requests of the same watch page, in seconds.
 YOUTUBE_ATTEMPT_INTERVAL = 3.0
+#: Content types that mark a manifest even when the URL has no ``.m3u8``/``.mpd``.
+MANIFEST_TYPES = {
+    "application/vnd.apple.mpegurl",
+    "application/x-mpegurl",
+    "audio/mpegurl",
+    "application/dash+xml",
+}
+
+logger = logging.getLogger("pydownloader.sniffer")
 
 
 class SnifferThread(QThread):
@@ -116,6 +127,7 @@ class SnifferThread(QThread):
                 )
                 self._context = context
                 context.on("response", self._on_response)
+                logger.info("Браузер: %s, профиль %s", self.browser.label, self.profile_dir)
                 self.message.emit(f"Браузер запущен: {self.browser.label}")
                 if self.browser.is_bundled_chromium:
                     self.message.emit(CHROMIUM_WARNING)
@@ -128,9 +140,17 @@ class SnifferThread(QThread):
                     if not pages:
                         self.message.emit("Браузер закрыт пользователем")
                         break
+                    page = pages[0]
                     try:
-                        pages[0].wait_for_timeout(PUMP_MS)
+                        if page.is_closed():
+                            self.message.emit("Браузер закрыт пользователем")
+                            break
+                        page.wait_for_timeout(PUMP_MS)
                     except Exception as exc:  # a page was closed or crashed
+                        if page.is_closed():
+                            self.message.emit("Браузер закрыт пользователем")
+                            break
+                        logger.debug("Страница недоступна: %s", exc)
                         self.message.emit(f"Страница недоступна: {exc}")
                         continue
                     self._drain(context)
@@ -151,18 +171,26 @@ class SnifferThread(QThread):
             headers = dict(response.request.headers)
             response_headers = dict(response.headers)
             length = response_headers.get("content-length")
-            self._events.put(
-                ResponseEvent(
-                    url=response.url,
-                    page_url=page.url,
-                    status=response.status,
-                    content_type=response_headers.get("content-type"),
-                    content_length=int(length) if length and length.isdigit() else None,
-                    content_range=response_headers.get("content-range"),
-                    request_headers=headers,
-                    page=page,
-                )
+            content_type = response_headers.get("content-type")
+            event = ResponseEvent(
+                url=response.url,
+                page_url=page.url,
+                status=response.status,
+                content_type=content_type,
+                content_length=int(length) if length and length.isdigit() else None,
+                content_range=response_headers.get("content-range"),
+                request_headers=headers,
+                page=page,
             )
+            # A manifest body is read in the pump loop: the copy the browser
+            # already has is the most reliable one (a signed CDN rejects a
+            # second request for the same path).
+            if event.status < 400 and (
+                normalize_content_type(content_type) in MANIFEST_TYPES
+                or is_manifest_url(event.url)
+            ):
+                event.response = response
+            self._events.put(event)
         except Exception:
             # A response of a closing page is not a source; never break the handler.
             return
@@ -183,10 +211,23 @@ class SnifferThread(QThread):
                 break
             if isinstance(item, CookieRequest):
                 item.cookies = context.cookies(item.url)
+                logger.debug("Cookies для %s: %d", item.url, len(item.cookies))
                 item.event.set()
                 continue
             events.append(item)
         for event in events:
+            logger.debug(
+                "Ответ %s %s %s байт %s",
+                event.status,
+                event.content_type or "-",
+                event.content_length if event.content_length is not None else "-",
+                event.url,
+            )
+            if event.response is not None:
+                if event.status < 400:
+                    with contextlib.suppress(Exception):
+                        event.body = event.response.text()
+                event.response = None
             if event.page is not None:
                 with contextlib.suppress(Exception):
                     event.page_title = event.page.title()
@@ -196,6 +237,7 @@ class SnifferThread(QThread):
             page_key = (event.page_url, event.page_title)
             if page_key != self._last_page:
                 self._last_page = page_key
+                logger.debug("Страница: %s — %s", event.page_url, event.page_title)
                 self.page_changed.emit(event.page_url, event.page_title)
             self.registry.note_response(event)
         for event in events:
@@ -205,6 +247,11 @@ class SnifferThread(QThread):
             for outcome in outcomes:
                 self._report(outcome)
         for family in self.registry.synthesize_families():
+            logger.info(
+                "Семейство сегментов: %s (%d файлов)",
+                family.url,
+                len(family.recorded),
+            )
             self.source_found.emit(family)
             self.message.emit(
                 f"Найдена HLS-группа сегментов ({len(family.recorded)} файлов): {family.url}"
@@ -323,9 +370,16 @@ class SnifferThread(QThread):
             except Exception:
                 cookies = []
         merged = merge_cookies(merged, cookies)
+        cookie_names = sorted(
+            part.split("=", 1)[0].strip()
+            for part in merged.get("Cookie", "").split(";")
+            if "=" in part
+        )
+        logger.debug("Запрос манифеста %s (cookies: %s)", url, ", ".join(cookie_names) or "-")
         try:
             return fetch_text(url, merged)
         except FetchError as exc:
+            logger.debug("Манифест не получен: %s (%s)", url, exc)
             self.message.emit(str(exc))
             return None
 

@@ -8,6 +8,7 @@ the stream into ``.mp4`` with ``-c copy``, so the video is not re-encoded.
 
 from __future__ import annotations
 
+import logging
 import subprocess
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -21,6 +22,8 @@ TS_EXTENSIONS = {".ts", ".ifs"}
 #: Bitstream filter needed when AAC in MPEG-TS is put into MP4 (spec 6.4).
 AAC_BSF = ["-bsf:a", "aac_adtstoasc"]
 MUXING_QUEUE = ["-max_muxing_queue_size", "2048"]
+
+logger = logging.getLogger("pydownloader.ffmpeg")
 
 
 class FfmpegError(RuntimeError):
@@ -80,6 +83,7 @@ def remux_command(
 
 def run_ffmpeg(command: Sequence[str], on_line: Callable[[str], None] | None = None) -> str:
     """Run FFmpeg, collect its output, raise :class:`FfmpegError` on failure."""
+    logger.debug("FFmpeg: %s", subprocess.list2cmdline(list(command)))
     process = subprocess.run(
         list(command),
         env=ffmpeg_env(),
@@ -97,7 +101,9 @@ def run_ffmpeg(command: Sequence[str], on_line: Callable[[str], None] | None = N
                 on_line(line)
     if process.returncode != 0:
         tail = " ".join(output.splitlines()[-3:]) if output else "нет вывода"
+        logger.error("FFmpeg код %s: %s", process.returncode, tail)
         raise FfmpegError(f"FFmpeg завершился с кодом {process.returncode}: {tail}")
+    logger.debug("FFmpeg готов, вывод: %d строк", len(output.splitlines()))
     return output
 
 

@@ -8,6 +8,7 @@ some CDNs reject requests without them.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -15,6 +16,8 @@ import httpx
 
 from pydownloader.util.ranges import ByteRange
 from pydownloader.util.urls import origin_of
+
+logger = logging.getLogger("pydownloader.http")
 
 #: Headers copied from the intercepted request, in lower case for lookup.
 CAPTURED_HEADERS = (
@@ -117,11 +120,14 @@ def clean_headers(headers: Mapping[str, str]) -> dict[str, str]:
 
 def fetch_text(url: str, headers: Mapping[str, str], timeout: float = DEFAULT_TIMEOUT) -> str:
     """``GET`` a manifest body, following redirects. Raises :class:`FetchError`."""
+    logger.debug("GET %s", url)
     try:
         with httpx.Client(follow_redirects=True, timeout=timeout) as client:
             response = client.get(url, headers=clean_headers(headers))
     except httpx.HTTPError as exc:
+        logger.debug("GET %s: сетевая ошибка %s", url, exc)
         raise FetchError(f"Сетевая ошибка: {exc}") from exc
+    logger.debug("GET %s -> %s (%d символов)", url, response.status_code, len(response.text))
     if response.status_code >= 400:
         raise FetchError(f"HTTP {response.status_code} для {url}")
     return response.text
@@ -141,11 +147,14 @@ def fetch_bytes(
     request_headers = clean_headers(headers)
     if byte_range is not None:
         request_headers["Range"] = f"bytes={byte_range.start}-{byte_range.end}"
+    logger.debug("GET %s %s", url, request_headers.get("Range", ""))
     try:
         with httpx.Client(follow_redirects=True, timeout=timeout) as client:
             response = client.get(url, headers=request_headers)
     except httpx.HTTPError as exc:
+        logger.debug("GET %s: сетевая ошибка %s", url, exc)
         raise FetchError(f"Сетевая ошибка: {exc}") from exc
+    logger.debug("GET %s -> %s (%d байт)", url, response.status_code, len(response.content))
     if response.status_code >= 400:
         raise FetchError(f"HTTP {response.status_code} для {url}")
     body = response.content

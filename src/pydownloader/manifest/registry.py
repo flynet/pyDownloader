@@ -11,6 +11,7 @@ Spec 5.1/5.2 p.4:
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from itertools import count
 from typing import TYPE_CHECKING
@@ -31,6 +32,8 @@ from pydownloader.util.urls import (
 
 if TYPE_CHECKING:
     from pydownloader.browser.events import ResponseEvent
+
+logger = logging.getLogger("pydownloader.registry")
 
 MAX_PATH_LIMIT = 260
 #: Segment GETs from one directory that synthesize an HLS row when no playlist was seen.
@@ -55,7 +58,7 @@ class SourceEntry:
     skipped: bool = False
     #: Selected video/audio track, filled by the pipeline after the manifest is parsed.
     choice: Choice | None = None
-    #: Signed URLs seen in browser traffic: file name -> URL, in capture order.
+    #: Signed URLs seen in browser traffic: path -> URL, in capture order.
     #: A CDN that signs every path individually (phncdn) rejects constructed URLs,
     #: so the downloader prefers these exact URLs.
     recorded: dict[str, str] = field(default_factory=dict)
@@ -74,6 +77,7 @@ class SourceEntry:
         key = path_of(url)
         if key:
             self.recorded[key] = url
+            logger.debug("Записан URL %s -> %s", key, url)
 
     def recorded_url(self, url: str) -> str | None:
         """Exact signed URL for a constructed one, ``None`` when nothing was recorded."""
@@ -162,6 +166,11 @@ class SourceRegistry:
             owner = self._owners.get(_path_prefix(candidate.url))
             if owner is not None:
                 owner.record(candidate.url)
+                logger.debug(
+                    "Плейлист %s принадлежит уже найденному потоку %s",
+                    candidate.url,
+                    owner.url,
+                )
                 return AddResult(
                     entry=owner, is_new=False, reason="плейлист уже найденного потока"
                 )
@@ -171,6 +180,7 @@ class SourceRegistry:
         self._prefixes.add(base_dir_url(candidate.url))
         self._owners[_path_prefix(candidate.url)] = entry
         self.adopt_pending(candidate.url, entry)
+        logger.debug("Новый манифест %s: %s", candidate.kind, candidate.url)
         return AddResult(entry=entry, is_new=True)
 
     def add_mp4(self, candidate: Candidate) -> AddResult:
@@ -304,6 +314,7 @@ class SourceRegistry:
         directory = _path_prefix(url)
         self._family.setdefault(directory, {})[name] = url
         self._family_meta.setdefault(directory, event)
+        logger.debug("Сегмент до манифеста (%s): %s", directory, url)
 
     def synthesize_families(self) -> list[SourceEntry]:
         """Turn directories with enough segment GETs into HLS entries.

@@ -96,6 +96,36 @@ def test_playlist_in_a_directory_owned_by_the_master_is_a_fragment(read):
     assert registry.entries()[0].recorded["/video/extra.m3u8"] == second
 
 
+def test_intercepted_body_is_parsed_without_a_second_request(read):
+    calls: list[str] = []
+
+    def fetch(url: str, headers: dict[str, str]) -> str | None:
+        calls.append(url)
+        return None
+
+    registry = SourceRegistry(min_mp4_size=MIN_SIZE)
+    response = event(HLS_URL)
+    response.body = read("master.m3u8")
+    outcomes = process_event(
+        response, registry, fetch, QUALITY, body=response.body
+    )
+    # The master body came from the browser: only the variant is requested, and
+    # its failure does not drop the source (the worker fetches it again).
+    assert calls == [VARIANT_1080]
+    assert outcomes[0].action == "show"
+    assert "будет запрошен при скачивании" in outcomes[0].message
+
+
+def test_variant_fetch_failure_keeps_the_source_for_the_download(read):
+    registry, outcomes = run({HLS_URL: read("master.m3u8")}, event(HLS_URL))
+    assert outcomes[0].action == "show"
+    assert "1080p" in outcomes[0].message
+    assert "будет запрошен при скачивании" in outcomes[0].message
+    entry = registry.entries()[0]
+    assert entry.choice.url == VARIANT_1080
+    assert entry.height == 1080
+
+
 def test_master_without_1080p_is_hidden(read):
     texts = {HLS_URL: read("no_1080.m3u8")}
     registry, outcomes = run(texts, event(HLS_URL, content_type="application/x-mpegURL"))

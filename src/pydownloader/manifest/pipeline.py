@@ -10,6 +10,7 @@ Every outcome carries the console message for the UI console panel.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import Literal
@@ -42,6 +43,8 @@ Fetch = Callable[[str, dict[str, str]], str | None]
 #: ``probe(url, headers) -> height | None`` (FFmpeg probe of a direct MP4).
 ProbeHeight = Callable[[str, dict[str, str]], int | None]
 
+logger = logging.getLogger("pydownloader.pipeline")
+
 
 @dataclass(frozen=True)
 class Outcome:
@@ -58,8 +61,13 @@ def process_event(
     fetch: Fetch,
     quality: QualityFilter,
     probe_height: ProbeHeight | None = None,
+    body: str | None = None,
 ) -> list[Outcome]:
     """Apply the filters of spec 5.1/5.2 to one intercepted response.
+
+    ``body`` is the manifest text captured from the intercepted response (the
+    sniffer reads it in the pump loop); ``None`` means the body must be fetched
+    again with the browser headers.
 
     Returns the outcomes to log; an empty list means the response was not a
     video source. The registry is updated as a side effect.
@@ -84,7 +92,7 @@ def process_event(
         return []
     if candidate.kind == "mp4":
         return _process_mp4(candidate, registry, quality, probe_height)
-    return _process_manifest(candidate, registry, fetch, quality)
+    return _process_manifest(candidate, registry, fetch, quality, body)
 
 
 def _process_mp4(
@@ -116,6 +124,7 @@ def _process_manifest(
     registry: SourceRegistry,
     fetch: Fetch,
     quality: QualityFilter,
+    body: str | None = None,
 ) -> list[Outcome]:
     result = registry.add_manifest(candidate)
     if not result.is_new:
@@ -123,7 +132,12 @@ def _process_manifest(
             return [Outcome("fragment", result.entry, f"{result.reason}: {candidate.url}")]
         return [Outcome("duplicate", result.entry, f"Уже найден: {result.entry.url}")]
     entry = result.entry
-    text = fetch(candidate.url, candidate.headers)
+    text: str | None
+    if body is not None:
+        text = body
+        logger.debug("Манифест взят из перехваченного ответа: %s", candidate.url)
+    else:
+        text = fetch(candidate.url, candidate.headers)
     if text is None:
         registry.remove(entry.normalized)
         return [Outcome("fetch-error", None, f"Не получен манифест: {candidate.url}")]
@@ -133,6 +147,7 @@ def _process_manifest(
         else:
             playlist = parse_playlist(text, candidate.url)
     except (ManifestParseError, PlaylistParseError) as exc:
+        logger.debug("Манифест не разобран (%s): %s", candidate.url, exc)
         registry.remove(entry.normalized)
         return [Outcome("parse-error", None, f"Манифест не разобран: {exc}")]
     if candidate.kind == "dash":
@@ -189,6 +204,9 @@ def _hls_outcomes(
 
     decision = quality.decide_hls(playlist)
     if not decision.show or decision.choice is None:
+        logger.debug(
+            "Качество не подходит (%s): %s", entry.url, decision.message
+        )
         registry.remove(entry.normalized)
         return [Outcome("skip-quality", None, decision.message)]
     choice = decision.choice
@@ -200,15 +218,47 @@ def _hls_outcomes(
     variant_url = entry.recorded_url(choice.url) or choice.url
     audio_url = entry.recorded_url(choice.audio_url) if choice.audio_url else None
     choice = replace(choice, url=variant_url, audio_url=audio_url or choice.audio_url)
+    logger.debug(
+        "Мастер %s: выбран %sp, вариант %s (записан: %s)",
+        entry.url,
+        choice.height,
+        choice.url,
+        "да" if variant_url != choice.url else "нет",
+    )
     variant_text = fetch(variant_url, entry.headers)
     if variant_text is None:
-        registry.remove(entry.normalized)
-        return [Outcome("fetch-error", None, f"Не получен манифест: {choice.url}")]
+        # Java defers this check to the download: a per-path signature
+        # (phncdn) rejects the URL inherited from the master, while the exact
+        # signed URL of the variant appears in browser traffic when the player
+        # requests it. The worker prefers that recorded URL.
+        logger.warning(
+            "Вариант %sp не получен сейчас, будет запрошен при скачивании: %s",
+            choice.height,
+            choice.url,
+        )
+        entry.choice = choice
+        entry.height = choice.height
+        registry.remember_prefix(choice.url, entry)
+        if choice.audio_url:
+            registry.remember_prefix(choice.audio_url, entry)
+        return [
+            Outcome(
+                "show",
+                entry,
+                f"Найден HLS-поток {entry.height}p: {entry.url} "
+                "(вариант будет запрошен при скачивании)",
+            )
+        ]
     try:
         variant = parse_playlist(variant_text, choice.url)
     except (ManifestParseError, PlaylistParseError) as exc:
+        logger.debug("Вариант не разобран (%s): %s", choice.url, exc)
         registry.remove(entry.normalized)
         return [Outcome("parse-error", None, f"Манифест не разобран: {exc}")]
+    if variant.kind == "master":
+        # A nested master (phncdn serves one per quality): the download plan
+        # descends into it, here only the quality/live checks matter.
+        logger.debug("Вариант %s — вложенный мастер-плейлист", choice.url)
     if variant.is_live:
         registry.remove(entry.normalized)
         return [Outcome("skip-live", None, f"Live-трансляция: пропущен ({choice.url})")]

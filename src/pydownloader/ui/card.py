@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QProgressBar,
     QPushButton,
+    QSizePolicy,
     QToolButton,
     QVBoxLayout,
 )
@@ -88,7 +89,10 @@ class SourceCard(QFrame):
         self.state: CardState = "new"
         self.stage = "download"
         self.setObjectName("card")
-        self.setMinimumHeight(96)
+        # The height comes from the layout (labels, progress bar, buttons): an
+        # explicit minimum used to win over the layout minimum and squeezed the
+        # «Скачать» button to a few pixels once several cards shared the viewport.
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 8, 10, 8)

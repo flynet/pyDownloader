@@ -8,6 +8,7 @@ widget directly.
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from pathlib import Path
@@ -22,11 +23,13 @@ from pydownloader.download.http import FetchError, fetch_bytes, fetch_text, merg
 from pydownloader.download.runner import RunContext, build_task, output_path, run_task
 from pydownloader.ffmpeg.locate import Ffmpeg, FfmpegNotFoundError
 from pydownloader.manifest.registry import SourceEntry
-from pydownloader.util.urls import path_extension
+from pydownloader.util.urls import dir_prefix, path_extension
 
 #: How long a segment waits for the sniffer to record its signed URL, in seconds.
 RECORDED_POLL = 10.0
 RECORDED_POLL_STEP = 0.25
+
+logger = logging.getLogger("pydownloader.worker")
 
 
 class QueueWorker(QThread):
@@ -56,25 +59,33 @@ class QueueWorker(QThread):
         self._queue: list[Task] = []
         self._cancelled: set[str] = set()
         self._lock = threading.Lock()
+        #: Wakes the worker when a task is queued or the window is closing.
+        self._cond = threading.Condition(self._lock)
         self._stop = False
         self._current: Task | None = None
 
     def enqueue(self, entry: SourceEntry) -> str:
         """Add a source to the queue, returning the id of the task."""
         task = build_task(entry, self._root())
-        with self._lock:
+        with self._cond:
             self._queue.append(task)
+            self._cond.notify()
+        logger.debug("В очередь добавлена задача %s: %s", task.id, entry.url)
         return task.id
 
     def cancel(self, task_id: str) -> None:
         """Cancel a task: the current one stops and its temp files are deleted."""
-        with self._lock:
+        with self._cond:
             self._cancelled.add(task_id)
             self._queue = [task for task in self._queue if task.id != task_id]
+            self._cond.notify_all()
+        logger.debug("Отмена задачи %s", task_id)
 
     def stop(self) -> None:
         """Ask the worker to finish (the window is closing)."""
-        self._stop = True
+        with self._cond:
+            self._stop = True
+            self._cond.notify_all()
 
     def pending(self) -> list[str]:
         """Ids of the queued tasks, in the order of the queue."""
@@ -85,9 +96,16 @@ class QueueWorker(QThread):
         return Path(self.download_dir)
 
     def run(self) -> None:
-        while not self._stop:
-            with self._lock:
-                if not self._queue:
+        logger.debug("Очередь запущена, ожидание задач")
+        while True:
+            with self._cond:
+                # The thread outlives the queue: it waits here until the user
+                # presses «Скачать» (the old loop returned on an empty queue and
+                # the thread died before the first task was added).
+                while not self._stop and not self._queue:
+                    self._cond.wait()
+                if self._stop:
+                    logger.debug("Очередь остановлена")
                     return
                 task = self._queue.pop(0)
                 self._current = task
@@ -98,17 +116,28 @@ class QueueWorker(QThread):
         # an earlier task in the queue does not get overwritten.
         task.out_path = output_path(self._root(), task.entry)
         ctx = self._context(task)
+        logger.info(
+            "Задача %s: %s (%s, %s)",
+            task.id,
+            task.entry.title or task.entry.url,
+            task.entry.kind,
+            task.out_path.name,
+        )
         self.task_started.emit(task.id, task.out_path.name)
         try:
             path = run_task(task, ctx)
+            logger.info("Задача %s готова: %s", task.id, path)
             self.task_finished.emit(task.id, str(path))
         except CancelledError:
+            logger.info("Задача %s отменена", task.id)
             self.log.emit(f"Отменено: {task.entry.title or task.entry.url}")
             self.task_failed.emit(task.id, "отменено")
         except (DownloadError, FetchError, FfmpegNotFoundError) as exc:
+            logger.error("Задача %s не выполнена: %s", task.id, exc)
             self.log.emit(f"Ошибка задачи {task.entry.title or task.entry.url}: {exc}")
             self.task_failed.emit(task.id, str(exc))
         except Exception as exc:  # an unexpected failure must reach the console
+            logger.exception("Задача %s упала неожиданно", task.id)
             self.log.emit(f"Ошибка задачи {task.entry.title or task.entry.url}: {exc}")
             self.task_failed.emit(task.id, str(exc))
 
@@ -138,15 +167,36 @@ class QueueWorker(QThread):
     def _fetch_text(self, entry: SourceEntry, url: str, headers: dict) -> str | None:
         recorded = self._recorded_url(entry, url)
         if recorded is not None and recorded != url:
+            logger.debug("Манифест по записанному URL: %s", recorded)
             try:
                 return fetch_text(recorded, headers)
-            except FetchError:
-                pass  # the signed URL expired; try the constructed one below
+            except FetchError as exc:
+                logger.debug("Записанный URL не сработал (%s): %s", exc, recorded)
         try:
             return fetch_text(url, headers)
         except FetchError as exc:
+            logger.debug("Манифест не получен: %s (%s)", url, exc)
+            # The browser may have fetched another playlist of the same stream
+            # (a nested master next to the media playlist). phncdn signs every
+            # path, so a constructed URL is rejected while the recorded one works.
+            alt = self._recorded_in_dir(entry, url)
+            if alt is not None and alt != url:
+                logger.debug("Пробую записанный плейлист из того же каталога: %s", alt)
+                try:
+                    return fetch_text(alt, headers)
+                except FetchError as second:
+                    logger.debug("Записанный плейлист не сработал (%s): %s", second, alt)
             self.log.emit(str(exc))
             return None
+
+    def _recorded_in_dir(self, entry: SourceEntry, url: str) -> str | None:
+        """Recorded playlist of the same directory, when the exact path is unknown."""
+        directory = dir_prefix(url)
+        ext = path_extension(url)
+        for recorded in entry.recorded.values():
+            if path_extension(recorded) == ext and dir_prefix(recorded) == directory:
+                return recorded
+        return None
 
     def _fetch_bytes(self, entry: SourceEntry, url: str, headers: dict, byte_range) -> bytes:
         """Download one item, preferring the exact signed URL seen in browser traffic.
@@ -159,8 +209,8 @@ class QueueWorker(QThread):
         if recorded is not None and recorded != url:
             try:
                 return fetch_bytes(recorded, headers, byte_range)
-            except FetchError:
-                pass  # the signed URL expired; fall back to the constructed one
+            except FetchError as exc:
+                logger.debug("Сегмент по записанному URL не получен (%s): %s", exc, recorded)
         return fetch_bytes(url, headers, byte_range)
 
     def _recorded_url(self, entry: SourceEntry, url: str) -> str | None:
@@ -174,6 +224,7 @@ class QueueWorker(QThread):
         ext = path_extension(url)
         if not any(path_extension(value) == ext for value in entry.recorded.values()):
             return None
+        logger.debug("Жду записанный URL (%.0f с): %s", RECORDED_POLL, url)
         deadline = time.monotonic() + RECORDED_POLL
         while time.monotonic() < deadline:
             time.sleep(RECORDED_POLL_STEP)

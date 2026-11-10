@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import pytest
@@ -92,11 +93,26 @@ def signals(worker: QueueWorker):
     return collected
 
 
+def run_queue(worker: QueueWorker, collected: dict, expected: int, timeout: float = 20.0) -> None:
+    """Run the real thread loop until ``expected`` tasks are reported, then stop it."""
+    worker.start()
+    try:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if len(collected["finished"]) + len(collected["failed"]) >= expected:
+                return
+            time.sleep(0.02)
+        raise AssertionError(f"очередь не завершилась: {collected}")
+    finally:
+        worker.stop()
+        worker.wait(5000)
+
+
 def test_one_task_is_downloaded(qapp, tmp_path, http):
     worker = QueueWorker(None, FFMPEG, str(tmp_path), parallel=2)
     collected = signals(worker)
     task_id = worker.enqueue(entry())
-    worker.run()
+    run_queue(worker, collected, 1)
     out = Path(collected["finished"][0][1])
     assert collected["finished"][0][0] == task_id
     assert out.read_bytes() == b"merged"
@@ -106,13 +122,32 @@ def test_one_task_is_downloaded(qapp, tmp_path, http):
     assert not task_root(tmp_path, entry()).exists()
 
 
+def test_worker_started_before_a_task_still_runs_it(qapp, tmp_path, http):
+    """The thread waits on an empty queue instead of exiting (the old bug)."""
+    worker = QueueWorker(None, FFMPEG, str(tmp_path), parallel=1)
+    collected = signals(worker)
+    worker.start()
+    try:
+        # The empty queue must not finish the thread: give it time to reach the wait.
+        time.sleep(0.3)
+        assert worker.isRunning()
+        task_id = worker.enqueue(entry())
+        deadline = time.monotonic() + 10.0
+        while time.monotonic() < deadline and not collected["finished"]:
+            time.sleep(0.02)
+    finally:
+        worker.stop()
+        worker.wait(5000)
+    assert collected["finished"][0][0] == task_id
+
+
 def test_tasks_run_one_after_another(qapp, tmp_path, http):
     """The queue is strictly sequential (spec 6.2 p.1): the files appear in the queue order."""
     worker = QueueWorker(None, FFMPEG, str(tmp_path), parallel=1)
     collected = signals(worker)
     first = worker.enqueue(entry("s1"))
     second = worker.enqueue(entry("s2"))
-    worker.run()
+    run_queue(worker, collected, 2)
     names = sorted(name for _, name in collected["started"])
     assert names == ["Клип (1).mp4", "Клип.mp4"]
     ids = [tid for tid, _ in collected["finished"]]
@@ -143,7 +178,7 @@ def test_cancel_stops_the_current_task(qapp, tmp_path, monkeypatch):
     monkeypatch.setattr(worker_mod, "fetch_text", fetch_text)
     monkeypatch.setattr(worker_mod, "fetch_bytes", fetch_bytes)
     monkeypatch.setattr("pydownloader.download.runner.assemble", assemble)
-    worker.run()
+    run_queue(worker, collected, 1)
     assert collected["failed"] == [(task_id, "отменено")]
     assert not task_root(tmp_path, entry()).exists()
     assert any("Отменено" in line for line in collected["log"])
@@ -160,7 +195,7 @@ def test_failure_is_reported(qapp, tmp_path, monkeypatch):
         return None
 
     monkeypatch.setattr(worker_mod, "fetch_text", fetch_text)
-    worker.run()
+    run_queue(worker, collected, 1)
     assert collected["failed"] == [(task_id, "Не получен манифест: " + VARIANT)]
     assert any("Ошибка задачи" in line for line in collected["log"])
 

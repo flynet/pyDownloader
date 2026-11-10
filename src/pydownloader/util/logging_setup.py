@@ -43,10 +43,16 @@ def setup_logging(
     log_file: Path,
     console_callback: Callable[[str], None] | None = None,
     level: int = logging.DEBUG,
+    console_level: int = logging.INFO,
 ) -> logging.Logger:
-    """Configure the application logger: rotating file plus the console panel."""
+    """Configure the application logger: rotating file plus the console panel.
+
+    The file keeps the full diagnostic trail (``DEBUG``: every intercepted
+    response, every manifest request, the chosen variant), the console shows the
+    user-facing lines only (``INFO`` and above).
+    """
     logger = logging.getLogger("pydownloader")
-    logger.setLevel(level)
+    logger.setLevel(min(level, console_level))
     logger.propagate = False
     logger.handlers.clear()
 
@@ -54,9 +60,12 @@ def setup_logging(
     file_handler = RotatingFileHandler(
         log_file, maxBytes=MAX_BYTES, backupCount=BACKUP_COUNT, encoding="utf-8"
     )
-    file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    file_handler.setLevel(level)
+    file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
     logger.addHandler(file_handler)
 
     if console_callback is not None:
-        logger.addHandler(ConsoleHandler(console_callback))
+        console = ConsoleHandler(console_callback)
+        console.setLevel(console_level)
+        logger.addHandler(console)
     return logger
