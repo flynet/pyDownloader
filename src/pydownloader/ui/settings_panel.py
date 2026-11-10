@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSpinBox,
     QVBoxLayout,
+    QWidget,
 )
 
 from pydownloader.config.paths import download_dir_default
@@ -29,6 +30,11 @@ from pydownloader.config.settings import THEMES, Settings, ThemeName
 BROWSE_CAPTION = "Папка для скачанных видео"
 MIN_THREADS = 1
 MAX_THREADS = 16
+#: The dialog takes most of the main window: a long download path must fit.
+DIALOG_WIDTH_RATIO = 0.8
+DIALOG_HEIGHT_RATIO = 0.8
+MIN_DIALOG_WIDTH = 640
+MIN_DIALOG_HEIGHT = 420
 #: Localized names of the theme values (the value itself stays in the settings).
 THEME_LABELS: dict[str, str] = {
     "dark": "Тёмная",
@@ -43,13 +49,17 @@ class SettingsDialog(QDialog):
     #: «Проверить обновления» asks the window to run the check (spec 8.3).
     check_requested = Signal()
 
-    def __init__(self, settings: Settings, parent=None) -> None:
+    def __init__(self, settings: Settings, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Настройки PyDownloader")
         self.settings = settings
         self._form = QFormLayout()
+        self._form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
 
         self.download_edit = QLineEdit(settings.download_dir or str(download_dir_default()))
+        # A long path is wider than the field: the full text is visible on hover.
+        self.download_edit.textChanged.connect(self.download_edit.setToolTip)
+        self.download_edit.setToolTip(self.download_edit.text())
         folder_row = QHBoxLayout()
         folder_row.addWidget(self.download_edit)
         browse = QPushButton("Обзор…")
@@ -98,6 +108,15 @@ class SettingsDialog(QDialog):
         buttons.addStretch(1)
         buttons.addWidget(check)
         layout.addLayout(buttons)
+
+        self.setSizeGripEnabled(True)
+        self.setMinimumSize(MIN_DIALOG_WIDTH, MIN_DIALOG_HEIGHT)
+        if parent is not None:
+            window = parent.window()
+            self.resize(
+                max(MIN_DIALOG_WIDTH, round(window.width() * DIALOG_WIDTH_RATIO)),
+                max(MIN_DIALOG_HEIGHT, round(window.height() * DIALOG_HEIGHT_RATIO)),
+            )
 
     def _pick_folder(self) -> None:
         path = QFileDialog.getExistingDirectory(self, BROWSE_CAPTION, self.download_edit.text())
