@@ -108,10 +108,15 @@ class SourceCard(QFrame):
         self.setObjectName("card")
         # The height comes from the layout (labels, progress bar, buttons): an
         # explicit minimum used to win over the layout minimum and squeezed the
-        # «Скачать» button to a few pixels once several cards shared the viewport.
-        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        # download button to a few pixels once several cards shared the viewport.
+        # ``Fixed`` behaved the same way in a scroll area: when the cards did not
+        # fit, the layout shrank them below their size hint. ``Minimum`` keeps the
+        # size hint as the floor, so the scroll area shows a scrollbar instead of
+        # cutting the button off (spec 4.1 p.1).
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
 
         layout = QVBoxLayout(self)
+        self._layout = layout
         layout.setContentsMargins(10, 8, 10, 8)
         layout.setSpacing(4)
 
@@ -159,6 +164,10 @@ class SourceCard(QFrame):
         row = QHBoxLayout()
         self.download_button = QPushButton(tr("card_download"))
         self.download_button.setObjectName("download")
+        # The floor of the button is its own hint: a squeezed layout can give an
+        # item less than minimumSizeHint(), and the text of «Download» disappeared
+        # with the last pixel of the row. minimumSize() is the hard floor of QLayout.
+        self.download_button.setMinimumSize(self.download_button.minimumSizeHint())
         self.download_button.clicked.connect(lambda: self.download_clicked.emit(self.entry.id))
         row.addWidget(self.download_button)
 
@@ -182,6 +191,21 @@ class SourceCard(QFrame):
 
         row.addStretch(1)
         layout.addLayout(row)
+
+        self._update_floor()
+
+    def _update_floor(self) -> None:
+        """The card never shrinks below the height of its own widgets.
+
+        A resizable scroll area resizes its widget to the viewport, and QLayout
+        squeezes the items below ``minimumSizeHint`` when the space is short: with
+        a long list of cards the labels and the button lost their lines. The hint
+        of the layout is written into ``minimumSize``, the hard floor of QLayout,
+        so every card keeps the height of its labels, bar and buttons (spec 4.1 p.1).
+        """
+        hint = self._layout.totalSizeHint()
+        if self.minimumHeight() != hint.height():
+            self.setMinimumSize(0, hint.height())
 
     def _copy_menu(self, position) -> None:
         menu = QMenu(self)
@@ -213,6 +237,7 @@ class SourceCard(QFrame):
         elif state == "new":
             self.bar.setValue(0)
         self._refresh_meta()
+        self._update_floor()
 
     def set_progress(self, done: int, total: int, speed_mb: float | None = None) -> None:
         """Segments downloaded, percentage and speed inside the card (spec 4.1 p.3)."""

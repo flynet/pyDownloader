@@ -140,6 +140,8 @@ class MainWindow(QMainWindow):
         area.setFrameShape(QFrame.Shape.NoFrame)
         area.setWidget(container)
         self.scroll_area = area
+        self.card_container = container
+        self._sync_card_heights()
 
         header = QHBoxLayout()
         header.addWidget(QLabel(tr("window_found_videos")))
@@ -250,6 +252,7 @@ class MainWindow(QMainWindow):
         self.cards[entry.id] = card
         self.cards_layout.insertWidget(self.cards_layout.count() - 1, card)
         self.hint_label.hide()
+        self._sync_card_heights()
         self.log_info(tr("window_shown", url=entry.url))
 
     def _start_download(self, entry_id: str) -> None:
@@ -267,6 +270,7 @@ class MainWindow(QMainWindow):
         card = self.cards.get(entry_id)
         if card is not None:
             card.set_error(tr("card_cancelled"))
+            self._sync_card_heights()
 
     def clear_all_cards(self) -> None:
         """«Очистить все»: remove every found video from the list.
@@ -308,29 +312,56 @@ class MainWindow(QMainWindow):
 
     def _update_hint(self) -> None:
         self.hint_label.setVisible(not self.cards)
+        self._sync_card_heights()
+
+    def _sync_card_heights(self) -> None:
+        """Keep the whole list of cards reachable when it does not fit.
+
+        A resizable scroll area resizes its widget to the viewport, and the layout
+        minimum of a widget that is not a top-level window is never propagated to
+        it, so a long list of cards was squeezed and the part below the viewport
+        could not be scrolled. The floor is written into the widget by hand from
+        the floors of the cards: the scroll area shows a scrollbar, every card
+        keeps its height, the buttons keep their text (spec 4.1 p.1).
+        """
+        cards = list(self.cards.values())
+        visible = self.hint_label.isVisible()
+        height = sum(card.minimumHeight() for card in cards)
+        if visible:
+            height += self.hint_label.sizeHint().height()
+        items = len(cards) + (1 if visible else 0)
+        if items > 1:
+            height += self.cards_layout.spacing() * (items - 1)
+        height += 16  # the top and bottom margin of cards_layout
+        if self.card_container.minimumHeight() != height:
+            self.card_container.setMinimumSize(0, height)
 
     def _task_started(self, entry_id: str, name: str) -> None:
         card = self.cards.get(entry_id)
         if card is not None:
             card.set_state("downloading")
+            self._sync_card_heights()
             self.log_info(tr("window_download_started", title=name))
 
     def _task_progress(self, entry_id: str, done: int, total: int) -> None:
         card = self.cards.get(entry_id)
         if card is not None:
             card.set_progress(done, total)
+            self._sync_card_heights()
 
     def _task_finished(self, entry_id: str, path: str) -> None:
         card = self.cards.get(entry_id)
         if card is not None:
             self.out_paths[entry_id] = Path(path)
             card.set_result(path)
+            self._sync_card_heights()
         self.log_info(tr("window_finished", path=path))
 
     def _task_failed(self, entry_id: str, message: str) -> None:
         card = self.cards.get(entry_id)
         if card is not None:
             card.set_error(message)
+            self._sync_card_heights()
         self.log_error(tr("window_task_failed", title=message))
 
     def _open_result_file(self, entry_id: str) -> None:

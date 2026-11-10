@@ -253,6 +253,28 @@ def test_download_button_keeps_its_height_with_many_cards(qtbot, tmp_path):
         assert card.height() >= card.sizeHint().height()
 
 
+def test_card_list_scrolls_when_cards_do_not_fit(qtbot, tmp_path):
+    """The cards below the viewport stay reachable, not cut off (spec 4.1 p.1)."""
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    window.resize(900, 600)
+    window.show()
+    for index in range(5):
+        window.add_source(entry(f"s{index}"))
+    qtbot.wait(50)
+    cards = list(window.cards.values())
+    # The floor of the container is the floor of the cards, so the scroll area
+    # gets a range to scroll and the widget is not resized to the viewport.
+    assert window.card_container.minimumHeight() >= sum(
+        card.sizeHint().height() for card in cards
+    )
+    assert window.scroll_area.verticalScrollBar().maximum() > 0
+    # A state with more lines (progress bar, stage) raises the floor of the card.
+    cards[0].set_state("downloading")
+    qtbot.wait(50)
+    assert cards[0].minimumHeight() >= cards[0].sizeHint().height()
+
+
 def test_window_splitter_ratio(qtbot, tmp_path):
     window = make_window(tmp_path)
     qtbot.addWidget(window)
