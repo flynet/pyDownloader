@@ -1,9 +1,9 @@
 """The detection pipeline: response event → candidate → filters → registry entry.
 
 Order of the filters is fixed by spec 5.2: live, DRM, quality 1080p, duplicates.
-The manifest body is not taken from the intercepted response: it is fetched by a
-new ``GET`` with the headers and cookies of the browser (spec 6.1), which keeps
-the pipeline testable and gives the same bytes the downloader will use.
+The manifest body of the intercepted response is used when the sniffer captured
+it (a signed CDN rejects a second request for the same path); otherwise it is
+fetched with the headers and cookies of the browser (spec 6.1).
 
 Every outcome carries the console message for the UI console panel.
 """
@@ -23,7 +23,7 @@ from pydownloader.hls.models import Playlist
 from pydownloader.hls.parser import PlaylistParseError, parse_playlist
 from pydownloader.manifest.detector import Candidate, classify, mp4_size_skip
 from pydownloader.manifest.drm import DRM_MESSAGE, detect_dash, detect_hls
-from pydownloader.manifest.quality import QualityFilter
+from pydownloader.manifest.quality import Choice, QualityFilter, pick_audio
 from pydownloader.manifest.registry import SourceEntry, SourceRegistry
 
 Action = Literal[
@@ -177,6 +177,12 @@ def _dash_outcomes(
     return [Outcome("show", entry, f"Найден DASH-поток {entry.height}p: {entry.url}")]
 
 
+def _audio_url(playlist: Playlist, group: str | None) -> str | None:
+    """URL of the audio track of one variant (``None`` when it is muxed)."""
+    audio = pick_audio(playlist.audio_tracks(group))
+    return audio.url if audio else None
+
+
 def _hls_outcomes(
     entry: SourceEntry,
     playlist: Playlist,
@@ -210,6 +216,20 @@ def _hls_outcomes(
         registry.remove(entry.normalized)
         return [Outcome("skip-quality", None, decision.message)]
     choice = decision.choice
+    # Every variant of the master is kept: a CDN may sign only the quality the
+    # player actually requested, so the downloader can fall back to a recorded
+    # variant instead of failing on the chosen one.
+    entry.variants = [
+        Choice(
+            kind="hls-variant",
+            url=variant.url,
+            height=variant.height,
+            width=variant.width,
+            bandwidth=variant.bandwidth,
+            audio_url=_audio_url(playlist, variant.audio_group),
+        )
+        for variant in playlist.variants
+    ]
     # A master playlist has no #EXT-X-ENDLIST, so live is decided by the selected variant.
     # A CDN that signs every path individually rejects the URL inherited from the
     # master, so the exact variant URL seen in browser traffic is preferred. The
@@ -250,7 +270,7 @@ def _hls_outcomes(
             )
         ]
     try:
-        variant = parse_playlist(variant_text, choice.url)
+        variant = parse_playlist(variant_text, entry.effective_url(choice.url))
     except (ManifestParseError, PlaylistParseError) as exc:
         logger.debug("Вариант не разобран (%s): %s", choice.url, exc)
         registry.remove(entry.normalized)

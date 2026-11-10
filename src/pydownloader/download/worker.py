@@ -169,11 +169,15 @@ class QueueWorker(QThread):
         if recorded is not None and recorded != url:
             logger.debug("Манифест по записанному URL: %s", recorded)
             try:
-                return fetch_text(recorded, headers)
+                text = fetch_text(recorded, headers)
+                entry.effective[url] = recorded
+                return text
             except FetchError as exc:
                 logger.debug("Записанный URL не сработал (%s): %s", exc, recorded)
         try:
-            return fetch_text(url, headers)
+            text = fetch_text(url, headers)
+            entry.effective[url] = url
+            return text
         except FetchError as exc:
             logger.debug("Манифест не получен: %s (%s)", url, exc)
             # The browser may have fetched another playlist of the same stream
@@ -183,7 +187,9 @@ class QueueWorker(QThread):
             if alt is not None and alt != url:
                 logger.debug("Пробую записанный плейлист из того же каталога: %s", alt)
                 try:
-                    return fetch_text(alt, headers)
+                    text = fetch_text(alt, headers)
+                    entry.effective[url] = alt
+                    return text
                 except FetchError as second:
                     logger.debug("Записанный плейлист не сработал (%s): %s", second, alt)
             self.log.emit(str(exc))
@@ -219,10 +225,15 @@ class QueueWorker(QThread):
             return found
         if not entry.recorded:
             return None
-        # Only wait when the entry records files of the same kind: an audio track
-        # of a signed CDN has its own directory (and its own family entry).
+        # Only wait when the browser is streaming from the same directory: a
+        # variant it never requested (another quality, an audio track) has its own
+        # directory, and waiting there would only delay the fallback.
         ext = path_extension(url)
-        if not any(path_extension(value) == ext for value in entry.recorded.values()):
+        directory = dir_prefix(url)
+        if not any(
+            path_extension(value) == ext and dir_prefix(value) == directory
+            for value in entry.recorded.values()
+        ):
             return None
         logger.debug("Жду записанный URL (%.0f с): %s", RECORDED_POLL, url)
         deadline = time.monotonic() + RECORDED_POLL

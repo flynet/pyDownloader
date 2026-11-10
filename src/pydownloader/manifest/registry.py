@@ -60,8 +60,13 @@ class SourceEntry:
     choice: Choice | None = None
     #: Signed URLs seen in browser traffic: path -> URL, in capture order.
     #: A CDN that signs every path individually (phncdn) rejects constructed URLs,
-    #: so the downloader prefers these exact URLs.
+    #: so the downloader prefers these exact URLs. The registry shares one map
+    #: between all rows of the page.
     recorded: dict[str, str] = field(default_factory=dict)
+    #: Every video variant of a master playlist, as chosen candidates.
+    variants: list[Choice] = field(default_factory=list)
+    #: Requested URL -> URL that actually answered (a recorded signed one).
+    effective: dict[str, str] = field(default_factory=dict)
     #: ``True`` for an HLS row synthesized from segment GETs (playlist fetched in-page).
     family: bool = False
     #: Raw player response of a YouTube source, consumed by the download plan.
@@ -91,6 +96,15 @@ class SourceEntry:
         name = last_segment(url)
         matches = [value for key, value in self.recorded.items() if last_segment(key) == name]
         return matches[0] if len(matches) == 1 else None
+
+    def effective_url(self, requested: str) -> str:
+        """URL that actually answered the last request for ``requested``.
+
+        A recorded signed URL may have another path (a fallback playlist), and
+        relative links of the body must be resolved against it, not against the
+        URL that failed.
+        """
+        return self.effective.get(requested, requested)
 
     def display_size(self) -> str:
         if self.size is None:
@@ -130,6 +144,10 @@ class SourceRegistry:
         #: Directory -> file name -> URL of segment GETs seen before any playlist.
         self._family: dict[str, dict[str, str]] = {}
         self._family_meta: dict[str, ResponseEvent] = {}
+        #: Signed URLs of the whole page (path -> URL), shared by every entry: the
+        #: download of one row may need a file recorded for another one (the
+        #: variant the player actually fetched, a key of a nested playlist).
+        self._recorded: dict[str, str] = {}
         self._counter = count(1)
 
     def entries(self) -> list[SourceEntry]:
@@ -150,8 +168,11 @@ class SourceRegistry:
 
     def is_fragment_of_known(self, url: str) -> bool:
         """A segment of an already registered manifest (``.m4s``/``.mp4`` under its directory)."""
-        prefix = _path_prefix(url)
-        return prefix in self._prefixes
+        if _path_prefix(url) in self._prefixes:
+            return True
+        # A variant lives in a subdirectory of the master (phncdn: 720P_.../),
+        # so the owners are searched up the path.
+        return self.owner_for(url) is not None
 
     def add_manifest(self, candidate: Candidate) -> AddResult:
         """Register an HLS/DASH manifest and remember its directory prefix."""
@@ -161,9 +182,10 @@ class SourceRegistry:
             return AddResult(entry=existing, is_new=False)
         if candidate.kind == "hls":
             # A playlist in a directory already owned by a stream (the media
-            # playlist next to the master, an audio track) is a part of it, not
-            # a second row: its URL is recorded for the downloader instead.
-            owner = self._owners.get(_path_prefix(candidate.url))
+            # playlist next to the master, a variant of it, an audio track) is a
+            # part of it, not a second row: its URL is recorded for the
+            # downloader instead.
+            owner = self.owner_for(candidate.url)
             if owner is not None:
                 owner.record(candidate.url)
                 logger.debug(
@@ -282,6 +304,7 @@ class SourceRegistry:
             duration=duration,
             payload=payload,
             family=family,
+            recorded=self._recorded,
         )
         self._entries[normalized] = entry
         return AddResult(entry=entry, is_new=True)
@@ -372,4 +395,5 @@ class SourceRegistry:
             page_url=candidate.page_url,
             headers=dict(candidate.headers),
             size=candidate.content_length,
+            recorded=self._recorded,
         )
