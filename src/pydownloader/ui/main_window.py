@@ -52,6 +52,8 @@ SPLIT_BOTTOM = 600
 HINT = "Видео пока не найдены. Откройте сайт в браузере и запустите видео."
 
 CLEAR_BUTTON = "Очистить"
+CLEAR_ALL_BUTTON = "Очистить все"
+CLEAR_DOWNLOADED_BUTTON = "Очистить скачанные"
 OPEN_FOLDER_BUTTON = "Открыть папку загрузки"
 OPEN_LOG_BUTTON = "Открыть лог-файл"
 SETTINGS_BUTTON = "⚙ Настройки"
@@ -150,6 +152,16 @@ class MainWindow(QMainWindow):
         header = QHBoxLayout()
         header.addWidget(QLabel("Найденные видео"))
         header.addStretch(1)
+        self.clear_all_button = QPushButton(CLEAR_ALL_BUTTON)
+        self.clear_all_button.setToolTip("Убрать все найденные видео из списка")
+        self.clear_all_button.clicked.connect(self.clear_all_cards)
+        header.addWidget(self.clear_all_button)
+        self.clear_downloaded_button = QPushButton(CLEAR_DOWNLOADED_BUTTON)
+        self.clear_downloaded_button.setToolTip(
+            "Убрать из списка видео, которые уже скачаны и лежат на диске"
+        )
+        self.clear_downloaded_button.clicked.connect(self.clear_downloaded_cards)
+        header.addWidget(self.clear_downloaded_button)
         settings_button = QPushButton(SETTINGS_BUTTON)
         settings_button.clicked.connect(self.open_settings)
         header.addWidget(settings_button)
@@ -266,6 +278,47 @@ class MainWindow(QMainWindow):
         if card is not None:
             card.set_error("отменено")
 
+    def clear_all_cards(self) -> None:
+        """«Очистить все»: remove every found video from the list.
+
+        A running download is not cancelled: its card disappears, but the file
+        is still written to the disk and the console keeps reporting it.
+        """
+        active = any(
+            card.state in {"queued", "downloading"} for card in self.cards.values()
+        )
+        for card in list(self.cards.values()):
+            self._remove_card(card)
+        self.out_paths.clear()
+        if active:
+            self.log_warning("Активные загрузки продолжатся, но их карточки убраны")
+        self.log_info("Список найденных видео очищен")
+
+    def clear_downloaded_cards(self) -> None:
+        """«Очистить скачанные»: remove only videos whose file is on the disk."""
+        removed = 0
+        for entry_id, card in list(self.cards.items()):
+            path = self.out_paths.get(entry_id)
+            if path is not None and path.is_file():
+                self._remove_card(card)
+                self.out_paths.pop(entry_id, None)
+                removed += 1
+        if removed:
+            self.log_info(f"Убрано скачанных видео: {removed}")
+        else:
+            self.log_info("Скачанных видео в списке нет")
+
+    def _remove_card(self, card: SourceCard) -> None:
+        self.cards.pop(card.entry.id, None)
+        card.hide()
+        self.cards_layout.removeWidget(card)
+        card.setParent(None)
+        card.deleteLater()
+        self._update_hint()
+
+    def _update_hint(self) -> None:
+        self.hint_label.setVisible(not self.cards)
+
     def _task_started(self, entry_id: str, name: str) -> None:
         card = self.cards.get(entry_id)
         if card is not None:
@@ -279,8 +332,8 @@ class MainWindow(QMainWindow):
 
     def _task_finished(self, entry_id: str, path: str) -> None:
         card = self.cards.get(entry_id)
-        self.out_paths[entry_id] = Path(path)
         if card is not None:
+            self.out_paths[entry_id] = Path(path)
             card.set_result(path)
         self.log_info(f"Готово: {path}")
 
