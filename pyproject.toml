@@ -19,6 +19,9 @@ dependencies = [
     "imageio-ffmpeg>=0.5",
 ]
 
+[project.scripts]
+pydownloader = "pydownloader.ui.app:main"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",

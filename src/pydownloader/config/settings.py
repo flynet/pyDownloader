@@ -27,6 +27,8 @@ class Settings:
     profile_in_downloads: bool = False
     update_check_hours: int = DEFAULT_UPDATE_CHECK_HOURS
     skipped_version: str = ""
+    #: Timestamp of the last successful API check, cached for ``update_check_hours``.
+    last_update_check: str = ""
     window_geometry: str = ""
 
 

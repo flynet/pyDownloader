@@ -30,7 +30,7 @@ from pydownloader.ffmpeg.mux import assemble, copy_single
 from pydownloader.hls.parser import PlaylistParseError, parse_playlist
 from pydownloader.manifest.quality import Choice
 from pydownloader.manifest.registry import SourceEntry
-from pydownloader.util.filenames import sanitize_filename, unique_path
+from pydownloader.util.filenames import unique_path
 
 FetchText = Callable[[str, dict[str, str]], str | None]
 Progress = Callable[[int, int], None]
@@ -62,8 +62,7 @@ def task_root(root: Path, entry: SourceEntry) -> Path:
 
 def output_path(root: Path, entry: SourceEntry, suffix: str = ".mp4") -> Path:
     """Destination file name: the page title, sanitized, with a unique suffix."""
-    name = sanitize_filename(entry.title or entry.page_url, suffix)
-    return unique_path(root, name, suffix)
+    return unique_path(root, entry.title or entry.page_url, suffix)
 
 
 def build_task(

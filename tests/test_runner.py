@@ -159,8 +159,9 @@ def test_dash_task(tmp_path, mux):
 
 def test_direct_mp4_is_copied_without_ffmpeg(tmp_path, mux):
     url = "https://cdn.example.com/movie.mp4"
-    entry = SourceEntry(id="s1", kind="mp4", url=url, normalized=url, title="Фильм",
-                        size=12_000_000, height=1080)
+    entry = SourceEntry(
+        id="s1", kind="mp4", url=url, normalized=url, title="Фильм", size=12_000_000, height=1080
+    )
     entry.choice = Choice(kind="mp4", url=url, height=1080)
     task = build_task(entry, tmp_path)
     calls: list[str] = []

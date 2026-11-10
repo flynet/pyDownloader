@@ -55,6 +55,11 @@ def default_paths(profile_in_downloads: bool = False, downloads_dir: Path | None
     )
 
 
+def download_dir_default() -> Path:
+    """Default folder for the videos: the user's ``Downloads``."""
+    return Path.home() / "Downloads"
+
+
 def task_tmp_dir(downloads_dir: Path, task_id: str) -> Path:
     """Temporary folder of one task: ``<downloads>/.tmp/<task id>``."""
     return downloads_dir / ".tmp" / task_id
