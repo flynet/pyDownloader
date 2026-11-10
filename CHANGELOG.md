@@ -23,5 +23,8 @@
   память размера и положения окна.
 - Проверка обновлений через GitHub Releases: кэш, диалог с release notes,
   скачивание установщика, проверка SHA-256, запуск `/SILENT /CLOSEAPPLICATIONS`.
+- Сборка: `build.ps1` (версия из тега, PyInstaller, FFmpeg в `bin`, SHA-256),
+  `pydownloader.spec`, установщик Inno Setup 6 (`installer/pydownloader.iss`),
+  `release.yml` с публикацией установщика и release notes из CHANGELOG.
 
 [Unreleased]: https://github.com/flynet/pyDownloader/compare/v0.0.0...HEAD

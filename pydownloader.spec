@@ -54,6 +54,15 @@ a = Analysis(
     noarchive=False,
 )
 
+# The hook of imageio-ffmpeg ships its own 100 MB binary; FFmpeg comes from
+# bin\ffmpeg.exe, so the copy inside the package is dropped (build.ps1 step 3b).
+def _is_packaged_ffmpeg(entry) -> bool:
+    return entry[0].replace("\\", "/").startswith("imageio_ffmpeg/binaries")
+
+
+a.datas = [item for item in a.datas if not _is_packaged_ffmpeg(item)]
+a.binaries = [item for item in a.binaries if not _is_packaged_ffmpeg(item)]
+
 pyz = PYZ(a.pure)
 
 exe = EXE(

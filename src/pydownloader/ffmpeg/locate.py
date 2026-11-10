@@ -61,7 +61,11 @@ def imageio_ffmpeg_path() -> Path | None:
         import imageio_ffmpeg
     except ImportError:
         return None
-    path = imageio_ffmpeg.get_ffmpeg_exe()
+    try:
+        path = imageio_ffmpeg.get_ffmpeg_exe()
+    except (RuntimeError, OSError):
+        # The package is present but its binary was removed from the bundle.
+        return None
     return Path(path) if path else None
 
 
