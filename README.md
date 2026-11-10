@@ -123,8 +123,9 @@ winget install -e --id JRSoftware.InnoSetup   # нужно для установ
 
 Результат: `dist/PyDownloader/PyDownloader.exe` (папка программы, FFmpeg внутри
 `bin`), `dist/install/PyDownloader-Setup-<версия>.exe` и файл `.sha256`.
-Если в корне лежит `uBlock.crx`, он копируется в `dist/PyDownloader` и попадает
-в установщик. Версия берётся из `git describe --tags` (в разработке `0.0.0-dev`).
+`uBlock.crx` лежит в репозитории, копируется в `dist/PyDownloader` и попадает в
+установщик — сборка GitHub Actions тоже содержит блокировщик.
+Версия берётся из `git describe --tags` (в разработке `0.0.0-dev`).
 
 ## Установка
 
