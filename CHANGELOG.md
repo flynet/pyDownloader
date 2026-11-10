@@ -6,6 +6,10 @@ on `main`.
 
 ## [Unreleased]
 
+### Fixed
+- `build.ps1` writes the `.sha256` file of the installer without a byte-order
+  mark, so the file is plain text and hash verification tools read it directly.
+
 ## [0.3.0] - 2026-11-10
 
 ### Added
