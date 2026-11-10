@@ -35,7 +35,7 @@ WizardImageFile=assets\wizard.bmp
 WizardSmallImageFile=assets\wizard-small.bmp
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-MinVersion=6.2sp2
+MinVersion=10.0
 PrivilegesRequired=admin
 PrivilegesRequiredOverridesAllowed=dialog commandline
 CloseApplications=yes
@@ -44,6 +44,10 @@ RestartApplications=no
 [Languages]
 Name: "eng"; MessagesFile: "compiler:Default.isl"
 Name: "ru"; MessagesFile: "compiler:Languages\Russian.isl"
+
+[CustomMessages]
+eng.DeleteUserData=Delete %1 settings, logs and browser profile?
+ru.DeleteUserData=Удалить настройки, логи и профиль браузера %1?
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
@@ -70,7 +74,7 @@ begin
     exit;
   if UninstallSilent then
     exit;
-  if MsgBox('Удалить настройки, логи и профиль браузера {#AppName}?',
+  if MsgBox(FmtMessage(CustomMessage('DeleteUserData'), ['{#AppName}']),
             mbConfirmation, MB_YESNO or MB_DEFBUTTON2) <> IDYES then
     exit;
   AppDataDir := ExpandConstant('{userappdata}\{#AppName}');
