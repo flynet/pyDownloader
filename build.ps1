@@ -104,6 +104,8 @@ $setup = "dist\install\PyDownloader-Setup-$version.exe"
 if (-not (Test-Path $setup)) { throw "installer not produced: $setup" }
 $hash = (Get-FileHash -Algorithm SHA256 $setup).Hash.ToLower()
 $hashFile = "$setup.sha256"
-Set-Content -Path $hashFile -Value "$hash  $(Split-Path $setup -Leaf)" -Encoding utf8
+# No byte-order mark: the file is plain text, so `sha256sum -c` and Get-FileHash
+# comparisons read it as is (Set-Content -Encoding utf8 adds a BOM in Windows 5.1).
+[System.IO.File]::WriteAllText($hashFile, "$hash  $(Split-Path $setup -Leaf)`n", [System.Text.UTF8Encoding]::new($false))
 Write-Host "Installer: $setup"
 Write-Host "SHA-256:   $hash"
