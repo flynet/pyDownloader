@@ -78,12 +78,12 @@ in the tooltip on hover).
 
 ## Languages
 
-The interface and the log lines are in English, Russian, Chinese, French and
-German; English is the default. The language is chosen in Settings → Language;
-the native names shown in the combo are English, Русский, 中文, Français, Deutsch.
-The choice is stored in `%APPDATA%\PyDownloader\settings.json` as `"language"`
-and is applied after the program restarts — the Settings dialog shows a hint and
-a Restart button.
+The interface and the log lines are in English, Russian, Ukrainian, Chinese,
+French and German; English is the default. The language is chosen in
+Settings → Language; the native names shown in the combo are English, Русский,
+Українська, 中文, Français, Deutsch. The choice is stored in
+`%APPDATA%\PyDownloader\settings.json` as `"language"` and is applied after the
+program restarts — the Settings dialog shows a hint and a Restart button.
 
 ## Ad blocker and browser profile
 
