@@ -34,10 +34,11 @@ MASTER = (DATA / "master.m3u8").read_text(encoding="utf-8")
 MEDIA = (DATA / "media.m3u8").read_text(encoding="utf-8")
 FMP4 = (DATA / "fmp4.m3u8").read_text(encoding="utf-8")
 MPD = (DATA / "template.mpd").read_text(encoding="utf-8")
+#: A relative segment reference inherits the token of the variant playlist.
 SEGMENTS = {
-    "https://cdn.example.com/video/video/seg100.ts": b"A",
-    "https://cdn.example.com/video/video/seg101.ts": b"B",
-    "https://cdn.example.com/video/video/seg102.ts": b"C",
+    "https://cdn.example.com/video/video/seg100.ts?token=abc": b"A",
+    "https://cdn.example.com/video/video/seg101.ts?token=abc": b"B",
+    "https://cdn.example.com/video/video/seg102.ts?token=abc": b"C",
 }
 TEXTS = {HLS_URL: MASTER, VARIANT_1080: MEDIA}
 
@@ -193,8 +194,8 @@ def test_cancel_stops_the_task(tmp_path, mux):
     # The temp files of a cancelled task are deleted (spec 6.2 p.7).
     assert not task.tmp_dir.exists()
     # Only the first segment was fetched, the rest of the plan was cancelled.
-    segments = [url for url in calls if url.endswith(".ts")]
-    assert segments == ["https://cdn.example.com/video/video/seg100.ts"]
+    segments = [url for url in calls if ".ts" in url]
+    assert segments == ["https://cdn.example.com/video/video/seg100.ts?token=abc"]
 
 
 def test_missing_manifest_is_an_error(tmp_path, mux):

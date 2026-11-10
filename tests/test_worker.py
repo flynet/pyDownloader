@@ -8,7 +8,7 @@ import pytest
 
 from pydownloader.browser.events import ResponseEvent
 from pydownloader.download import worker as worker_mod
-from pydownloader.download.runner import task_root
+from pydownloader.download.runner import build_task, task_root
 from pydownloader.download.worker import QueueWorker
 from pydownloader.ffmpeg.locate import Ffmpeg
 from pydownloader.manifest.pipeline import process_event
@@ -21,9 +21,9 @@ MEDIA = (DATA / "media.m3u8").read_text(encoding="utf-8")
 HLS_URL = "https://cdn.example.com/video/master.m3u8"
 VARIANT = "https://cdn.example.com/video/video/1080.m3u8?token=abc"
 SEGMENTS = {
-    "https://cdn.example.com/video/video/seg100.ts": b"A",
-    "https://cdn.example.com/video/video/seg101.ts": b"B",
-    "https://cdn.example.com/video/video/seg102.ts": b"C",
+    "https://cdn.example.com/video/video/seg100.ts?token=abc": b"A",
+    "https://cdn.example.com/video/video/seg101.ts?token=abc": b"B",
+    "https://cdn.example.com/video/video/seg102.ts?token=abc": b"C",
 }
 FFMPEG = Ffmpeg(path=Path("ffmpeg.exe"), label="test")
 
@@ -172,3 +172,32 @@ def test_pending_queue_order(qapp, tmp_path, http):
     assert worker.pending() == [first, second]
     worker.cancel(second)
     assert worker.pending() == [first]
+
+
+class FakeSniffer:
+    """Only ``request_cookies`` is needed by the worker."""
+
+    def request_cookies(self, url, timeout=10.0):
+        if "site.example" in url:
+            return [{"name": "session", "value": "s"}]
+        return [{"name": "cdn", "value": "c"}]
+
+
+def test_context_merges_page_and_cdn_cookies(qapp, tmp_path):
+    entry_obj = entry()
+    entry_obj.headers["Cookie"] = "captured=1"
+    worker = QueueWorker(FakeSniffer(), FFMPEG, str(tmp_path))
+    ctx = worker._context(build_task(entry_obj, tmp_path))
+    cookie = ctx.headers["Cookie"]
+    assert "captured=1" in cookie
+    assert "session=s" in cookie
+    assert "cdn=c" in cookie
+
+
+def test_recorded_signed_url_is_preferred(qapp, tmp_path):
+    entry_obj = entry()
+    constructed = "https://cdn.example.com/video/video/seg100.ts?token=abc"
+    signed = "https://cdn.example.com/video/video/seg100.ts?h=1&e=2"
+    entry_obj.record(signed)
+    worker = QueueWorker(None, FFMPEG, str(tmp_path))
+    assert worker._recorded_url(entry_obj, constructed) == signed

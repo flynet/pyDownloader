@@ -27,6 +27,10 @@ VOLATILE_QUERY_KEYS = {
     "hash",
     "key",
     "kv",
+    # phncdn CDN: h= signature, e= expiry, f= flag — all per-file volatile.
+    "h",
+    "e",
+    "f",
     "policy",
     "session",
     "sid",
@@ -84,10 +88,55 @@ def normalize_url(url: str, volatile_keys: set[str] = VOLATILE_QUERY_KEYS) -> st
 
 
 def resolve_url(base: str, target: str) -> str:
-    """Resolve a relative link against the URL of the manifest that contains it."""
+    """Resolve a relative link against the URL of the manifest that contains it.
+
+    A relative reference without a query inherits the query of the manifest
+    (token/signature inheritance). Absolute references are returned unchanged:
+    their own query is authoritative. This mirrors the Java app, where a CDN
+    signature on the playlist applies to the segments below it.
+    """
     if not target:
         return base
-    return urljoin(base, target)
+    ref = urlsplit(target)
+    if ref.scheme:
+        return target
+    resolved = urljoin(base, target)
+    if ref.query:
+        return resolved
+    base_query = urlsplit(base).query
+    if not base_query:
+        return resolved
+    parts = urlsplit(resolved)
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, base_query, parts.fragment))
+
+
+def path_of(url: str) -> str:
+    """Path part of a URL, query and fragment stripped."""
+    return urlsplit(url).path
+
+
+def last_segment(url: str) -> str:
+    """File name of a URL (last path segment), query and fragment stripped."""
+    path = urlsplit(url).path
+    return path.rsplit("/", 1)[-1] if "/" in path else path
+
+
+def dir_prefix(url: str) -> str:
+    """Directory of a URL as ``scheme://host/dir/`` (query stripped)."""
+    parts = urlsplit(url)
+    path = parts.path
+    trimmed = path.rsplit("/", 1)[0] if "/" in path else ""
+    return urlunsplit((parts.scheme, parts.netloc, trimmed + "/", "", ""))
+
+
+#: Extensions that identify a media segment of an HLS stream.
+SEGMENT_EXTENSIONS = {".m4s", ".ts", ".mp2t", ".m4v", ".m4a", ".aac", ".ac3", ".ec3"}
+
+
+def is_segment_path(url: str) -> bool:
+    """``True`` for a media segment or key file of a stream."""
+    ext = path_extension(url)
+    return ext in SEGMENT_EXTENSIONS or ext == ".key"
 
 
 def base_dir_url(final_url: str) -> str:

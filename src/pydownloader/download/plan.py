@@ -9,13 +9,14 @@ again.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
 from pydownloader.dash.models import DashRepresentation
 from pydownloader.hls.models import Key, Playlist
 from pydownloader.util.ranges import ByteRange
-from pydownloader.util.urls import path_extension
+from pydownloader.util.urls import SEGMENT_EXTENSIONS, last_segment, path_extension
 
 StreamId = Literal["video", "audio", "file"]
 #: Extension used when the URL has none, by stream kind.
@@ -112,6 +113,43 @@ def plan_dash(rep: DashRepresentation, stream: StreamId = "video") -> list[PlanI
             )
         )
         order += 1
+    return items
+
+
+def plan_family(recorded: Mapping[str, str], stream: StreamId = "video") -> list[PlanItem]:
+    """Plan of a segment family: the recorded URLs in capture order, init first.
+
+    A family has no playlist (hls.js fetched it in-page), so the exact URLs seen
+    in browser traffic are the only source of truth. A recorded AES-128 key file
+    is attached to every segment.
+    """
+    key_url = next((url for url in recorded.values() if path_extension(url) == ".key"), None)
+    key = Key(method="AES-128", uri=key_url) if key_url else None
+    files = [
+        (last_segment(key), url)
+        for key, url in recorded.items()
+        if path_extension(url) in SEGMENT_EXTENSIONS
+        or last_segment(key).lower().startswith("init")
+    ]
+    files.sort(key=lambda item: 0 if item[0].lower().startswith("init") else 1)
+    items: list[PlanItem] = []
+    media_index = 0
+    for order, (name, url) in enumerate(files):
+        ext = extension(url, stream)
+        if name.lower().startswith("init"):
+            items.append(PlanItem(url=url, name=f"{stream}-init{ext}", stream=stream, order=order))
+        else:
+            items.append(
+                PlanItem(
+                    url=url,
+                    name=f"{stream}-{order:0{NAME_WIDTH}d}{ext}",
+                    stream=stream,
+                    order=order,
+                    key=key,
+                    sequence=media_index,
+                )
+            )
+            media_index += 1
     return items
 
 

@@ -13,7 +13,7 @@ from pydownloader.util.urls import (
     path_extension,
 )
 
-SourceKind = Literal["hls", "dash", "mp4"]
+SourceKind = Literal["hls", "dash", "mp4", "youtube"]
 FRAGMENT_EXTENSIONS = {".m4s", ".m4v", ".m4a", ".ac3", ".ec3", ".ts", ".ifs", ".srt", ".vtt"}
 
 

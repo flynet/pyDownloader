@@ -12,6 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from pydownloader.config.settings import DEFAULT_TARGET_HEIGHT
 from pydownloader.dash.models import DashRepresentation
 from pydownloader.dash.parser import ManifestParseError, parse_mpd
 from pydownloader.download.engine import (
@@ -24,13 +25,16 @@ from pydownloader.download.engine import (
     cleanup_tmp,
     download_plan,
 )
-from pydownloader.download.plan import build_plan, plan_mp4
+from pydownloader.download.plan import build_plan, plan_family, plan_hls, plan_mp4
 from pydownloader.ffmpeg.locate import Ffmpeg
 from pydownloader.ffmpeg.mux import assemble, copy_single
 from pydownloader.hls.parser import PlaylistParseError, parse_playlist
+from pydownloader.manifest.drm import DRM_MESSAGE, detect_hls
 from pydownloader.manifest.quality import Choice
 from pydownloader.manifest.registry import SourceEntry
 from pydownloader.util.filenames import unique_path
+from pydownloader.util.urls import path_extension
+from pydownloader.youtube.downloader import YoutubeError, youtube_plan
 
 FetchText = Callable[[str, dict[str, str]], str | None]
 Progress = Callable[[int, int], None]
@@ -53,6 +57,8 @@ class RunContext:
     progress: Progress
     parallel: int = MAX_PARALLEL
     sleep: Sleep | None = None
+    #: Quality cap for sources without a manifest (YouTube adaptive formats).
+    target_height: int = DEFAULT_TARGET_HEIGHT
 
 
 def task_root(root: Path, entry: SourceEntry) -> Path:
@@ -82,6 +88,14 @@ def build_task(
 
 def make_plan(entry: SourceEntry, ctx: RunContext) -> list:
     """Plan of a source: the manifest body is fetched with the browser headers."""
+    # A segment family has no playlist unless the browser's one was recorded.
+    if entry.family:
+        return _family_plan(entry, ctx)
+    if entry.kind == "youtube":
+        try:
+            return youtube_plan(entry.payload, ctx.target_height)
+        except YoutubeError as exc:
+            raise DownloadError(str(exc)) from exc
     choice = entry.choice
     if choice is None:
         raise DownloadError(f"Источник не разобран: {entry.url}")
@@ -90,6 +104,37 @@ def make_plan(entry: SourceEntry, ctx: RunContext) -> list:
     if entry.kind == "dash":
         return _dash_plan(entry, choice, ctx)
     return _hls_plan(entry, choice, ctx)
+
+
+def _family_plan(entry: SourceEntry, ctx: RunContext) -> list:
+    """Plan of a synthesized family (no playlist was parsed by the pipeline).
+
+    When the browser's playlist was recorded, it is the better source: it has the
+    real segment order, the media sequence used for the AES-128 IV and every
+    segment, including the ones the browser did not play. Otherwise the recorded
+    segment URLs are the plan, in capture order with the init segment first.
+    """
+    playlist_url = next(
+        (url for url in entry.recorded.values() if path_extension(url) == ".m3u8"),
+        None,
+    )
+    if playlist_url is not None:
+        text = ctx.fetch_text(playlist_url, ctx.headers)
+        if text is not None:
+            try:
+                playlist = parse_playlist(text, playlist_url)
+            except PlaylistParseError as exc:
+                ctx.log(f"Плейлист группы сегментов не разобран: {exc}")
+            else:
+                if playlist.kind == "media":
+                    if playlist.is_live:
+                        raise DownloadError("Live-трансляция: пропущена")
+                    verdict = detect_hls(playlist)
+                    if verdict.is_drm:
+                        raise DownloadError(f"{DRM_MESSAGE} ({verdict.system})")
+                    if playlist.segments:
+                        return plan_hls(playlist)
+    return plan_family(entry.recorded)
 
 
 def _hls_plan(entry: SourceEntry, choice: Choice, ctx: RunContext) -> list:

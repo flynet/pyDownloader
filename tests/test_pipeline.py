@@ -69,6 +69,33 @@ def test_master_with_1080p_is_shown(read):
     assert entry.headers["Referer"] == "https://site.example/watch/42"
 
 
+def test_recorded_variant_url_is_fetched_and_kept_in_the_choice(read):
+    signed = "https://cdn.example.com/video/video/1080.m3u8?h=7&e=8"
+    texts = {HLS_URL: read("master.m3u8"), signed: read("media.m3u8")}
+    registry = SourceRegistry(min_mp4_size=MIN_SIZE)
+    registry.note_response(event(signed))
+    registry, outcomes = run(texts, event(HLS_URL), registry)
+    assert outcomes[0].action == "show"
+    entry = registry.entries()[0]
+    # A CDN that signs every path rejects the constructed variant URL.
+    assert entry.choice.url == signed
+
+
+def test_playlist_in_a_directory_owned_by_the_master_is_a_fragment(read):
+    second = "https://cdn.example.com/video/extra.m3u8"
+    texts = {HLS_URL: read("master.m3u8"), VARIANT_1080: read("media.m3u8")}
+    registry, outcomes = run(texts, event(HLS_URL, content_type="application/vnd.apple.mpegurl"))
+    assert outcomes[0].action == "show"
+    # A playlist next to the master (a second rendition, an audio track) belongs
+    # to the stream already shown: no second row, the URL is recorded instead.
+    registry, outcomes = run(texts, event(second), registry)
+    assert len(outcomes) == 1
+    assert outcomes[0].action == "fragment"
+    assert outcomes[0].message == f"плейлист уже найденного потока: {second}"
+    assert len(registry.entries()) == 1
+    assert registry.entries()[0].recorded["/video/extra.m3u8"] == second
+
+
 def test_master_without_1080p_is_hidden(read):
     texts = {HLS_URL: read("no_1080.m3u8")}
     registry, outcomes = run(texts, event(HLS_URL, content_type="application/x-mpegURL"))
