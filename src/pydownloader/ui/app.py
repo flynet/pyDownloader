@@ -107,6 +107,7 @@ def create_window(app: QApplication, settings: Settings, paths: Paths) -> MainWi
     window.log_bridge = bridge
     setup_logging(paths.log_file, bridge.line.emit)
     window.logger.info(f"PyDownloader {VERSION}, папка загрузок: {settings.download_dir}")
+    window.logger.info(f"Лог-файл: {paths.log_file}")
     window.logger.info(f"FFmpeg: {ffmpeg.path}")
     return window
 

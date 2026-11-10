@@ -34,6 +34,13 @@ class ResponseEvent:
     #: sniffer thread (``page.title()`` is a blocking call, so the title is
     #: resolved in the pump loop, not in the handler).
     page: Any = None
+    #: Playwright ``Response`` of a manifest, read in the pump loop (the body the
+    #: browser already downloaded is the most reliable copy: a signed CDN may
+    #: reject a second request for the same path).
+    response: Any = None
+    #: Manifest body captured from the intercepted response, ``None`` when the
+    #: response was not a manifest or the body could not be read.
+    body: str | None = None
 
     def total_size(self) -> int | None:
         """Full file size: ``Content-Range`` total, otherwise ``Content-Length``."""

@@ -213,11 +213,12 @@ def test_task_paths(tmp_path):
     assert out.name.startswith("Мой клип")
 
 
-def test_plan_rejects_a_master_playlist(tmp_path):
+def test_plan_descends_into_a_master_playlist(tmp_path):
     entry = entry_for(TEXTS, HLS_URL, "hls")
-    entry.choice = dataclasses.replace(entry.choice, url=HLS_URL)  # an abnormal state
-    with pytest.raises(DownloadError, match="мастер-плейлист"):
-        make_plan(entry, make_context(TEXTS, {}))
+    entry.choice = dataclasses.replace(entry.choice, url=HLS_URL)  # a nested master
+    plan = make_plan(entry, make_context(TEXTS, {}))
+    # The 1080p variant of the master is selected and parsed into a plan.
+    assert [item.name for item in plan] == ["video-00000.ts", "video-00001.ts", "video-00002.ts"]
 
 
 def test_name_conflicts_get_a_suffix(tmp_path):

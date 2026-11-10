@@ -168,6 +168,21 @@ def test_window_adds_a_card_and_hides_the_hint(qtbot, tmp_path):
     assert len(window.cards) == 1
 
 
+def test_download_button_keeps_its_height_with_many_cards(qtbot, tmp_path):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    window.resize(900, 600)
+    window.show()
+    for index in range(5):
+        window.add_source(entry(f"s{index}"))
+    qtbot.wait(50)  # let the scroll area lay the cards out
+    for card in window.cards.values():
+        button = card.download_button
+        # The old fixed minimum height squeezed the button and its text vanished.
+        assert button.height() >= button.minimumSizeHint().height()
+        assert card.height() >= card.sizeHint().height()
+
+
 def test_window_splitter_ratio(qtbot, tmp_path):
     window = make_window(tmp_path)
     qtbot.addWidget(window)

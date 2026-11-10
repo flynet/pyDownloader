@@ -10,6 +10,7 @@ already on disk (resume), decrypts AES-128 segments and raises
 from __future__ import annotations
 
 import contextlib
+import logging
 import threading
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
@@ -32,6 +33,8 @@ CancelCheck = Callable[[], bool]
 #: ``fetch(url, headers, byte_range)`` returns the bytes of one item.
 FetchBytes = Callable[[str, dict[str, str], ByteRange | None], bytes]
 Sleep = Callable[[float], None]
+
+logger = logging.getLogger("pydownloader.engine")
 
 
 class CancelledError(RuntimeError):
@@ -145,7 +148,7 @@ def _fetch_with_retries(
 ) -> bytes:
     pauses = (0.0, *RETRY_PAUSES)
     last: Exception = DownloadError("Сегмент не скачан")
-    for pause in pauses:
+    for attempt, pause in enumerate(pauses, start=1):
         if should_stop():
             raise CancelledError("Задача отменена")
         if pause and sleep:
@@ -153,6 +156,7 @@ def _fetch_with_retries(
         try:
             return fetch(item.url, headers, item.byte_range)
         except Exception as exc:  # a segment failure is retried (spec 6.2 p.6)
+            logger.debug("Сегмент не скачан (попытка %d): %s (%s)", attempt, item.url, exc)
             last = exc
     raise DownloadError(f"Сегмент не скачан после {len(pauses)} попыток: {item.url} ({last})")
 
