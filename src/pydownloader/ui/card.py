@@ -13,8 +13,8 @@ from __future__ import annotations
 
 from typing import Literal
 
-from PySide6.QtCore import Qt, QUrl, Signal
-from PySide6.QtGui import QDesktopServices, QGuiApplication
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -81,7 +81,7 @@ class SourceCard(QFrame):
 
     download_clicked = Signal(str)
     cancel_clicked = Signal(str)
-    open_folder_clicked = Signal(str)
+    open_file_clicked = Signal(str)
 
     def __init__(self, entry: SourceEntry, parent=None) -> None:
         super().__init__(parent)
@@ -152,8 +152,8 @@ class SourceCard(QFrame):
         row.addWidget(self.cancel_button)
 
         self.open_button = QToolButton()
-        self.open_button.setText("Открыть папку")
-        self.open_button.clicked.connect(lambda: self.open_folder_clicked.emit(self.entry.id))
+        self.open_button.setText("Открыть файл")
+        self.open_button.clicked.connect(lambda: self.open_file_clicked.emit(self.entry.id))
         self.open_button.hide()
         row.addWidget(self.open_button)
 
@@ -225,9 +225,6 @@ class SourceCard(QFrame):
     def set_result(self, path: str) -> None:
         self.set_state("done")
         self.meta_label.setText(f"{self._meta_base[0]} · {path}")
-
-    def open_in_folder(self, path) -> None:
-        QDesktopServices.openUrl(QUrl(f"file:///{str(path).replace('\\', '/')}"))
 
     def _refresh_meta(self) -> None:
         if self.state == "error":
