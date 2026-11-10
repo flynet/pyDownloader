@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" media="video,audio"
+     minBufferTime="PT2S" mediaPresentationDuration="PT30S"
+     profiles="urn:mpeg:dash:profile:isoff-on-live:2011">
+  <ProgramInformation>
+    <Title>Test VOD</Title>
+  </ProgramInformation>
+  <Period id="0" start="PT0S">
+    <AdaptationSet contentType="video" mimeType="video/mp4" segmentAlignment="true" startWithSAP="1">
+      <SegmentTemplate timescale="1000" media="video/video-$Number%05d$.m4s" startNumber="1" duration="6000">
+        <Initialization sourceURL="init-video.m4s"/>
+      </SegmentTemplate>
+      <Representation id="v1080" width="1920" height="1080" bandwidth="6000000" codecs="avc1.640028"/>
+      <Representation id="v720" width="1280" height="720" bandwidth="2600000" codecs="avc1.640028"/>
+    </AdaptationSet>
+    <AdaptationSet contentType="audio" mimeType="audio/mp4" lang="ru">
+      <SegmentTemplate timescale="1000" media="audio/audio-$Number$.m4s" startNumber="1" duration="6000">
+        <Initialization sourceURL="init-audio.m4s"/>
+      </SegmentTemplate>
+      <Representation id="a128" bandwidth="128000" codecs="mp4a.40.2"/>
+    </AdaptationSet>
+  </Period>
+</MPD>

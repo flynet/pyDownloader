@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" minBufferTime="PT2S">
+  <BaseURL>https://cdn.example.com/dash/</BaseURL>
+  <Period id="0" start="PT0S">
+    <AdaptationSet contentType="video" mimeType="video/mp4">
+      <SegmentTemplate timescale="90000" media="video/$Time$.m4s">
+        <Initialization sourceURL="video/init.m4s"/>
+        <SegmentTimeline>
+          <S t="0" d="180000" r="2"/>
+          <S t="540000" d="90000"/>
+        </SegmentTimeline>
+      </SegmentTemplate>
+      <Representation id="v1080" width="1920" height="1080" bandwidth="5000000" codecs="avc1.640028"/>
+      <Representation id="v720" width="1280" height="720" bandwidth="2200000" codecs="avc1.640028"/>
+    </AdaptationSet>
+    <AdaptationSet contentType="audio" mimeType="audio/mp4" lang="en">
+      <SegmentTemplate timescale="48000" media="audio/$Time$.m4s">
+        <Initialization sourceURL="audio/init.m4s"/>
+        <SegmentTimeline>
+          <S t="0" d="288000" r="1"/>
+          <S t="576000" d="96000"/>
+        </SegmentTimeline>
+      </SegmentTemplate>
+      <Representation id="a96" bandwidth="96000" codecs="mp4a.40.2"/>
+    </AdaptationSet>
+  </Period>
+  <Period id="1" start="PT6S">
+    <AdaptationSet contentType="audio" mimeType="audio/mp4" lang="ru">
+      <SegmentTemplate timescale="48000" media="audio2/$Time$.m4s">
+        <Initialization sourceURL="audio2/init.m4s"/>
+        <SegmentTimeline>
+          <S t="288000" d="96000"/>
+        </SegmentTimeline>
+      </SegmentTemplate>
+      <Representation id="a2" bandwidth="128000" codecs="mp4a.40.2"/>
+    </AdaptationSet>
+  </Period>
+</MPD>

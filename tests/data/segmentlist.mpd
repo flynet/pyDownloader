@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" minBufferTime="PT2S">
+  <BaseURL>https://cdn.example.com/api/</BaseURL>
+  <Period id="0" start="PT0S">
+    <BaseURL>segment/</BaseURL>
+    <AdaptationSet contentType="video" mimeType="video/mp4">
+      <SegmentList duration="6000" startNumber="1" timescale="1000">
+        <Initialization sourceURL="init.m4s"/>
+        <SegmentURL media="seg1.m4s"/>
+        <SegmentURL media="seg2.m4s" range="0-49999"/>
+        <SegmentURL media="seg3.m4s"/>
+      </SegmentList>
+      <Representation id="v1080" width="1920" height="1080" bandwidth="4800000" codecs="avc1.640028"/>
+    </AdaptationSet>
+  </Period>
+</MPD>
