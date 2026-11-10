@@ -70,6 +70,7 @@ class SnifferThread(QThread):
     source_found = Signal(object)  # SourceEntry
     message = Signal(str)
     page_changed = Signal(str, str)  # url, title
+    started = Signal()  # the browser window is up: the UI enables «Close browser»
     browser_closed = Signal()
     failed = Signal(str)
 
@@ -100,10 +101,16 @@ class SnifferThread(QThread):
         self._yt_failed_id: str | None = None
         self._yt_last_attempt = 0.0
         self._cached_ua = ""
+        #: Page the browser is on: «Open browser» opens this address again.
+        self.last_url = start_url
 
     def stop(self) -> None:
         """Ask the loop to finish; the browser is closed at the end of ``run``."""
         self._stop = True
+
+    def is_browser_open(self) -> bool:
+        """Whether the browser window is up: the top panel buttons use this."""
+        return self._context is not None and not self._stop
 
     def request_cookies(
         self, url: str, timeout: float = COOKIES_TIMEOUT
@@ -112,7 +119,12 @@ class SnifferThread(QThread):
 
         Playwright objects are bound to the event loop of this thread, so the
         call is executed here by the pump loop; a download worker waits for it.
+        With the browser closed (the user closed the window) there is nothing to
+        read: return at once, so the download of the captured headers is not
+        stalled by a 10 s timeout for every segment.
         """
+        if self._context is None:
+            return []
         request = CookieRequest(url=url)
         self._events.put(request)
         if request.event.wait(timeout):
@@ -147,6 +159,7 @@ class SnifferThread(QThread):
                 page = pages[0] if pages else context.new_page()
                 if self.start_url:
                     page.goto(self.start_url)
+                self.started.emit()
                 while not self._stop:
                     pages = context.pages
                     if not pages:
@@ -157,6 +170,7 @@ class SnifferThread(QThread):
                         if page.is_closed():
                             self.message.emit(tr("browser_closed_by_user"))
                             break
+                        self.last_url = page.url
                         page.wait_for_timeout(PUMP_MS)
                     except Exception as exc:  # a page was closed or crashed
                         if page.is_closed():
@@ -255,6 +269,7 @@ class SnifferThread(QThread):
             page_key = (event.page_url, event.page_title)
             if page_key != self._last_page:
                 self._last_page = page_key
+                self.last_url = event.page_url
                 logger.debug(tr("browser_page", url=event.page_url, title=event.page_title))
                 self.page_changed.emit(event.page_url, event.page_title)
             self.registry.note_response(event)

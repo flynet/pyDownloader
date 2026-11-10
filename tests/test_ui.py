@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 
+from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QApplication
 
 from pydownloader.config.paths import Paths, default_paths
@@ -12,6 +13,7 @@ from pydownloader.config.settings import Settings
 from pydownloader.i18n import tr
 from pydownloader.manifest.registry import SourceEntry
 from pydownloader.ui import main_window as main_window_mod
+from pydownloader.ui import tray as tray_mod
 from pydownloader.ui.card import SourceCard, format_duration, format_quality, format_size
 from pydownloader.ui.console import MAX_LINES, ConsolePanel
 from pydownloader.ui.main_window import (
@@ -28,6 +30,7 @@ from pydownloader.ui.settings_panel import (
     SettingsDialog,
 )
 from pydownloader.ui.theme import apply_theme, qss_for
+from pydownloader.ui.tray import TrayController, make_tray
 
 
 def entry(id: str = "s1", kind: str = "hls", height: int | None = 1080) -> SourceEntry:
@@ -333,12 +336,25 @@ def test_settings_dialog_writes_the_values(qtbot, tmp_path):
     dialog.size_box.setValue(3)
     dialog.theme_box.setCurrentIndex(dialog.theme_box.findData("light"))
     dialog.update_check.setChecked(False)
+    dialog.tray_check.setChecked(True)
+    dialog.close_tray_check.setChecked(False)
     target = dialog.apply_to(Settings())
     assert target.threads == 4
     assert target.target_height == 720
     assert target.min_mp4_size == 3 * 1024 * 1024
     assert target.theme == "light"
     assert not target.auto_update
+    # The tray and the «X» behaviour are settings of the window (spec 4.3).
+    assert target.tray_enabled
+    assert not target.close_to_tray
+
+
+def test_settings_dialog_shows_the_saved_tray_state(qtbot, tmp_path):
+    settings = Settings(download_dir=str(tmp_path), tray_enabled=False, close_to_tray=False)
+    dialog = SettingsDialog(settings)
+    qtbot.addWidget(dialog)
+    assert not dialog.tray_check.isChecked()
+    assert not dialog.close_tray_check.isChecked()
 
 
 def test_settings_dialog_is_wide_and_resizable(tmp_path: Path, qtbot):
@@ -393,3 +409,166 @@ def test_paths_for_the_window(tmp_path):
     assert window.paths.settings_file.name == "settings.json"
     assert window.paths.log_file.name == "app.log"
     assert isinstance(paths, Paths)
+
+
+class FakeTray:
+    """Stand-in for the tray icon: the balloons and the browser state are recorded."""
+
+    def __init__(self) -> None:
+        self.hints: list[str] = []
+        self.running: bool | None = None
+
+    def notify(self, text: str) -> None:
+        self.hints.append(text)
+
+    def set_browser_running(self, running: bool) -> None:
+        self.running = running
+
+
+def test_browser_buttons_are_wired_to_the_top_panel(qtbot, tmp_path):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    # The browser thread is not up yet, so only «Open browser» is clickable.
+    assert window.open_browser_button.isEnabled()
+    assert not window.close_browser_button.isEnabled()
+    with qtbot.waitSignal(window.browser_open_request):
+        window.open_browser_button.click()
+    window.set_browser_running(True)
+    assert not window.open_browser_button.isEnabled()
+    assert window.close_browser_button.isEnabled()
+    with qtbot.waitSignal(window.browser_close_request):
+        window.close_browser_button.click()
+
+
+def test_browser_closed_by_the_user_allows_to_open_it_again(qtbot, tmp_path):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    window.set_browser_running(True)
+    window._browser_closed()
+    assert window.open_browser_button.isEnabled()
+    assert not window.close_browser_button.isEnabled()
+    # The running download is not stopped by the closed browser window (spec 3.7).
+    assert window.worker is None
+
+
+def test_page_url_is_remembered_for_open_browser(qtbot, tmp_path):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    window._page_changed("https://site.example/watch/42", "Clip")
+    assert window.last_url == "https://site.example/watch/42"
+
+
+def test_set_browser_running_updates_the_tray_menu(qtbot, tmp_path):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    tray = FakeTray()
+    window.tray = tray
+    window.set_browser_running(True)
+    assert tray.running is True
+    window.set_browser_running(False)
+    assert tray.running is False
+
+
+def test_closing_the_window_hides_it_to_the_tray(qtbot, tmp_path):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    tray = FakeTray()
+    window.tray = tray
+
+    event = QCloseEvent()
+    window.closeEvent(event)
+
+    # The window is hidden, the threads of the browser and of the queue stay alive.
+    assert not event.isAccepted()
+    assert not window.isVisible()
+    assert window.settings.tray_hint_seen
+    assert tr("tray_hint") in tray.hints
+
+
+def test_the_tray_hint_is_shown_only_once(qtbot, tmp_path):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    tray = FakeTray()
+    window.tray = tray
+    window.settings.tray_hint_seen = True
+
+    window.closeEvent(QCloseEvent())
+    assert tray.hints == []
+
+
+def test_the_quitting_flag_closes_the_window_for_real(qtbot, tmp_path):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    window.tray = FakeTray()
+    window._quitting = True
+
+    event = QCloseEvent()
+    window.closeEvent(event)
+    assert event.isAccepted()
+
+
+def test_closing_quits_when_the_window_is_not_hidden_to_the_tray(qtbot, tmp_path):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    window.tray = FakeTray()
+    window.settings.close_to_tray = False
+
+    event = QCloseEvent()
+    window.closeEvent(event)
+    assert event.isAccepted()
+
+
+def test_tray_menu_tracks_the_browser_window(qtbot, tmp_path):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    tray = TrayController(window, None)
+    assert tray.show_action.text() == tr("tray_show")
+    assert tray.quit_action.text() == tr("tray_quit")
+    assert tray.open_action.isEnabled()
+    assert not tray.close_action.isEnabled()
+    tray.set_browser_running(True)
+    assert not tray.open_action.isEnabled()
+    assert tray.close_action.isEnabled()
+    assert tray.contextMenu().actions()[0] is tray.show_action
+    assert len(tray.contextMenu().actions()) == 6
+
+
+def test_make_tray_is_skipped_without_a_notification_area(qtbot, tmp_path, monkeypatch):
+    """A platform without a tray (the offscreen CI) must work without the icon."""
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    monkeypatch.setattr(tray_mod.QSystemTrayIcon, "supportsMessages", lambda self: False)
+
+    assert make_tray(window, None) is None
+    assert window.tray is None
+
+
+def test_enabling_the_tray_setting_creates_the_icon(qtbot, tmp_path, monkeypatch, qapp):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    monkeypatch.setattr(tray_mod.QSystemTrayIcon, "supportsMessages", lambda self: True)
+
+    window.settings.tray_enabled = True
+    window._apply_tray_state(qapp)
+    assert window.tray is not None
+    assert not qapp.quitOnLastWindowClosed()
+
+    # «X» is a way to quit again when the tray is turned off (spec 4.3).
+    window.settings.tray_enabled = False
+    window._apply_tray_state(qapp)
+    assert window.tray is None
+    assert qapp.quitOnLastWindowClosed()
+
+
+def test_make_tray_shows_the_icon_and_keeps_the_window(qtbot, tmp_path, monkeypatch):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    monkeypatch.setattr(tray_mod.QSystemTrayIcon, "supportsMessages", lambda self: True)
+
+    tray = make_tray(window, None)
+
+    assert tray is not None
+    assert window.tray is tray
+    # The browser thread is not running yet: only «Open browser» is enabled.
+    assert tray.open_action.isEnabled()
+    assert not tray.close_action.isEnabled()

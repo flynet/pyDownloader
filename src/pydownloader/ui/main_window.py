@@ -31,8 +31,9 @@ from PySide6.QtWidgets import (
 )
 
 from pydownloader._version import VERSION
+from pydownloader.browser.launcher import BrowserChoice
 from pydownloader.browser.sniffer import SnifferThread
-from pydownloader.config.paths import Paths
+from pydownloader.config.paths import Paths, icon_path
 from pydownloader.config.settings import Settings, save_settings
 from pydownloader.download.worker import QueueWorker
 from pydownloader.ffmpeg.locate import Ffmpeg
@@ -42,6 +43,7 @@ from pydownloader.ui.card import SourceCard
 from pydownloader.ui.console import ConsolePanel
 from pydownloader.ui.settings_panel import SettingsDialog
 from pydownloader.ui.theme import apply_theme
+from pydownloader.ui.tray import TrayController, make_tray
 from pydownloader.update.ui import UpdateMonitor
 
 APP_TITLE = "PyDownloader"
@@ -64,6 +66,10 @@ class LogBridge(QObject):
 
 class MainWindow(QMainWindow):
     """One window with the cards and the console."""
+
+    #: «Открыть браузер» / «Закрыть браузер»: ``app.py`` owns the browser thread.
+    browser_open_request = Signal()
+    browser_close_request = Signal()
 
     def __init__(
         self,
@@ -90,6 +96,14 @@ class MainWindow(QMainWindow):
         self.updater: UpdateMonitor | None = None
         #: Bridge of the log handler to the console, created with the window.
         self.log_bridge: LogBridge | None = None
+        #: Browser of the last run: «Open browser» restarts the same kind and page.
+        self.browser_choice: BrowserChoice | None = None
+        self.extension_dir: Path | None = None
+        self.last_url = ""
+        #: Tray icon: created by ``app.py`` when the platform supports the tray.
+        self.tray: TrayController | None = None
+        #: Set by the tray «Выход» and the restart: the window really closes.
+        self._quitting = False
 
         self.setObjectName("central")
         self.setWindowTitle(f"{APP_TITLE} {VERSION} — {settings.download_dir}")
@@ -146,6 +160,16 @@ class MainWindow(QMainWindow):
         header = QHBoxLayout()
         header.addWidget(QLabel(tr("window_found_videos")))
         header.addStretch(1)
+        # The browser window can be closed by hand: the buttons reopen it and stop
+        # the thread, so a download that is running does not need a restart (spec 4.3).
+        self.open_browser_button = QPushButton(tr("window_open_browser"))
+        self.open_browser_button.setToolTip(tr("window_open_browser_tip"))
+        self.open_browser_button.clicked.connect(self.browser_open_request.emit)
+        header.addWidget(self.open_browser_button)
+        self.close_browser_button = QPushButton(tr("window_close_browser"))
+        self.close_browser_button.setToolTip(tr("window_close_browser_tip"))
+        self.close_browser_button.clicked.connect(self.browser_close_request.emit)
+        header.addWidget(self.close_browser_button)
         self.clear_all_button = QPushButton(tr("window_clear_all"))
         self.clear_all_button.setToolTip(tr("window_clear_all_tip"))
         self.clear_all_button.clicked.connect(self.clear_all_cards)
@@ -174,7 +198,7 @@ class MainWindow(QMainWindow):
         clear = QPushButton(tr("window_clear"))
         clear.clicked.connect(console.clear_panel)
         folder = QPushButton(tr("window_open_download_folder"))
-        folder.clicked.connect(self._open_download_folder)
+        folder.clicked.connect(self.open_download_folder)
         log = QPushButton(tr("window_open_log"))
         log.clicked.connect(self._open_log_file)
         row.addWidget(clear)
@@ -198,12 +222,53 @@ class MainWindow(QMainWindow):
 
     def attach_sniffer(self) -> None:
         """Wire the sniffer signals; used when the thread is created after the window."""
+        # The browser is not up yet: «Open browser» is the way to start it (spec 4.3).
+        self.set_browser_running(False)
         if self.sniffer is None:
             return
         self.sniffer.source_found.connect(self.add_source)
         self.sniffer.message.connect(self.log_info)
         self.sniffer.failed.connect(self.log_error)
+        self.sniffer.started.connect(lambda: self.set_browser_running(True))
+        self.sniffer.page_changed.connect(self._page_changed)
         self.sniffer.browser_closed.connect(self._browser_closed)
+
+    def browser_running(self) -> bool:
+        """Whether the browser thread is up right now (the tray menu uses this)."""
+        sniffer = self.sniffer
+        return sniffer is not None and sniffer.isRunning()
+
+    def set_browser_running(self, running: bool) -> None:
+        """Enable «Open browser» only when the browser window is down (spec 4.3)."""
+        self.open_browser_button.setEnabled(not running)
+        self.close_browser_button.setEnabled(running)
+        if self.tray is not None:
+            self.tray.set_browser_running(running)
+
+    def _page_changed(self, url: str, title: str) -> None:
+        """Remember the page, so «Open browser» opens the site the user was on."""
+        self.last_url = url
+
+    def show_from_tray(self) -> None:
+        """Double click on the tray icon: the window comes back to the front."""
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+
+    def check_updates_now(self) -> None:
+        """The tray menu asks for a check with the same code as the settings dialog."""
+        if self.updater is not None:
+            self.updater.check_now()
+
+    def quit_from_tray(self) -> None:
+        """«Выход» in the tray menu: close the threads and quit (spec 4.3)."""
+        self._quitting = True
+        self.close()
+        # With the tray the window is allowed to be the only one and hidden, so
+        # quitting is asked for explicitly (Qt does not do it for a hidden window).
+        app = QApplication.instance()
+        if app is not None:
+            app.quit()
 
     # --- console ---------------------------------------------------------
 
@@ -226,6 +291,7 @@ class MainWindow(QMainWindow):
 
     def exit_after_update(self) -> None:
         """The installer was launched: close the threads and quit the program (spec 8.3)."""
+        self._quitting = True
         self.hide()
         worker = self.worker
         if worker is not None:
@@ -375,7 +441,7 @@ class MainWindow(QMainWindow):
         if not _open_file(path):
             self.log_warning(tr("window_open_failed", error=path))
 
-    def _open_download_folder(self) -> None:
+    def open_download_folder(self) -> None:
         _show_in_explorer(Path(self.settings.download_dir))
 
     def _open_log_file(self) -> None:
@@ -385,6 +451,8 @@ class MainWindow(QMainWindow):
     def _browser_closed(self) -> None:
         # The browser is closed by the user: the running download continues (spec 3.7).
         self.log_warning(tr("window_browser_closed"))
+        # «Open browser» becomes the way to get the window back (spec 4.3).
+        self.set_browser_running(False)
 
     # --- settings --------------------------------------------------------
 
@@ -403,7 +471,23 @@ class MainWindow(QMainWindow):
             app = QApplication.instance()
             if app is not None:
                 apply_theme(cast(QApplication, app), self.settings.theme)
+                self._apply_tray_state(cast(QApplication, app))
             self._save_settings()
+
+    def _apply_tray_state(self, app: QApplication) -> None:
+        """The tray is created the first time the setting is turned on (spec 4.3).
+
+        Turning it off removes the icon: the window becomes a normal window, so
+        Qt quits when it is closed, and «X» is no longer a way to hide.
+        """
+        if self.settings.tray_enabled:
+            if self.tray is None:
+                make_tray(self, icon_path())
+                app.setQuitOnLastWindowClosed(False)
+        elif self.tray is not None:
+            self.tray.hide()
+            self.tray = None
+            app.setQuitOnLastWindowClosed(True)
 
     def _restart_program(self) -> None:
         """«Перезапустить» in the settings: the language is applied on the next start.
@@ -413,6 +497,7 @@ class MainWindow(QMainWindow):
         """
         from pydownloader.ui.app import restart_application
 
+        self._quitting = True
         self._save_settings()
         self.close()
         app = QApplication.instance()
@@ -430,6 +515,9 @@ class MainWindow(QMainWindow):
     # --- closing ---------------------------------------------------------
 
     def closeEvent(self, event) -> None:  # Qt naming
+        if self._hide_to_tray():
+            event.ignore()
+            return
         worker = self.worker
         if worker is not None:
             pending = worker.pending()
@@ -452,6 +540,25 @@ class MainWindow(QMainWindow):
             self.sniffer.stop()
             self.sniffer.wait(5000)
         self._save_settings()
+
+    def _hide_to_tray(self) -> bool:
+        """«X» keeps the program in the tray: the threads stay alive (spec 4.3).
+
+        A real exit (tray «Выход», restart, update install) is marked by
+        ``_quitting``, so it runs the teardown of ``closeEvent``.
+        """
+        if self._quitting or self.tray is None:
+            return False
+        if not (self.settings.tray_enabled and self.settings.close_to_tray):
+            return False
+        self.hide()
+        self.log_info(tr("window_hidden_to_tray"))
+        if not self.settings.tray_hint_seen:
+            # The first time the user has to learn that the program is still running.
+            self.tray.notify(tr("tray_hint"))
+            self.settings.tray_hint_seen = True
+            self._save_settings()
+        return True
 
 
 def geometry_hex(data: QByteArray) -> str:
