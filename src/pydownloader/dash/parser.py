@@ -25,7 +25,7 @@ from pydownloader.dash.models import (
     DashSegment,
     MPDType,
 )
-from pydownloader.dash.segments import build_segments
+from pydownloader.dash.segments import build_segments, expand_template
 from pydownloader.util.ranges import ByteRange
 from pydownloader.util.urls import base_dir_url, resolve_url
 
@@ -295,6 +295,14 @@ def _build_representation(
         progressive = True
         progressive_url = base
 
+    if init is not None:
+        # The initialization URL may use $RepresentationID$/$Bandwidth$ too,
+        # e.g. "$RepresentationID$/$RepresentationID$_0.m4v" (DASH-IF live profile).
+        init = DashInit(
+            url=expand_template(init.url, representation_id=rep_id, bandwidth=bandwidth),
+            byte_range=init.byte_range,
+        )
+
     return DashRepresentation(
         id=rep_id,
         content_type=content_type,
@@ -319,12 +327,17 @@ def _int(value: str | None) -> int | None:
     return int(digits) if digits else None
 
 
-def _parse_period(element, base: str, media_duration: float | None = None) -> DashPeriod:
+def _parse_period(
+    element, base: str, media_duration: float | None = None, default_start: float | None = None
+) -> DashPeriod:
     start = _parse_iso_duration(element.get("start"))
+    if start is None:
+        start = default_start
+    # Period@start defaults to 0 for the first period; without it the duration
+    # of a $Number$ template could not be computed from the MPD duration.
+    effective_start = start if start is not None else 0.0
     period_duration = (
-        max(0.0, media_duration - start)
-        if media_duration is not None and start is not None
-        else None
+        max(0.0, media_duration - effective_start) if media_duration is not None else None
     )
     level = _level_from(element, base, _Level(base=base))
     representations: list[DashRepresentation] = []
@@ -363,12 +376,15 @@ def parse_mpd(text: str, manifest_url: str) -> DashManifest:
     raw_type: str = str(root.get("type") or "static").lower()
     mpd_type: MPDType = "dynamic" if raw_type == "dynamic" else "static"
     periods: list[DashPeriod] = []
+    next_start: float | None = 0.0
     for child in root:
         name = _local(child.tag)
         if name == "BaseURL":
             base = _resolve_base(base, child.text)
         elif name == "Period":
-            periods.append(_parse_period(child, base, media_duration))
+            period = _parse_period(child, base, media_duration, next_start)
+            periods.append(period)
+            next_start = period.start
     return DashManifest(
         url=manifest_url,
         mpd_type=mpd_type,
