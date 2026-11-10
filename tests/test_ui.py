@@ -332,7 +332,7 @@ def test_settings_dialog_writes_the_values(qtbot, tmp_path):
     dialog = SettingsDialog(settings)
     qtbot.addWidget(dialog)
     dialog.threads_box.setValue(4)
-    dialog.height_box.setValue(720)
+    dialog.height_box.setCurrentIndex(dialog.height_box.findData(720))
     dialog.size_box.setValue(3)
     dialog.theme_box.setCurrentIndex(dialog.theme_box.findData("light"))
     dialog.update_check.setChecked(False)
@@ -391,6 +391,44 @@ def test_the_saved_browser_choice_is_shown(qtbot, tmp_path):
     assert dialog.agent_edit.text() == "Dev 1.0"
     assert dialog.anti_bot_check.isChecked()
     assert dialog.blocker_check.isChecked()
+
+
+def test_the_quality_presets_are_the_three_heights(qtbot, tmp_path):
+    """The quality dropdown offers exactly 1080, 720, 480 (spec 5.2 p.3)."""
+    dialog = SettingsDialog(Settings(download_dir=str(tmp_path)))
+    qtbot.addWidget(dialog)
+    names = [dialog.height_box.itemText(i) for i in range(dialog.height_box.count())]
+    assert names == ["1080p", "720p", "480p"]
+    assert dialog.height_box.currentData() == 1080
+
+
+def test_a_height_out_of_the_list_keeps_its_entry(qtbot, tmp_path):
+    """An edited settings.json keeps its height: saving the dialog does not change it."""
+    settings = Settings(download_dir=str(tmp_path), target_height=1440)
+    dialog = SettingsDialog(settings)
+    qtbot.addWidget(dialog)
+    assert dialog.height_box.currentData() == 1440
+    assert dialog.height_box.itemText(dialog.height_box.findData(1440)) == "1440p"
+    assert dialog.apply_to(Settings()).target_height == 1440
+
+
+def test_the_settings_write_the_audio_mode_and_the_bitrate(qtbot, tmp_path):
+    """«Audio only (MP3)» and the bitrate of the MP3 file are settings (spec 5.2 p.4)."""
+    dialog = SettingsDialog(Settings(download_dir=str(tmp_path)))
+    qtbot.addWidget(dialog)
+    dialog.bitrate_box.setCurrentIndex(dialog.bitrate_box.findData(320))
+    dialog.audio_check.setChecked(True)
+    target = dialog.apply_to(Settings())
+    assert target.mp3_bitrate == 320
+    assert target.audio_only
+
+
+def test_the_saved_audio_settings_are_shown(qtbot, tmp_path):
+    settings = Settings(download_dir=str(tmp_path), mp3_bitrate=128, audio_only=True)
+    dialog = SettingsDialog(settings)
+    qtbot.addWidget(dialog)
+    assert dialog.bitrate_box.currentData() == 128
+    assert dialog.audio_check.isChecked()
 
 
 def test_settings_dialog_is_wide_and_resizable(tmp_path: Path, qtbot):

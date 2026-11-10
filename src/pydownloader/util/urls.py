@@ -13,6 +13,23 @@ MANIFEST_CONTENT_TYPES = {
     "application/dash+xml",
 }
 MP4_CONTENT_TYPE = "video/mp4"
+#: Content types of an audio file: the source is saved as ``.mp3`` (spec 5.2 p.4).
+#: ``audio/mpegurl`` is a playlist, so it stays in the manifest list above.
+AUDIO_CONTENT_TYPES = {
+    "audio/mpeg",
+    "audio/mp3",
+    "audio/mp4",
+    "audio/aac",
+    "audio/x-m4a",
+    "audio/ogg",
+    "audio/opus",
+    "audio/flac",
+    "audio/wav",
+    "audio/x-wav",
+    "audio/x-aiff",
+}
+#: Extensions of an audio file in the path, the sign of a direct audio source.
+AUDIO_EXTENSIONS = {".mp3", ".ogg", ".opus", ".flac", ".wav", ".aac"}
 
 # Query parameters that carry per-session tokens: they change between requests,
 # so URLs are deduplicated without them.
@@ -51,6 +68,16 @@ def normalize_content_type(content_type: str | None) -> str:
     if not content_type:
         return ""
     return content_type.split(";", 1)[0].strip().lower()
+
+
+def is_audio_content_type(content_type: str | None) -> bool:
+    """``True`` for the content type of an audio file, ``False`` for a manifest."""
+    return normalize_content_type(content_type) in AUDIO_CONTENT_TYPES
+
+
+def is_audio_path(url: str) -> bool:
+    """``True`` when the path of a URL is a direct audio file (``.mp3`` and friends)."""
+    return path_extension(url) in AUDIO_EXTENSIONS
 
 
 def path_extension(url: str) -> str:

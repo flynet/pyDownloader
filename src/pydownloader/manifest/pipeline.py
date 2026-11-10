@@ -21,12 +21,18 @@ from pydownloader.browser.events import ResponseEvent
 from pydownloader.dash.models import DashManifest
 from pydownloader.dash.parser import ManifestParseError, parse_mpd
 from pydownloader.download.http import capture_headers
+from pydownloader.ffmpeg.probe import MediaInfo
 from pydownloader.hls.models import Playlist
 from pydownloader.hls.parser import PlaylistParseError, parse_playlist
 from pydownloader.i18n import tr
-from pydownloader.manifest.detector import Candidate, classify, mp4_size_skip
+from pydownloader.manifest.detector import Candidate, classify, media_size_skip
 from pydownloader.manifest.drm import detect_dash, detect_hls
-from pydownloader.manifest.quality import Choice, QualityFilter, pick_audio
+from pydownloader.manifest.quality import (
+    Choice,
+    QualityFilter,
+    is_audio_variants,
+    pick_audio,
+)
 from pydownloader.manifest.registry import SourceEntry, SourceRegistry
 
 Action = Literal[
@@ -43,8 +49,8 @@ Action = Literal[
 
 #: ``fetch(url, headers) -> text | None``; ``None`` means the request failed.
 Fetch = Callable[[str, dict[str, str]], str | None]
-#: ``probe(url, headers) -> height | None`` (FFmpeg probe of a direct MP4).
-ProbeHeight = Callable[[str, dict[str, str]], int | None]
+#: ``probe(url, headers) -> MediaInfo`` (FFmpeg probe of a file or of a playlist).
+ProbeMedia = Callable[[str, dict[str, str]], MediaInfo]
 
 logger = logging.getLogger("pydownloader.pipeline")
 
@@ -63,7 +69,7 @@ def process_event(
     registry: SourceRegistry,
     fetch: Fetch,
     quality: QualityFilter,
-    probe_height: ProbeHeight | None = None,
+    probe: ProbeMedia | None = None,
     body: str | None = None,
 ) -> list[Outcome]:
     """Apply the filters of spec 5.1/5.2 to one intercepted response.
@@ -89,21 +95,21 @@ def process_event(
         min_mp4_size=registry.min_mp4_size,
     )
     if candidate is None:
-        reason = mp4_size_skip(event.url, event.content_type, size, registry.min_mp4_size)
+        reason = media_size_skip(event.url, event.content_type, size, registry.min_mp4_size)
         if reason:
             message = tr("mf_reason_with_url", reason=reason, url=event.url)
             return [Outcome("skip-size", None, message)]
         return []
     if candidate.kind == "mp4":
-        return _process_mp4(candidate, registry, quality, probe_height)
-    return _process_manifest(candidate, registry, fetch, quality, body)
+        return _process_mp4(candidate, registry, quality, probe)
+    return _process_manifest(candidate, registry, fetch, quality, body, probe)
 
 
 def _process_mp4(
     candidate: Candidate,
     registry: SourceRegistry,
     quality: QualityFilter,
-    probe_height: ProbeHeight | None,
+    probe: ProbeMedia | None,
 ) -> list[Outcome]:
     result = registry.add_mp4(candidate)
     if result.reason:
@@ -114,9 +120,15 @@ def _process_mp4(
         entry = result.entry
         return [Outcome("duplicate", entry, tr("mf_range_merged", url=entry.url))]
     entry = result.entry
-    height = probe_height(candidate.url, candidate.headers) if probe_height else None
-    entry.height = height
-    decision = quality.decide_mp4(candidate.url, height)
+    entry.is_audio = candidate.audio
+    info = probe(candidate.url, candidate.headers) if probe else None
+    if info is not None:
+        entry.height = info.height
+        # FFmpeg sees the streams of the file: an MP4 with audio and no video is
+        # an audio source even when the content type said nothing (spec 5.2 p.4).
+        if info.has_audio and not info.has_video:
+            entry.is_audio = True
+    decision = quality.decide_mp4(candidate.url, entry.height, entry.is_audio)
     if not decision.show or decision.choice is None:
         registry.remove(entry.normalized)
         return [Outcome("skip-quality", None, decision.message)]
@@ -131,6 +143,7 @@ def _process_manifest(
     fetch: Fetch,
     quality: QualityFilter,
     body: str | None = None,
+    probe: ProbeMedia | None = None,
 ) -> list[Outcome]:
     result = registry.add_manifest(candidate)
     if not result.is_new:
@@ -159,7 +172,7 @@ def _process_manifest(
         return [Outcome("parse-error", None, tr("mf_manifest_not_parsed", error=exc))]
     if candidate.kind == "dash":
         return _dash_outcomes(entry, mpd, registry, quality)
-    return _hls_outcomes(entry, playlist, registry, fetch, quality)
+    return _hls_outcomes(entry, playlist, registry, fetch, quality, probe)
 
 
 def _dash_outcomes(
@@ -173,16 +186,24 @@ def _dash_outcomes(
         registry.remove(entry.normalized)
         message = tr("mf_drm_detected", message=verdict.message, system=verdict.system)
         return [Outcome("skip-drm", None, message)]
-    decision = quality.decide_dash(mpd)
+    # A manifest with audio representations only is an audio source (spec 5.2 p.4).
+    audio = not mpd.has_video() and mpd.has_audio()
+    decision = quality.decide_dash(mpd, audio)
     if not decision.show or decision.choice is None:
         registry.remove(entry.normalized)
         return [Outcome("skip-quality", None, decision.message)]
     choice = decision.choice
     entry.choice = choice
+    entry.is_audio = choice.audio_only
     entry.height = choice.height
     entry.duration = mpd.media_presentation_duration
     registry.remember_prefix(entry.url, entry)
-    return [Outcome("show", entry, tr("mf_found_dash", height=entry.height, url=entry.url))]
+    message = (
+        tr("mf_found_audio", url=entry.url)
+        if entry.is_audio
+        else tr("mf_found_dash", height=entry.height, url=entry.url)
+    )
+    return [Outcome("show", entry, message)]
 
 
 def _audio_url(playlist: Playlist, group: str | None) -> str | None:
@@ -191,13 +212,32 @@ def _audio_url(playlist: Playlist, group: str | None) -> str | None:
     return audio.url if audio else None
 
 
+def hls_is_audio(playlist: Playlist, entry: SourceEntry, probe: ProbeMedia | None) -> bool:
+    """``True`` when an HLS playlist carries no video (spec 5.2 p.4).
+
+    A master playlist of SoundCloud lists audio variants only, with no
+    ``RESOLUTION`` and an audio ``CODECS`` list: reading the playlist is enough.
+    A single media playlist has no codec list at all, so FFmpeg opens it with
+    its HLS demuxer and reports the streams it finds: audio with no video is an
+    audio source, and the file is saved as ``.mp3``.
+    """
+    if playlist.kind == "master":
+        return is_audio_variants(playlist.variants)
+    if probe is None:
+        return False
+    info = probe(entry.effective_url(entry.url), entry.headers)
+    return info.has_audio and not info.has_video
+
+
 def _hls_outcomes(
     entry: SourceEntry,
     playlist: Playlist,
     registry: SourceRegistry,
     fetch: Fetch,
     quality: QualityFilter,
+    probe: ProbeMedia | None = None,
 ) -> list[Outcome]:
+    audio = hls_is_audio(playlist, entry, probe)
     if playlist.kind == "media":
         if playlist.is_live:
             registry.remove(entry.normalized)
@@ -207,22 +247,29 @@ def _hls_outcomes(
             registry.remove(entry.normalized)
             message = tr("mf_drm_detected", message=verdict.message, system=verdict.system)
             return [Outcome("skip-drm", None, message)]
-        decision = quality.decide_hls(playlist)
+        decision = quality.decide_hls(playlist, audio)
         choice = decision.choice
         if choice is None:
             registry.remove(entry.normalized)
-            return [Outcome("parse-error", None, tr("mf_manifest_not_parsed", error=entry.url))]
+            return [Outcome("skip-quality", None, decision.message)]
         entry.choice = choice
+        entry.is_audio = choice.audio_only
         entry.duration = sum(s.duration for s in playlist.segments)
         registry.remember_prefix(entry.url, entry)
-        return [Outcome("show", entry, tr("mf_found_hls_unknown", url=entry.url))]
+        message = (
+            tr("mf_found_audio", url=entry.url)
+            if entry.is_audio
+            else tr("mf_found_hls_unknown", url=entry.url)
+        )
+        return [Outcome("show", entry, message)]
 
-    decision = quality.decide_hls(playlist)
+    decision = quality.decide_hls(playlist, audio)
     if not decision.show or decision.choice is None:
         logger.debug(tr("mf_quality_debug", url=entry.url, message=decision.message))
         registry.remove(entry.normalized)
         return [Outcome("skip-quality", None, decision.message)]
     choice = decision.choice
+    entry.is_audio = choice.audio_only
     # Every variant of the master is kept: a CDN may sign only the quality the
     # player actually requested, so the downloader can fall back to a recorded
     # variant instead of failing on the chosen one.
@@ -267,7 +314,11 @@ def _hls_outcomes(
         registry.remember_prefix(choice.url, entry)
         if choice.audio_url:
             registry.remember_prefix(choice.audio_url, entry)
-        message = tr("mf_found_hls_deferred", height=entry.height, url=entry.url)
+        message = (
+            tr("mf_found_audio", url=entry.url)
+            if entry.is_audio
+            else tr("mf_found_hls_deferred", height=entry.height, url=entry.url)
+        )
         return [Outcome("show", entry, message)]
     try:
         variant = parse_playlist(variant_text, entry.effective_url(choice.url))
@@ -293,4 +344,9 @@ def _hls_outcomes(
     registry.remember_prefix(choice.url, entry)
     if choice.audio_url:
         registry.remember_prefix(choice.audio_url, entry)
-    return [Outcome("show", entry, tr("mf_found_hls", height=entry.height, url=entry.url))]
+    message = (
+        tr("mf_found_audio", url=entry.url)
+        if entry.is_audio
+        else tr("mf_found_hls", height=entry.height, url=entry.url)
+    )
+    return [Outcome("show", entry, message)]

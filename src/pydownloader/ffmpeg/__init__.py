@@ -7,8 +7,22 @@ from pydownloader.ffmpeg.locate import (
     FfmpegNotFoundError,
     locate_ffmpeg,
 )
-from pydownloader.ffmpeg.mux import FfmpegError, MuxResult, assemble, merge_streams, remux_command
-from pydownloader.ffmpeg.probe import parse_height, probe_height
+from pydownloader.ffmpeg.mux import (
+    FfmpegError,
+    MuxResult,
+    assemble,
+    merge_streams,
+    mp3_command,
+    remux_command,
+    to_mp3,
+)
+from pydownloader.ffmpeg.probe import (
+    MediaInfo,
+    parse_height,
+    parse_media,
+    probe_height,
+    probe_media,
+)
 
 __all__ = [
     "FFMPEG_NAME",
@@ -16,11 +30,16 @@ __all__ = [
     "Ffmpeg",
     "FfmpegError",
     "FfmpegNotFoundError",
+    "MediaInfo",
     "MuxResult",
     "assemble",
     "locate_ffmpeg",
     "merge_streams",
+    "mp3_command",
     "parse_height",
+    "parse_media",
     "probe_height",
+    "probe_media",
     "remux_command",
+    "to_mp3",
 ]

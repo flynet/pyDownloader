@@ -19,6 +19,9 @@ TEXTS: dict[str, str] = {
     "mf_segment_before_manifest": "Segment avant le manifeste ({dir}) : {url}",
     # --- filtre de qualité (spec 5.2 p.3) ----------------------------------
     "mf_quality_unknown": "inconnue",
+    "mf_quality_mp3": "MP3",
+    "mf_quality_no_audio": "Flux sans piste audio : ignoré",
+    "mf_quality_video_skipped": "Flux vidéo : ignoré (mode audio uniquement)",
     "mf_quality_no_heights": "Flux trouvé sans {target}p : ignoré (résolution inconnue)",
     "mf_quality_available": "Flux trouvé sans {target}p : ignoré (disponible : {listed})",
     "mf_quality_debug": "Qualité insuffisante ({url}) : {message}",
@@ -31,6 +34,7 @@ TEXTS: dict[str, str] = {
     "mf_drm_message": "Le contenu est protégé par DRM, téléchargement impossible",
     "mf_drm_detected": "{message} ({system})",
     "mf_found_mp4": "MP4 trouvé {quality} : {url}",
+    "mf_found_audio": "Son trouvé : {url}",
     "mf_found_dash": "Flux DASH trouvé {height}p : {url}",
     "mf_found_hls_unknown": "Flux HLS trouvé (résolution inconnue) : {url}",
     "mf_found_hls": "Flux HLS trouvé {height}p : {url}",

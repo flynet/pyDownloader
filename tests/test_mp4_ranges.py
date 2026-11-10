@@ -53,6 +53,27 @@ def test_classify_mp4_by_content_type_and_extension():
     assert path_extension("https://cdn.example.com/file.mp4?x=.m3u8") == ".mp4"
 
 
+def test_an_audio_file_is_a_candidate_marked_audio():
+    """SoundCloud sends an MP3: the source is kept and marked audio, target ``.mp3``."""
+    by_type = mp4("https://cdn.example.com/track", 6_000_000, content_type="audio/mpeg")
+    assert by_type is not None and by_type.kind == "mp4" and by_type.audio
+    by_ext = mp4(
+        "https://cdn.example.com/track.mp3?token=1",
+        6_000_000,
+        content_type="application/octet-stream",
+    )
+    assert by_ext is not None and by_ext.audio
+    # The extension is read before the query, so the MP3 is found under a token.
+    # A video file is not audio, its target stays .mp4.
+    video = mp4("https://cdn.example.com/file.mp4", 12_000_000)
+    assert video is not None and not video.audio
+
+
+def test_a_small_audio_file_is_dropped_by_the_threshold():
+    """A preview sound in the page is under the threshold, like a small MP4 (spec 5.1 p.3)."""
+    assert mp4("https://cdn.example.com/preview.mp3", 200_000) is None
+
+
 def test_small_files_are_dropped():
     assert mp4("https://cdn.example.com/small.mp4", 200_000) is None
     assert mp4("https://cdn.example.com/small.mp4", None) is not None

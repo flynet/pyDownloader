@@ -19,6 +19,9 @@ TEXTS: dict[str, str] = {
     "mf_segment_before_manifest": "Сегмент до манифеста ({dir}): {url}",
     # --- фильтр качества (спецификация 5.2 п.3) ----------------------------
     "mf_quality_unknown": "неизвестно",
+    "mf_quality_mp3": "MP3",
+    "mf_quality_no_audio": "Найден поток без аудиодорожки: пропущен",
+    "mf_quality_video_skipped": "Видеопоток: пропущен (режим «только аудио»)",
     "mf_quality_no_heights": "Найден поток без {target}p: пропущен (разрешение не определяется)",
     "mf_quality_available": "Найден поток без {target}p: пропущен (доступно: {listed})",
     "mf_quality_debug": "Качество не подходит ({url}): {message}",
@@ -31,6 +34,7 @@ TEXTS: dict[str, str] = {
     "mf_drm_message": "Контент защищён DRM, скачивание невозможно",
     "mf_drm_detected": "{message} ({system})",
     "mf_found_mp4": "Найден MP4 {quality}: {url}",
+    "mf_found_audio": "Найден звук: {url}",
     "mf_found_dash": "Найден DASH-поток {height}p: {url}",
     "mf_found_hls_unknown": "Найден HLS-поток (разрешение неизвестно): {url}",
     "mf_found_hls": "Найден HLS-поток {height}p: {url}",

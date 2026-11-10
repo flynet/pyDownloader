@@ -89,6 +89,14 @@ class DashManifest:
     def is_live(self) -> bool:
         return self.mpd_type == "dynamic"
 
+    def has_video(self) -> bool:
+        """``True`` when one representation of any Period is a video (spec 5.2 p.4)."""
+        return any(bool(p.videos()) for p in self.periods)
+
+    def has_audio(self) -> bool:
+        """``True`` when one representation of any Period is audio."""
+        return any(bool(p.audios()) for p in self.periods)
+
     def available_heights(self) -> list[int]:
         heights = [r.height for p in self.periods for r in p.videos() if r.height is not None]
         return sorted(set(heights), reverse=True)

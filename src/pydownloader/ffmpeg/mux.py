@@ -1,9 +1,11 @@
-"""Assembling the downloaded files with FFmpeg (spec 6.4).
+"""Assembling the downloaded files with FFmpeg (spec 6.4, 5.2 p.4).
 
 Segments are concatenated as a raw byte stream: an MPEG-TS stream and a
 fragmented MP4 stream are both readable by FFmpeg when the files are
 appended one after another, with the init segment first. Then FFmpeg remuxes
 the stream into ``.mp4`` with ``-c copy``, so the video is not re-encoded.
+An audio-only source is decoded once with ``libmp3lame`` and written as
+``.mp3`` with the bitrate of the settings.
 """
 
 from __future__ import annotations
@@ -53,6 +55,43 @@ def merge_streams(files: Sequence[Path], target: Path) -> None:
                     if not chunk:
                         break
                     out.write(chunk)
+
+
+def mp3_command(
+    ffmpeg: Ffmpeg,
+    audio_source: Path,
+    out_path: Path,
+    bitrate: int,
+    ts: bool = False,
+) -> list[str]:
+    """FFmpeg command for an audio file: MP3 of the chosen bitrate (spec 5.2 p.4).
+
+    An audio-only stream has no video, so ``-vn`` drops any video track the
+    container may carry, and the audio is re-encoded with ``libmp3lame``: the
+    codecs of an HLS audio track (AAC, Opus) cannot be put into an MP3 container
+    as they are, so the stream is decoded once (spec 6.4 p.3).
+    """
+    cmd = [str(ffmpeg.path), "-hide_banner", "-loglevel", "warning", "-y"]
+    cmd += ["-i", str(audio_source)]
+    cmd += ["-vn", "-c:a", "libmp3lame", "-b:a", f"{bitrate}k"]
+    if ts:
+        cmd += AAC_BSF
+    cmd += MUXING_QUEUE
+    cmd += ["-f", "mp3", str(out_path)]
+    return cmd
+
+
+def to_mp3(src: Path, out_path: Path, ffmpeg: Ffmpeg, bitrate: int) -> MuxResult:
+    """A direct audio file to MP3; an MP3 file is copied, no re-encode (spec 5.2 p.4).
+
+    A direct MP4 with an audio stream (the m4a track of SoundCloud) is decoded
+    once with ``libmp3lame``; a file that is already MP3 is copied as it is.
+    """
+    if src.suffix.lower() == ".mp3":
+        out_path.write_bytes(src.read_bytes())
+        return MuxResult(out_path=out_path, log=tr("ffmpeg_direct_mp3"))
+    log = run_ffmpeg(mp3_command(ffmpeg, src, out_path, bitrate))
+    return MuxResult(out_path=out_path, log=log)
 
 
 def remux_command(
@@ -120,9 +159,22 @@ def assemble(
     ffmpeg: Ffmpeg,
     work_dir: Path,
     audio_files: Sequence[Path] = (),
+    mp3_bitrate: int | None = None,
     on_line: Callable[[str], None] | None = None,
 ) -> MuxResult:
-    """Merge the segments into one stream and remux it into ``out_path``."""
+    """Merge the segments into one stream and remux it into ``out_path``.
+
+    ``mp3_bitrate`` is the MP3 target of an audio source (spec 5.2 p.4): the
+    stream is decoded once and written as MP3, so the audio of a stream with no
+    video becomes an ``.mp3`` file. Without it the streams are copied as they are.
+    """
+    if mp3_bitrate is not None:
+        mp3_stream = work_dir / "audio.stream"
+        merge_streams(list(files) + list(audio_files), mp3_stream)
+        ts = is_ts(files) or is_ts(audio_files)
+        command = mp3_command(ffmpeg, mp3_stream, out_path, mp3_bitrate, ts)
+        log = run_ffmpeg(command, on_line)
+        return MuxResult(out_path=out_path, log=log)
     video_stream = work_dir / "video.stream"
     merge_streams(files, video_stream)
     audio_stream: Path | None = None

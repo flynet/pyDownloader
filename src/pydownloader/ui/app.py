@@ -41,7 +41,7 @@ from pydownloader.config.paths import (
 from pydownloader.config.settings import Settings, load_settings, save_settings
 from pydownloader.download.worker import QueueWorker
 from pydownloader.ffmpeg.locate import Ffmpeg, FfmpegNotFoundError, locate_ffmpeg
-from pydownloader.ffmpeg.probe import probe_height
+from pydownloader.ffmpeg.probe import probe_media
 from pydownloader.i18n import set_language, tr
 from pydownloader.manifest.quality import QualityFilter
 from pydownloader.manifest.registry import SourceRegistry
@@ -99,6 +99,8 @@ def make_worker(settings: Settings, ffmpeg: Ffmpeg, sniffer: SnifferThread | Non
         settings.download_dir,
         parallel=settings.threads,
         target_height=settings.target_height,
+        # An audio source is written as MP3 of the chosen bitrate (spec 5.2 p.4).
+        mp3_bitrate=settings.mp3_bitrate,
     )
 
 
@@ -111,14 +113,18 @@ def make_sniffer(
     start_url: str = "",
 ) -> SnifferThread:
     registry = SourceRegistry(min_mp4_size=settings.min_mp4_size)
-    quality = QualityFilter(target_height=settings.target_height)
+    quality = QualityFilter(
+        target_height=settings.target_height,
+        # «Audio only (MP3)» hides the video sources (spec 5.2 p.4).
+        audio_only=settings.audio_only,
+    )
     return SnifferThread(
         browser=browser,
         profile_dir=paths.profile_dir,
         registry=registry,
         quality=quality,
         start_url=start_url,
-        probe_height=lambda url, headers: probe_height(url, ffmpeg, headers),
+        probe_media=lambda url, headers: probe_media(url, ffmpeg, headers),
         extension_dir=extension,
         # The stealth of the launch is a setting, so a site that is unhappy with
         # it can be run without it (spec 7.2).

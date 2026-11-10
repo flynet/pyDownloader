@@ -7,7 +7,10 @@ from typing import Literal
 
 from pydownloader.i18n import tr
 from pydownloader.util.urls import (
+    AUDIO_CONTENT_TYPES,
+    AUDIO_EXTENSIONS,
     MP4_CONTENT_TYPE,
+    is_audio_content_type,
     is_manifest_url,
     normalize_content_type,
     origin_of,
@@ -16,6 +19,10 @@ from pydownloader.util.urls import (
 
 SourceKind = Literal["hls", "dash", "mp4", "youtube"]
 FRAGMENT_EXTENSIONS = {".m4s", ".m4v", ".m4a", ".ac3", ".ec3", ".ts", ".ifs", ".srt", ".vtt"}
+#: Extensions of a media file that is not a manifest and not a segment.
+MEDIA_EXTENSIONS = {".mp4", *AUDIO_EXTENSIONS}
+#: Content types of a direct media file: video MP4 and the audio types (spec 5.2 p.4).
+MEDIA_CONTENT_TYPES = {MP4_CONTENT_TYPE, *AUDIO_CONTENT_TYPES}
 
 
 @dataclass(frozen=True)
@@ -33,6 +40,14 @@ class Candidate:
     headers: dict[str, str] = field(default_factory=dict)
     content_length: int | None = None
     content_type: str | None = None
+    #: ``True`` for a direct audio file: the source is saved as ``.mp3`` (spec 5.2 p.4).
+    audio: bool = False
+
+
+def is_media_file(ext: str, content_type: str | None) -> bool:
+    """``True`` for a direct media file: an MP4 video or an audio file."""
+    normalized = normalize_content_type(content_type)
+    return normalized in MEDIA_CONTENT_TYPES or ext in MEDIA_EXTENSIONS
 
 
 def build_headers(page_url: str, user_agent: str | None = None) -> dict[str, str]:
@@ -46,21 +61,25 @@ def build_headers(page_url: str, user_agent: str | None = None) -> dict[str, str
     return headers
 
 
-def mp4_size_skip(
+def media_size_skip(
     url: str,
     content_type: str | None,
     content_length: int | None,
     min_mp4_size: int,
 ) -> str | None:
-    """Reason to log when the request is an MP4 below the size threshold (spec 5.1).
+    """Reason to log when a media file is below the size threshold (spec 5.1).
 
-    Returns ``None`` when the request is not an MP4 or the size is unknown,
+    A direct MP4 video and a direct audio file are both media files: the audio of
+    SoundCloud is a small MP3, and the same threshold keeps the icons and the
+    preview sounds out of the list.
+
+    Returns ``None`` when the request is not a media file or the size is unknown,
     so the caller reports the skip in the console.
     """
     ext = path_extension(url)
     if ext in FRAGMENT_EXTENSIONS or not url:
         return None
-    if not (normalize_content_type(content_type) == MP4_CONTENT_TYPE or ext == ".mp4"):
+    if not is_media_file(ext, content_type):
         return None
     if content_length is not None and content_length < min_mp4_size:
         return tr("mf_reason_small_file")
@@ -78,13 +97,15 @@ def classify(
 ) -> Candidate | None:
     """Return a candidate for a request, ``None`` if it is not a video source.
 
-    Rules (spec 5.1):
+    Rules (spec 5.1, 5.2 p.4):
       * a candidate is HLS/DASH when the URL contains ``.m3u8``/``.mpd`` **or**
         the content type is one of the four manifest types;
-      * a candidate is a direct MP4 when the content type is ``video/mp4``
-        **or** the path ends with ``.mp4`` (before the query);
+      * a candidate is a direct media file when the content type is
+        ``video/mp4``/an audio type **or** the path ends with ``.mp4``/``.mp3``
+        (before the query); an audio file is marked ``audio``, so the download
+        saves it as ``.mp3``;
       * segments (``.m4s`` and friends) are never candidates, they belong to a manifest;
-      * MP4 files under ``min_mp4_size`` are dropped as not video (size checked
+      * media files under ``min_mp4_size`` are dropped as not media (size checked
         when it is known).
     """
     if not url:
@@ -116,10 +137,11 @@ def classify(
             content_type=content_type,
         )
 
-    if mp4_size_skip(url, content_type, content_length, min_mp4_size):
+    if media_size_skip(url, content_type, content_length, min_mp4_size):
         return None
-    if not (normalized_type == MP4_CONTENT_TYPE or ext == ".mp4"):
+    if not is_media_file(ext, normalized_type):
         return None
+    audio = is_audio_content_type(content_type) or ext in AUDIO_EXTENSIONS
     return Candidate(
         url=url,
         kind="mp4",
@@ -128,6 +150,7 @@ def classify(
         headers=dict(headers or {}),
         content_length=content_length,
         content_type=content_type,
+        audio=audio,
     )
 
 

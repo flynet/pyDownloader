@@ -34,7 +34,7 @@ from pydownloader.download.http import (
     merge_cookies,
 )
 from pydownloader.i18n import tr
-from pydownloader.manifest.pipeline import Outcome, ProbeHeight, process_event
+from pydownloader.manifest.pipeline import Outcome, ProbeMedia, process_event
 from pydownloader.manifest.quality import Choice, QualityFilter
 from pydownloader.manifest.registry import SourceRegistry
 from pydownloader.util.urls import is_manifest_url, normalize_content_type
@@ -82,7 +82,7 @@ class SnifferThread(QThread):
         registry: SourceRegistry,
         quality: QualityFilter,
         start_url: str = "",
-        probe_height: ProbeHeight | None = None,
+        probe_media: ProbeMedia | None = None,
         extension_dir: Path | None = None,
         anti_bot: bool = True,
         user_agent: str = "",
@@ -96,7 +96,7 @@ class SnifferThread(QThread):
         self.registry = registry
         self.quality = quality
         self.start_url = start_url
-        self.probe_height = probe_height
+        self.probe_media = probe_media
         #: Stealth of the launch (spec 7.2): the flags of a driver are dropped.
         self.anti_bot = anti_bot
         #: User agent the user chose, ``""`` means the Chrome form of the browser.
@@ -343,7 +343,7 @@ class SnifferThread(QThread):
                 self.registry,
                 self._fetch,
                 self.quality,
-                self.probe_height,
+                self.probe_media,
                 body=event.body,
             )
             for outcome in outcomes:

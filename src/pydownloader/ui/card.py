@@ -51,7 +51,14 @@ STAGE_KEYS: dict[str, str] = {
 #: The parts of a card line are joined by a plain separator, never by a text.
 SEPARATOR = " · "
 
-BADGE_COLORS = {"hls": "#3b7fd7", "dash": "#7b5cc7", "mp4": "#2e7d32", "youtube": "#c4302b"}
+BADGE_COLORS = {
+    "hls": "#3b7fd7",
+    "dash": "#7b5cc7",
+    "mp4": "#2e7d32",
+    "youtube": "#c4302b",
+    # An audio source is shown with its own badge, the file is written as MP3.
+    "mp3": "#a86a2d",
+}
 
 
 def state_text(state: CardState) -> str:
@@ -82,7 +89,10 @@ def format_duration(seconds: float | None) -> str:
     return f"{minutes}:{rest:02d}"
 
 
-def format_quality(height: int | None) -> str:
+def format_quality(height: int | None, audio: bool = False) -> str:
+    """Quality of the card line: ``1080p`` for video, ``MP3`` for an audio source (spec 4.1 p.2)."""
+    if audio:
+        return tr("card_quality_mp3")
     return f"{height}p" if height else tr("card_quality_unknown")
 
 
@@ -121,9 +131,12 @@ class SourceCard(QFrame):
         layout.setSpacing(4)
 
         top = QHBoxLayout()
-        self.badge = QLabel(entry.kind.upper())
+        # An audio source gets the MP3 badge: the file on disk is an MP3, not a video.
+        badge_text = "MP3" if entry.is_audio else entry.kind.upper()
+        badge_color = BADGE_COLORS["mp3"] if entry.is_audio else BADGE_COLORS[entry.kind]
+        self.badge = QLabel(badge_text)
         self.badge.setObjectName("badge")
-        self.badge.setStyleSheet(f"color: #ffffff; background: {BADGE_COLORS[entry.kind]};")
+        self.badge.setStyleSheet(f"color: #ffffff; background: {badge_color};")
         top.addWidget(self.badge)
         self.title_label = QLabel(entry.title or entry.page_url or entry.url)
         self.title_label.setObjectName("cardTitle")
@@ -138,7 +151,7 @@ class SourceCard(QFrame):
         self.url_label.customContextMenuRequested.connect(self._copy_menu)
         layout.addWidget(self.url_label)
 
-        parts = [format_quality(entry.height)]
+        parts = [format_quality(entry.height, entry.is_audio)]
         if entry.duration:
             parts.append(format_duration(entry.duration))
         if entry.size:
