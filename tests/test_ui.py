@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 from PySide6.QtWidgets import QApplication
@@ -13,6 +14,7 @@ from pydownloader.ui.card import SourceCard, format_duration, format_quality, fo
 from pydownloader.ui.console import MAX_LINES, ConsolePanel
 from pydownloader.ui.main_window import (
     HINT,
+    LogBridge,
     MainWindow,
     geometry_from_hex,
     geometry_hex,
@@ -247,6 +249,17 @@ def test_apply_theme(qtbot, qapp: QApplication):
     assert qapp.styleSheet()
     apply_theme(qapp, "system")
     assert qapp.styleSheet() == ""
+
+
+def test_log_bridge_forwards_from_another_thread(qtbot, tmp_path):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    bridge = LogBridge(window)
+    bridge.line.connect(window.console.append_line)
+    thread = threading.Thread(target=lambda: bridge.line.emit("[00:00:00] INFO     из потока"))
+    thread.start()
+    thread.join()
+    qtbot.waitUntil(lambda: "из потока" in window.console.toPlainText(), timeout=3000)
 
 
 def test_paths_for_the_window(tmp_path):

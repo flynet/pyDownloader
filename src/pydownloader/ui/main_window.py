@@ -13,7 +13,7 @@ import subprocess
 from pathlib import Path
 from typing import cast
 
-from PySide6.QtCore import QByteArray, Qt, QThread
+from PySide6.QtCore import QByteArray, QObject, Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -57,6 +57,16 @@ SETTINGS_BUTTON = "⚙ Настройки"
 CLOSE_CONFIRM = "Идёт загрузка. Отменить загрузку и выйти?"
 
 
+class LogBridge(QObject):
+    """Forwards log lines from the worker threads to the console in the GUI thread.
+
+    The logging handler may be called from the sniffer or the download thread;
+    emitting a signal keeps every widget change in the GUI thread (spec 4.4).
+    """
+
+    line = Signal(str)
+
+
 class MainWindow(QMainWindow):
     """One window with the cards and the console."""
 
@@ -83,6 +93,8 @@ class MainWindow(QMainWindow):
         self.ffmpeg: Ffmpeg | None = None
         #: Update check: created by ``app.py`` after the window, wired to the dialog.
         self.updater: UpdateMonitor | None = None
+        #: Bridge of the log handler to the console, created with the window.
+        self.log_bridge: LogBridge | None = None
 
         self.setObjectName("central")
         self.setWindowTitle(f"{APP_TITLE} {VERSION} — {settings.download_dir}")

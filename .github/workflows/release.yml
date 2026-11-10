@@ -1,0 +1,71 @@
+name: Release
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # the tags are needed for git describe
+
+      - uses: astral-sh/setup-uv@v6
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --frozen --extra dev
+
+      - name: Tests
+        run: uv run pytest -q
+
+      - name: Version from the tag
+        id: version
+        shell: bash
+        run: echo "version=$(git describe --tags --abbrev=0 | sed 's/^v//')" >> "$GITHUB_OUTPUT"
+
+      - name: Inno Setup
+        shell: pwsh
+        run: |
+          $iscc = Get-Command iscc.exe -ErrorAction SilentlyContinue
+          if (-not $iscc) {
+            choco install innosetup -y
+          }
+
+      - name: Build the program and the installer
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File build.ps1
+
+      - name: Check the artifacts
+        shell: pwsh
+        run: |
+          $setup = "dist/install/PyDownloader-Setup-${{ steps.version.outputs.version }}.exe"
+          if (-not (Test-Path $setup)) { throw "installer not found: $setup" }
+          Get-ChildItem dist/install
+
+      - name: Release notes from CHANGELOG
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $text = Get-Content CHANGELOG.md -Raw
+          $pattern = '(?ms)^## \[' + [regex]::Escape($version) + '\].*?(?=^## |\z)'
+          $match = [regex]::Match($text, $pattern)
+          $body = if ($match.Success) { $match.Value.Trim() } else { "См. CHANGELOG.md" }
+          New-Item -ItemType Directory -Force build | Out-Null
+          Set-Content -Path build/release_notes.md -Value $body -Encoding utf8
+
+      - name: Publish the release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: build/release_notes.md
+          files: |
+            dist/install/PyDownloader-Setup-${{ steps.version.outputs.version }}.exe
+            dist/install/PyDownloader-Setup-${{ steps.version.outputs.version }}.exe.sha256

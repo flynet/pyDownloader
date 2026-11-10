@@ -32,13 +32,22 @@ Live-трансляции, DRM-защищённый контент (Widevine / P
 ## Сборка
 
 ```powershell
-uv venv --python 3.12
-uv pip install -e ".[dev]"
-winget install -e --id InnoSetup.InnoSetup   # нужно для установщика
-.\build.ps1                                    # PyInstaller + ISCC
+uv sync --extra dev
+winget install -e --id JRSoftware.InnoSetup   # нужно для установщика
+.\build.ps1                                    # версия, PyInstaller, ISCC, SHA-256
 ```
 
-Результат: `dist/PyDownloader-Setup-<версия>.exe` и файл `.sha256`.
+Результат: `dist/PyDownloader/PyDownloader.exe` (папка программы, FFmpeg внутри
+`bin`), `dist/install/PyDownloader-Setup-<версия>.exe` и файл `.sha256`.
+Версия берётся из `git describe --tags` (в разработке `0.0.0-dev`).
+
+## Установка
+
+`PyDownloader-Setup-<версия>.exe` ставит программу в `Program Files\PyDownloader`,
+создаёт ярлыки и предлагает запустить её. Тихая установка:
+`PyDownloader-Setup-<версия>.exe /SILENT /SUPPRESSMSGBOXES /CLOSEAPPLICATIONS`.
+При удалении настройки и логи (`%APPDATA%`, `%LOCALAPPDATA%`) удаляются только
+по подтверждению в диалоге.
 
 ## Обновления
 
