@@ -54,10 +54,15 @@ def parse_hls_byterange(value: str, previous_end: int | None) -> ByteRange:
 
 
 def content_range_total(value: str) -> int | None:
-    """Total file size from a ``Content-Range`` header, ``None`` if it is absent."""
+    """Total file size from a ``Content-Range`` header, ``None`` if it is absent.
+
+    ``bytes 0-1/12345678`` gives 12345678. ``bytes 0-1/*`` (the server does not
+    disclose the size) gives ``None``.
+    """
     match = _CONTENT_RANGE_RE.match(value)
     if match:
-        return int(match.group(3))
+        total = match.group(3)
+        return int(total) if total.isdigit() else None
     match = _CONTENT_RANGE_TOTAL_RE.match(value)
     if match:
         return int(match.group(1))

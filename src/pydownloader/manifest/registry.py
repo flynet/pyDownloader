@@ -16,6 +16,7 @@ from itertools import count
 from urllib.parse import urlsplit
 
 from pydownloader.manifest.detector import Candidate, SourceKind
+from pydownloader.manifest.quality import Choice
 from pydownloader.util.urls import base_dir_url, normalize_url
 
 MAX_PATH_LIMIT = 260
@@ -37,6 +38,8 @@ class SourceEntry:
     duration: float | None = None
     range_requests: int = 1
     skipped: bool = False
+    #: Selected video/audio track, filled by the pipeline after the manifest is parsed.
+    choice: Choice | None = None
 
     def display_size(self) -> str:
         if self.size is None:
@@ -79,6 +82,10 @@ class SourceRegistry:
 
     def get(self, normalized: str) -> SourceEntry | None:
         return self._entries.get(normalized)
+
+    def remove(self, normalized: str) -> None:
+        """Drop an entry that was registered before the filters rejected it."""
+        self._entries.pop(normalized, None)
 
     def is_fragment_of_known(self, url: str) -> bool:
         """A segment of an already registered manifest (``.m4s``/``.mp4`` under its directory)."""

@@ -45,6 +45,27 @@ def build_headers(page_url: str, user_agent: str | None = None) -> dict[str, str
     return headers
 
 
+def mp4_size_skip(
+    url: str,
+    content_type: str | None,
+    content_length: int | None,
+    min_mp4_size: int,
+) -> str | None:
+    """Reason to log when the request is an MP4 below the size threshold (spec 5.1).
+
+    Returns ``None`` when the request is not an MP4 or the size is unknown,
+    so the caller reports the skip in the console.
+    """
+    ext = path_extension(url)
+    if ext in FRAGMENT_EXTENSIONS or not url:
+        return None
+    if not (normalize_content_type(content_type) == MP4_CONTENT_TYPE or ext == ".mp4"):
+        return None
+    if content_length is not None and content_length < min_mp4_size:
+        return "файл меньше порога, не видео"
+    return None
+
+
 def classify(
     url: str,
     content_type: str | None = None,
@@ -94,10 +115,9 @@ def classify(
             content_type=content_type,
         )
 
-    is_mp4 = normalized_type == MP4_CONTENT_TYPE or ext == ".mp4"
-    if not is_mp4:
+    if mp4_size_skip(url, content_type, content_length, min_mp4_size):
         return None
-    if content_length is not None and content_length < min_mp4_size:
+    if not (normalized_type == MP4_CONTENT_TYPE or ext == ".mp4"):
         return None
     return Candidate(
         url=url,
