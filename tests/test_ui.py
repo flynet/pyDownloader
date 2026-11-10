@@ -20,7 +20,13 @@ from pydownloader.ui.main_window import (
     geometry_from_hex,
     geometry_hex,
 )
-from pydownloader.ui.settings_panel import SettingsDialog
+from pydownloader.ui.settings_panel import (
+    DIALOG_HEIGHT_RATIO,
+    DIALOG_WIDTH_RATIO,
+    MIN_DIALOG_HEIGHT,
+    MIN_DIALOG_WIDTH,
+    SettingsDialog,
+)
 from pydownloader.ui.theme import apply_theme, qss_for
 
 
@@ -311,6 +317,24 @@ def test_settings_dialog_writes_the_values(qtbot, tmp_path):
     assert target.min_mp4_size == 3 * 1024 * 1024
     assert target.theme == "light"
     assert not target.auto_update
+
+
+def test_settings_dialog_is_wide_and_resizable(tmp_path: Path, qtbot):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    window.resize(1000, 800)
+    long_path = r"C:\Users\Home\Videos\Очень длинное название папки для скачанных видео"
+    dialog = SettingsDialog(Settings(download_dir=long_path), window)
+    qtbot.addWidget(dialog)
+
+    assert dialog.width() == max(MIN_DIALOG_WIDTH, round(window.width() * DIALOG_WIDTH_RATIO))
+    assert dialog.height() == max(
+        MIN_DIALOG_HEIGHT, round(window.height() * DIALOG_HEIGHT_RATIO)
+    )
+    assert dialog.isSizeGripEnabled()
+    assert dialog.maximumWidth() > dialog.width()
+    assert dialog.download_edit.text() == long_path
+    assert dialog.download_edit.toolTip() == long_path
 
 
 def test_themes_have_stylesheets():
