@@ -13,8 +13,10 @@ import asyncio
 import contextlib
 import queue
 import sys
+import time
 from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import Any
 
 from playwright.sync_api import BrowserContext, sync_playwright
 from PySide6.QtCore import QThread, Signal
@@ -30,13 +32,24 @@ from pydownloader.download.http import (
     merge_cookies,
 )
 from pydownloader.manifest.pipeline import Outcome, ProbeHeight, process_event
-from pydownloader.manifest.quality import QualityFilter
+from pydownloader.manifest.quality import Choice, QualityFilter
 from pydownloader.manifest.registry import SourceRegistry
+from pydownloader.youtube.api import (
+    API_KEY,
+    CLIENT_NAME,
+    CLIENT_VERSION,
+    PAGE_FETCH_SCRIPT,
+    payload_template,
+    video_id_from_url,
+)
+from pydownloader.youtube.player import parse_player, qualities, reason_of
 
 #: Milliseconds of one pump step: the handlers fire while this call is running.
 PUMP_MS = 200
 #: How long a worker waits for cookies read in the sniffer thread.
 COOKIES_TIMEOUT = 10.0
+#: Pause between two inner-tube player requests of the same watch page, in seconds.
+YOUTUBE_ATTEMPT_INTERVAL = 3.0
 
 
 class SnifferThread(QThread):
@@ -69,6 +82,10 @@ class SnifferThread(QThread):
         self._stop = False
         self._context: BrowserContext | None = None
         self._last_page: tuple[str, str] | None = None
+        self._yt_last_id: str | None = None
+        self._yt_failed_id: str | None = None
+        self._yt_last_attempt = 0.0
+        self._cached_ua = ""
 
     def stop(self) -> None:
         """Ask the loop to finish; the browser is closed at the end of ``run``."""
@@ -117,6 +134,7 @@ class SnifferThread(QThread):
                         self.message.emit(f"Страница недоступна: {exc}")
                         continue
                     self._drain(context)
+                    self._capture_youtube(context)
                 context.close()
         except Exception as exc:
             self.failed.emit(f"Браузер: {exc}")
@@ -126,6 +144,9 @@ class SnifferThread(QThread):
     def _on_response(self, response) -> None:
         """Handler of ``context.on("response")``: only enqueue, do nothing blocking."""
         try:
+            # Media is fetched with GET; a POST body (YouTube SABR/UMP) is not a source.
+            if response.request.method not in ("GET", "HEAD"):
+                return
             page = response.frame.page
             headers = dict(response.request.headers)
             response_headers = dict(response.headers)
@@ -147,29 +168,141 @@ class SnifferThread(QThread):
             return
 
     def _drain(self, context: BrowserContext) -> None:
-        """Process the queued events and cookie requests in the pump loop."""
+        """Process the queued events and cookie requests in the pump loop.
+
+        The events of one burst are handled in two passes: every URL is recorded
+        first, so a manifest is processed with the signed URLs of its variants and
+        segments already known. Families are synthesized last, once it is clear
+        that no playlist owns their directory.
+        """
+        events: list[ResponseEvent] = []
         while True:
             try:
                 item = self._events.get_nowait()
             except queue.Empty:
-                return
+                break
             if isinstance(item, CookieRequest):
                 item.cookies = context.cookies(item.url)
                 item.event.set()
                 continue
-            event = item
+            events.append(item)
+        for event in events:
             if event.page is not None:
                 with contextlib.suppress(Exception):
                     event.page_title = event.page.title()
+                # The registry may keep the event for family synthesis: do not
+                # hold a Playwright page (and its closed tab) alive.
+                event.page = None
             page_key = (event.page_url, event.page_title)
             if page_key != self._last_page:
                 self._last_page = page_key
                 self.page_changed.emit(event.page_url, event.page_title)
+            self.registry.note_response(event)
+        for event in events:
             outcomes = process_event(
                 event, self.registry, self._fetch, self.quality, self.probe_height
             )
             for outcome in outcomes:
                 self._report(outcome)
+        for family in self.registry.synthesize_families():
+            self.source_found.emit(family)
+            self.message.emit(
+                f"Найдена HLS-группа сегментов ({len(family.recorded)} файлов): {family.url}"
+            )
+
+    def _capture_youtube(self, context: BrowserContext) -> None:
+        """Ask the inner-tube player API from the watch page (server-side ABR workaround).
+
+        The web player serves media over SABR/UMP, so the response listener never
+        sees a downloadable URL. The VISIONOS client still answers with classic
+        signed URLs; the request is made by the page itself, so cookies and
+        ``visitorData`` are present and the bot check is not triggered.
+        """
+        target: tuple[Any, str, str] | None = None
+        for page in context.pages:
+            try:
+                page_url = page.url
+            except Exception:
+                continue
+            video_id = video_id_from_url(page_url)
+            if video_id and video_id != self._yt_last_id:
+                target = (page, page_url, video_id)
+                break
+        if target is None:
+            return
+        now = time.monotonic()
+        if now - self._yt_last_attempt < YOUTUBE_ATTEMPT_INTERVAL:
+            return
+        self._yt_last_attempt = now
+        page, page_url, video_id = target
+        try:
+            raw = page.evaluate(
+                PAGE_FETCH_SCRIPT,
+                {
+                    "key": API_KEY,
+                    "clientName": CLIENT_NAME,
+                    "clientVersion": CLIENT_VERSION,
+                    "payloadTemplate": payload_template(video_id),
+                    "visitor": "",
+                },
+            )
+        except Exception as exc:
+            if self._yt_failed_id != video_id:
+                self._yt_failed_id = video_id
+                self.message.emit(f"YouTube: {exc}")
+            return
+        if not raw:
+            return
+        player = parse_player(raw)
+        if not player.ok:
+            # The page may still be loading (no visitorData yet -> bot check):
+            # retry silently, report the reason once per video.
+            if self._yt_failed_id != video_id:
+                self._yt_failed_id = video_id
+                self.message.emit(f"YouTube: {reason_of(player)}")
+            return
+        heights = qualities(player)
+        height = heights[0] if heights else None
+        canonical = f"yt:{video_id}"
+        existing = self.registry.get(canonical)
+        if existing is not None:
+            existing.payload = raw
+            existing.height = height
+            existing.choice = Choice(kind="mp4", url=page_url, height=height)
+            self.message.emit(f"YouTube: поток обновлён — {existing.title or video_id}")
+            self._yt_last_id = video_id
+            self._yt_failed_id = None
+            return
+        ua = self._user_agent(page)
+        headers = capture_headers({"user-agent": ua} if ua else {}, page_url)
+        result = self.registry.add_custom(
+            kind="youtube",
+            url=page_url,
+            normalized=canonical,
+            title=player.title or video_id,
+            page_url=page_url,
+            headers=headers,
+            height=height,
+            duration=player.duration,
+            payload=raw,
+        )
+        entry = result.entry
+        entry.choice = Choice(kind="mp4", url=page_url, height=height)
+        self._yt_last_id = video_id
+        self._yt_failed_id = None
+        if result.is_new:
+            quality = ", ".join(f"{value}p" for value in heights) or "неизвестно"
+            self.message.emit(f"Найден YouTube ({quality}): {entry.title}")
+            self.source_found.emit(entry)
+
+    def _user_agent(self, page) -> str:
+        if self._cached_ua:
+            return self._cached_ua
+        try:
+            self._cached_ua = str(page.evaluate("navigator.userAgent"))
+        except Exception:
+            return ""
+        return self._cached_ua
 
     def _report(self, outcome: Outcome) -> None:
         if outcome.message:
@@ -202,3 +335,21 @@ def cookies_for(sniffer: SnifferThread | None, url: str) -> str:
     if sniffer is None:
         return ""
     return cookie_header(sniffer.request_cookies(url))
+
+
+def browser_cookies(
+    sniffer: SnifferThread | None, urls: Sequence[str]
+) -> list[Mapping[str, object]]:
+    """Cookies of the browser context for several URLs (page and CDN host).
+
+    The download needs the cookies of both the page and the CDN: the page
+    cookie carries the session, the CDN cookie the signature of the stream.
+    """
+    if sniffer is None:
+        return []
+    cookies: list[Mapping[str, object]] = []
+    for url in urls:
+        if not url:
+            continue
+        cookies.extend(sniffer.request_cookies(url))
+    return cookies

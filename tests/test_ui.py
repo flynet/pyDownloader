@@ -224,13 +224,13 @@ def test_settings_dialog_writes_the_values(qtbot, tmp_path):
     dialog.threads_box.setValue(4)
     dialog.height_box.setValue(720)
     dialog.size_box.setValue(3)
-    dialog.theme_box.setCurrentText("dark")
+    dialog.theme_box.setCurrentIndex(dialog.theme_box.findData("light"))
     dialog.update_check.setChecked(False)
     target = dialog.apply_to(Settings())
     assert target.threads == 4
     assert target.target_height == 720
     assert target.min_mp4_size == 3 * 1024 * 1024
-    assert target.theme == "dark"
+    assert target.theme == "light"
     assert not target.auto_update
 
 

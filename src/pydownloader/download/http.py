@@ -148,7 +148,12 @@ def fetch_bytes(
         raise FetchError(f"Сетевая ошибка: {exc}") from exc
     if response.status_code >= 400:
         raise FetchError(f"HTTP {response.status_code} для {url}")
-    return response.content
+    body = response.content
+    if byte_range is not None and response.status_code == 200 and len(body) > byte_range.length:
+        # The server ignored Range and sent the whole file: cut the requested part
+        # (a YouTube chunk or an EXT-X-BYTERANGE would otherwise be duplicated).
+        return body[byte_range.start : byte_range.end + 1]
+    return body
 
 
 def head_info(

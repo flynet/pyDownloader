@@ -11,7 +11,7 @@ Every outcome carries the console message for the UI console panel.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal
 
 from pydownloader.browser.events import ResponseEvent
@@ -119,6 +119,8 @@ def _process_manifest(
 ) -> list[Outcome]:
     result = registry.add_manifest(candidate)
     if not result.is_new:
+        if result.reason:
+            return [Outcome("fragment", result.entry, f"{result.reason}: {candidate.url}")]
         return [Outcome("duplicate", result.entry, f"Уже найден: {result.entry.url}")]
     entry = result.entry
     text = fetch(candidate.url, candidate.headers)
@@ -156,7 +158,7 @@ def _dash_outcomes(
     entry.choice = choice
     entry.height = choice.height
     entry.duration = mpd.media_presentation_duration
-    registry.remember_prefix(entry.url)
+    registry.remember_prefix(entry.url, entry)
     return [Outcome("show", entry, f"Найден DASH-поток {entry.height}p: {entry.url}")]
 
 
@@ -182,7 +184,7 @@ def _hls_outcomes(
             return [Outcome("parse-error", None, f"Манифест не разобран: {entry.url}")]
         entry.choice = choice
         entry.duration = sum(s.duration for s in playlist.segments)
-        registry.remember_prefix(entry.url)
+        registry.remember_prefix(entry.url, entry)
         return [Outcome("show", entry, f"Найден HLS-поток (разрешение неизвестно): {entry.url}")]
 
     decision = quality.decide_hls(playlist)
@@ -191,7 +193,14 @@ def _hls_outcomes(
         return [Outcome("skip-quality", None, decision.message)]
     choice = decision.choice
     # A master playlist has no #EXT-X-ENDLIST, so live is decided by the selected variant.
-    variant_text = fetch(choice.url, entry.headers)
+    # A CDN that signs every path individually rejects the URL inherited from the
+    # master, so the exact variant URL seen in browser traffic is preferred. The
+    # choice keeps it, so the download plan parses the variant against its own query.
+    registry.adopt_pending(choice.url, entry)
+    variant_url = entry.recorded_url(choice.url) or choice.url
+    audio_url = entry.recorded_url(choice.audio_url) if choice.audio_url else None
+    choice = replace(choice, url=variant_url, audio_url=audio_url or choice.audio_url)
+    variant_text = fetch(variant_url, entry.headers)
     if variant_text is None:
         registry.remove(entry.normalized)
         return [Outcome("fetch-error", None, f"Не получен манифест: {choice.url}")]
@@ -210,7 +219,7 @@ def _hls_outcomes(
     entry.choice = choice
     entry.height = choice.height
     entry.duration = sum(s.duration for s in variant.segments)
-    registry.remember_prefix(choice.url)
+    registry.remember_prefix(choice.url, entry)
     if choice.audio_url:
-        registry.remember_prefix(choice.audio_url)
+        registry.remember_prefix(choice.audio_url, entry)
     return [Outcome("show", entry, f"Найден HLS-поток {entry.height}p: {entry.url}")]

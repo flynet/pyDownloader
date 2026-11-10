@@ -15,6 +15,7 @@ from pydownloader.download.http import (
     head_info,
     merge_cookies,
 )
+from pydownloader.util.ranges import ByteRange
 
 PAGE = "https://site.example/watch/42"
 
@@ -142,6 +143,19 @@ def test_fetch_text_network_error_is_fetch_error(client, monkeypatch):
 def test_fetch_bytes_returns_content(client):
     client.response = FakeResponse(200, content=b"segment bytes")
     assert fetch_bytes("https://cdn.example.com/seg.ts", {"Referer": PAGE}) == b"segment bytes"
+
+
+def test_fetch_bytes_slices_when_the_server_ignores_range(client):
+    client.response = FakeResponse(200, content=b"0123456789")
+    body = fetch_bytes("https://cdn.example.com/v", {}, ByteRange(start=2, length=4))
+    assert body == b"2345"
+
+
+def test_fetch_bytes_keeps_a_short_200_body(client):
+    # Some CDNs answer a Range with 200 and exactly the requested part.
+    client.response = FakeResponse(200, content=b"2345")
+    body = fetch_bytes("https://cdn.example.com/v", {}, ByteRange(start=2, length=4))
+    assert body == b"2345"
 
 
 def test_head_info_size_and_ranges(client):

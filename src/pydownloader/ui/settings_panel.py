@@ -29,6 +29,12 @@ from pydownloader.config.settings import THEMES, Settings, ThemeName
 BROWSE_CAPTION = "Папка для скачанных видео"
 MIN_THREADS = 1
 MAX_THREADS = 16
+#: Localized names of the theme values (the value itself stays in the settings).
+THEME_LABELS: dict[str, str] = {
+    "dark": "Тёмная",
+    "light": "Светлая",
+    "system": "Системная",
+}
 
 
 class SettingsDialog(QDialog):
@@ -67,8 +73,9 @@ class SettingsDialog(QDialog):
         self._form.addRow("Минимальный MP4 (МБ):", self.size_box)
 
         self.theme_box = QComboBox()
-        self.theme_box.addItems(list(THEMES))
-        self.theme_box.setCurrentText(settings.theme)
+        for name in THEMES:
+            self.theme_box.addItem(THEME_LABELS[name], name)
+        self.theme_box.setCurrentIndex(max(0, self.theme_box.findData(settings.theme)))
         self._form.addRow("Тема:", self.theme_box)
 
         self.update_check = QCheckBox("Проверять обновления")
@@ -107,6 +114,6 @@ class SettingsDialog(QDialog):
         target.threads = self.threads_box.value()
         target.target_height = self.height_box.value()
         target.min_mp4_size = self.size_box.value() * 1024 * 1024
-        target.theme = cast(ThemeName, self.theme_box.currentText())
+        target.theme = cast(ThemeName, self.theme_box.currentData())
         target.auto_update = self.update_check.isChecked()
         return target

@@ -7,8 +7,9 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
 
-ThemeName = Literal["system", "light", "dark"]
-THEMES: tuple[ThemeName, ...] = ("system", "light", "dark")
+ThemeName = Literal["dark", "light", "system"]
+#: Dark first: it is the default, the system theme is the fallback choice.
+THEMES: tuple[ThemeName, ...] = ("dark", "light", "system")
 
 DEFAULT_THREADS = 6
 DEFAULT_TARGET_HEIGHT = 1080
@@ -21,7 +22,7 @@ class Settings:
     download_dir: str = ""
     threads: int = DEFAULT_THREADS
     auto_update: bool = True
-    theme: ThemeName = "system"
+    theme: ThemeName = "dark"
     target_height: int = DEFAULT_TARGET_HEIGHT
     min_mp4_size: int = DEFAULT_MIN_MP4_SIZE
     profile_in_downloads: bool = False
@@ -46,7 +47,7 @@ def load_settings(path: Path) -> Settings:
         if type(value) is type(default):
             setattr(settings, key, value)
     if settings.theme not in THEMES:
-        settings.theme = "system"
+        settings.theme = "dark"
     settings.threads = max(1, min(32, int(settings.threads)))
     settings.target_height = max(0, int(settings.target_height))
     settings.min_mp4_size = max(0, int(settings.min_mp4_size))

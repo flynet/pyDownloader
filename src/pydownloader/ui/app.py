@@ -64,7 +64,13 @@ def app_root() -> Path | None:
 
 
 def make_worker(settings: Settings, ffmpeg: Ffmpeg, sniffer: SnifferThread | None) -> QueueWorker:
-    return QueueWorker(sniffer, ffmpeg, settings.download_dir, parallel=settings.threads)
+    return QueueWorker(
+        sniffer,
+        ffmpeg,
+        settings.download_dir,
+        parallel=settings.threads,
+        target_height=settings.target_height,
+    )
 
 
 def make_sniffer(

@@ -45,7 +45,7 @@ STAGE_LABELS = {
     "mux": "склейка",
 }
 
-BADGE_COLORS = {"hls": "#3b7fd7", "dash": "#7b5cc7", "mp4": "#2e7d32"}
+BADGE_COLORS = {"hls": "#3b7fd7", "dash": "#7b5cc7", "mp4": "#2e7d32", "youtube": "#c4302b"}
 
 
 def format_size(size: int | None) -> str:
