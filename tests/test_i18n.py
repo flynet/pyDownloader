@@ -9,7 +9,12 @@ from string import Formatter
 import pytest
 from PySide6.QtWidgets import QLabel
 
-from pydownloader.config.settings import Settings, load_settings, save_settings
+from pydownloader.config.settings import (
+    DEFAULT_MP3_BITRATE,
+    Settings,
+    load_settings,
+    save_settings,
+)
 from pydownloader.i18n import (
     DEFAULT_LANGUAGE,
     LANGUAGE_NAMES,
@@ -56,6 +61,7 @@ def test_language_names_are_written_in_their_own_language():
     assert LANGUAGE_NAMES == {
         "en": "English",
         "ru": "Русский",
+        "uk": "Українська",
         "zh": "中文",
         "fr": "Français",
         "de": "Deutsch",
@@ -90,6 +96,17 @@ def test_tr_fills_named_parameters():
     assert tr("mf_url_recorded", key="/a/seg.ts", url="https://cdn/a/seg.ts?sign=1") == (
         "Recorded URL /a/seg.ts -> https://cdn/a/seg.ts?sign=1"
     )
+
+
+def test_ukrainian_switches_the_texts():
+    """The console, the tray and the settings read the Ukrainian catalog (spec 4.3)."""
+    assert set_language("uk") == DEFAULT_LANGUAGE
+    assert current_language() == "uk"
+    assert tr("window_open_browser") == CATALOG["uk"]["window_open_browser"]
+    assert tr("settings_audio_only") == CATALOG["uk"]["settings_audio_only"]
+    assert tr("tray_quit") == CATALOG["uk"]["tray_quit"]
+    set_language("ru")
+    assert tr("window_open_browser") == CATALOG["ru"]["window_open_browser"]
 
 
 def test_settings_store_the_language(tmp_path: Path):
@@ -130,6 +147,21 @@ def test_settings_keep_the_browser_choice(tmp_path: Path):
     body["browser_name"] = "opera"
     path.write_text(json.dumps(body), encoding="utf-8")
     assert load_settings(path).browser_name == "auto"
+
+
+def test_settings_keep_the_audio_mode(tmp_path: Path):
+    path = tmp_path / "settings.json"
+    save_settings(Settings(mp3_bitrate=128, audio_only=True, target_height=720), path)
+    back = load_settings(path)
+    # the audio mode, the bitrate and the quality preset are saved as the user set them
+    assert back.mp3_bitrate == 128
+    assert back.audio_only
+    assert back.target_height == 720
+    # an edited file names a bitrate FFmpeg does not accept: the middle choice
+    body = json.loads(path.read_text(encoding="utf-8"))
+    body["mp3_bitrate"] = 999
+    path.write_text(json.dumps(body), encoding="utf-8")
+    assert load_settings(path).mp3_bitrate == DEFAULT_MP3_BITRATE
 
 
 def test_settings_dialog_shows_the_languages(qtbot):

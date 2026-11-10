@@ -1,9 +1,10 @@
 """Language of the interface and of the log lines (spec 4.3, 8.1).
 
 Every user-facing text is a key of the catalog in ``locales``, so the program
-can run in English, Russian, Chinese, French and German. The language comes
-from the settings and is applied once at startup: the text of a widget is
-written when the widget is built, so changing the language needs a restart.
+can run in English, Russian, Ukrainian, Chinese, French and German. The
+language comes from the settings and is applied once at startup: the text of a
+widget is written when the widget is built, so changing the language needs a
+restart.
 
 ``tr("card_download")`` returns the text in the current language; the
 placeholders of the template are filled with the keyword arguments:
@@ -16,16 +17,17 @@ from typing import Literal
 
 from pydownloader.locales import CATALOG
 
-Language = Literal["en", "ru", "zh", "fr", "de"]
+Language = Literal["en", "ru", "uk", "zh", "fr", "de"]
 
 #: English is the default, the rest follow it in the order of the settings combo.
 DEFAULT_LANGUAGE: Language = "en"
-SUPPORTED_LANGUAGES: tuple[Language, ...] = ("en", "ru", "zh", "fr", "de")
+SUPPORTED_LANGUAGES: tuple[Language, ...] = ("en", "ru", "uk", "zh", "fr", "de")
 #: The name of a language is always written in its own language, so the combo
 #: is readable whatever the current language is.
 LANGUAGE_NAMES: dict[Language, str] = {
     "en": "English",
     "ru": "Русский",
+    "uk": "Українська",
     "zh": "中文",
     "fr": "Français",
     "de": "Deutsch",

@@ -39,6 +39,25 @@ on `main`.
   Playwright is the only browser that loads the bundled ad blocker, and the
   blocker can be switched off. A User agent field imitates another device, an
   empty field takes the Chrome string of the version that is launched.
+- Audio sources are saved as `.mp3` (spec 5.2 p.4): a source is recognised as
+  audio by the content type (`audio/mpeg`, `audio/aac`, ...), by the extension
+  of the URL (`.mp3`, `.ogg`, `.flac`, ...), by the `CODECS` list of an HLS
+  master with no `RESOLUTION`, by the FFmpeg probe of a playlist that sees an
+  audio stream without a video stream, and by a DASH manifest of audio
+  representations only. The card shows an MP3 badge, the console line names the
+  source as sound, the file is written as `.mp3`: a direct MP3 is copied, a
+  stream of segments is re-encoded with `libmp3lame` at the bitrate chosen in
+  the settings (128, 192, 320 kbit/s, 192 is the default). The mode
+  «Audio only (MP3)» hides video sources, so a music site gives only the sound.
+- Settings: the quality is a dropdown of the three presets of the spec,
+  1080p / 720p / 480p, the match is exact; a resolution saved in an edited
+  `settings.json` gets its own entry, so saving the dialog does not change the
+  value the user had.
+- The interface and the log lines are localized in Ukrainian (spec 4.3): the
+  language is chosen in Settings → Language as «Українська», the texts of the
+  cards, the console, the tray, the settings dialog, the update dialog and the
+  log messages follow the choice, the browser gets the `uk-UA` locale for
+  `Accept-Language`, and a key missing in one language falls back to English.
 
 ### Fixed
 - `build.ps1` writes the `.sha256` file of the installer without a byte-order

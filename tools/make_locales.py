@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 GROUPS = ("ui", "browser", "download", "manifest", "update")
-LANGUAGES = ("en", "ru", "zh", "fr", "de")
+LANGUAGES = ("en", "ru", "uk", "zh", "fr", "de")
 OUT = Path("src") / "pydownloader" / "locales"
 
 
