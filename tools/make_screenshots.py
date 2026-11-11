@@ -38,10 +38,10 @@ OUT = Path("assets") / "screenshots"
 DOWNLOADS = Path("D:\\Videos")
 #: Version printed in the console lines: the screenshots are for the release page,
 #: so the tag is written out and stays stable between runs.
-DISPLAY_VERSION = "0.3.0"
+DISPLAY_VERSION = "0.4.0"
 WINDOW_SIZE = (1060, 860)
-#: Splitter sizes of the screenshot: the four demo cards and a dozen console lines.
-CARD_SECTION_HEIGHT = (640, 220)
+#: Splitter sizes of the screenshot: the five demo cards and a dozen console lines.
+CARD_SECTION_HEIGHT = (730, 130)
 UI_FONT = "Segoe UI"
 #: The offscreen platform has no font database: the letters become boxes
 #: until the fonts of Windows are registered in the application.
@@ -87,6 +87,16 @@ def demo_cards() -> list[SourceEntry]:
             size=84_000_000,
         ),
         SourceEntry(
+            id="mp3",
+            kind="mp4",
+            url="https://cdn.example.com/audio/track.mp3",
+            normalized="https://cdn.example.com/audio/track.mp3",
+            title="Example: SoundCloud audio",
+            duration=212.0,
+            size=5_200_000,
+            is_audio=True,
+        ),
+        SourceEntry(
             id="yt",
             kind="youtube",
             url="https://www.youtube.com/watch?v=dQw4w9WgXcQ",
@@ -113,12 +123,15 @@ def fill_console(window: MainWindow) -> None:
     )
     console.show_info(tr("window_shown", url="https://cdn.example.com/720p_1080p/master.m3u8"))
     console.show_info(tr("mf_found_mp4", quality="80.1 MB", url="https://cdn.example.com/video/clip.mp4"))
+    console.show_info(tr("mf_found_audio", url="https://cdn.example.com/audio/master.m3u8"))
+    console.show_info(tr("mf_found_mp4", quality="MP3", url="https://cdn.example.com/audio/track.mp3"))
     console.show_warning(tr("mf_live_skipped", url="https://cdn.example.com/live/master.m3u8"))
     console.show_warning(tr("dl_drm_detected", message=tr("mf_drm_message"), system="Widevine"))
     console.show_info(
         tr("dl_variant_fallback", height=1080, fallback=720, url="https://cdn.example.com/720p/master.m3u8")
     )
     console.show_info(tr("window_finished", path=DOWNLOADS / "clip_1080p.mp4"))
+    console.show_info(tr("window_finished", path=DOWNLOADS / "sound.mp3"))
 
 
 def fill_cards(window: MainWindow) -> None:
@@ -131,7 +144,9 @@ def fill_cards(window: MainWindow) -> None:
     cards[1].set_progress(204, 340, 3.8)
     cards[2].set_result(str(DOWNLOADS / "clip_1080p.mp4"))
     window.out_paths["mp4"] = DOWNLOADS / "clip_1080p.mp4"
-    cards[3].set_error("HTTP 410: the signed CDN link expired")
+    # The audio card keeps the MP3 badge of an audio source (spec 5.2 p.4).
+    cards[3].set_state("new")
+    cards[4].set_error("HTTP 410: the signed CDN link expired")
 
 
 def shot(widget, name: str) -> None:
