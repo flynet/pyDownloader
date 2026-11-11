@@ -52,6 +52,19 @@ class ResponseEvent:
 
 
 @dataclass
+class NavigateRequest:
+    """Asynchronous request to open an address in the browser window (spec 4.2 p.4).
+
+    The page object of Playwright belongs to the event loop of the sniffer thread, so
+    the GUI thread only puts the address in the queue; the pump loop opens the page
+    there. Nothing is waited for: the address goes to the browser, and the responses
+    of the page are read by the same listener that reads any other page.
+    """
+
+    url: str
+
+
+@dataclass
 class CookieRequest:
     """Asynchronous request for ``context.cookies(url)`` handled by the pump loop.
 

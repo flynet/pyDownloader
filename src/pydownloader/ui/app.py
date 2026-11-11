@@ -13,6 +13,7 @@ so every console line and every window text uses the chosen language (spec 8.1).
 from __future__ import annotations
 
 import sys
+import tempfile
 from pathlib import Path
 
 from PySide6.QtCore import QProcess, QThread, Signal
@@ -150,10 +151,16 @@ def create_window(app: QApplication, settings: Settings, paths: Paths) -> MainWi
     bridge.line.connect(window.console.append_line)
     window.log_bridge = bridge
     setup_logging(paths.log_file, bridge.line.emit)
-    # The top panel buttons and the tray menu ask for the browser, the browser
-    # thread itself is owned here (spec 4.3).
-    window.browser_open_request.connect(lambda: open_browser(window, settings, paths))
-    window.browser_close_request.connect(lambda: close_browser(window))
+    # The top panel button and the tray menu ask for the browser, the browser
+    # thread itself is owned here (spec 4.3): the one button opens the window and
+    # closes it, so the action is chosen by the state of the thread.
+    window.browser_toggle_request.connect(lambda: toggle_browser(window, settings, paths))
+    # «Go» of the address field: with the browser down, the thread starts on the page
+    # of the link; the browser button of the window shows «Close browser» when the
+    # thread is up (spec 4.2 p.4).
+    window.browser_open_request.connect(
+        lambda url: open_url_in_browser(window, settings, paths, url)
+    )
     window.logger.info(tr("app_started", version=VERSION, dir=settings.download_dir))
     window.logger.info(tr("app_log_file", path=paths.log_file))
     window.logger.info(tr("app_data_dir", path=paths.data_dir))
@@ -164,7 +171,9 @@ def create_window(app: QApplication, settings: Settings, paths: Paths) -> MainWi
     return window
 
 
-def start_browser(window: MainWindow, settings: Settings, paths: Paths) -> None:
+def start_browser(
+    window: MainWindow, settings: Settings, paths: Paths, url: str = ""
+) -> None:
     """Launch the browser thread, downloading Chromium when it is needed.
 
     The bundled ad blocker is loaded only by the Chromium downloaded by
@@ -211,7 +220,46 @@ def start_browser(window: MainWindow, settings: Settings, paths: Paths) -> None:
         extension = None
     window.browser_choice = browser
     window.extension_dir = extension
-    launch_sniffer(window, settings, paths, browser, extension, window.last_url)
+    target = url if url else window.last_url
+    if url:
+        # The page of the field is the page the browser opens on, and «Open browser»
+        # later opens the same site (spec 4.2 p.4).
+        window.last_url = url
+        window.log_info(tr("go_opened_browser", url=url))
+    launch_sniffer(window, settings, paths, browser, extension, target)
+
+
+def toggle_browser(window: MainWindow, settings: Settings, paths: Paths) -> None:
+    """The one browser button: it opens the window, or closes it (spec 4.3).
+
+    The button says what it will do, so the action is chosen by the state of the
+    thread: «Open browser» restarts the browser of the last page, «Close browser»
+    stops the thread and the downloads keep running. The launch is the part that
+    can take a minute (the Chromium download, the offer dialog), so the button is
+    disabled for its time.
+    """
+    if window.browser_running():
+        close_browser(window)
+        return
+    window.set_browser_starting(True)
+    try:
+        open_browser(window, settings, paths)
+    finally:
+        window.set_browser_starting(False)
+
+
+def open_url_in_browser(window: MainWindow, settings: Settings, paths: Paths, url: str) -> None:
+    """«Go» with the browser down: the browser starts on the page of the field (spec 4.2 p.4).
+
+    The launch is the slow part (the Chromium download, the offer dialog), so the
+    browser button is disabled while it runs, as the same button does for the click of
+    «Open browser», and the button changes to «Close browser» when the thread is up.
+    """
+    window.set_browser_starting(True)
+    try:
+        start_browser(window, settings, paths, url)
+    finally:
+        window.set_browser_starting(False)
 
 
 def open_browser(window: MainWindow, settings: Settings, paths: Paths) -> None:
@@ -303,25 +351,45 @@ def _after_install(
     start_browser(window, settings, paths)
 
 
+def _is_temp(path: Path) -> bool:
+    """Whether the folder is inside the system temp folder.
+
+    The program never writes the videos there, so a settings file naming the temp
+    folder is not the choice of the user. The test suite saves the settings of the
+    windows it builds, and a window writes the file of ``%APPDATA%``, so the suite
+    redirects the app data in ``conftest.py``; this guard is the safety net for a
+    settings file that was left pointing at the temp folder of a test run.
+    """
+    temp = Path(tempfile.gettempdir())
+    try:
+        return path.is_relative_to(temp)
+    except OSError:
+        return False
+
+
 def resolve_download_dir(settings: Settings) -> Path | None:
     """Folder for the videos: the saved one, or the dialog on the first start.
 
     The dialog appears only when the settings have no usable folder (the first
-    run, or a saved path on a removed drive). Later starts take the saved path
-    as is and create it when it was deleted. ``None`` means the user cancelled
-    the first-start dialog.
+    run, a saved path on a removed drive, a path in the temp folder of a test
+    run). Later starts take the saved path as is and create it when it was
+    deleted. ``None`` means the user cancelled the first-start dialog.
     """
-    if settings.download_dir:
-        saved = Path(settings.download_dir)
+    saved = Path(settings.download_dir) if settings.download_dir else None
+    if saved is not None and not _is_temp(saved):
         try:
             saved.mkdir(parents=True, exist_ok=True)
         except OSError:
             pass  # the folder is gone (a removed drive, a file in the way): ask again
         else:
             return saved
-    start = Path(settings.download_dir) if settings.download_dir else download_dir_default()
-    if not start.is_dir():
-        start = start.parent if start.parent.is_dir() else download_dir_default()
+    # No usable folder: the dialog starts where the user can pick the videos.
+    start = download_dir_default()
+    if saved is not None and not _is_temp(saved):
+        if saved.is_dir():
+            start = saved
+        elif saved.parent.is_dir():
+            start = saved.parent
     return pick_download_dir(start)
 
 

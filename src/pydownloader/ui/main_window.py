@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QMessageBox,
     QPushButton,
@@ -43,6 +44,20 @@ from pydownloader.download.worker import QueueWorker
 from pydownloader.ffmpeg.locate import Ffmpeg
 from pydownloader.i18n import tr
 from pydownloader.manifest.registry import SourceEntry
+from pydownloader.ui.button_icons import (
+    attach,
+    browser_icon,
+    chevron_icon,
+    clear_all_icon,
+    clear_downloaded_icon,
+    console_icon,
+    cross_icon,
+    folder_icon,
+    gear_icon,
+    go_icon,
+    icon_color,
+    log_icon,
+)
 from pydownloader.ui.card import SourceCard, format_duration
 from pydownloader.ui.console import ConsolePanel
 from pydownloader.ui.settings_panel import SettingsDialog
@@ -57,13 +72,21 @@ MIN_HEIGHT = 600
 SPLIT_TOP = 400
 SPLIT_BOTTOM = 600
 #: Split sizes with the console hidden: the list of cards takes the whole window,
-#: the console panel is not shown (spec 4.2 p.5), the handle keeps its 6 px.
+#: the console section is not on the screen and the handle of the splitter is 0 px,
+#: so there is no divider between the two (spec 4.2 p.5).
 SPLIT_CARDS_ONLY = 1000
 SPLIT_CONSOLE_MIN = 12
+#: The width of the handle of the splitter while the console panel is shown.
+CONSOLE_HANDLE = 6
 
 #: The tooltip of the tray is rewritten at most once a second: the progress signal
 #: of the queue comes for every segment, and a tooltip of Windows is a heavy call.
 TOOLTIP_MS = 1000
+
+#: The balloon and the sound report the end of a batch of downloads, so a batch is
+#: at least two files: one download is not a batch, and the user hears nothing after
+#: every file of a batch (spec 4.2 p.7).
+MIN_BATCH = 2
 
 
 @dataclass
@@ -113,9 +136,12 @@ class LogBridge(QObject):
 class MainWindow(QMainWindow):
     """One window with the cards and the console."""
 
-    #: «Открыть браузер» / «Закрыть браузер»: ``app.py`` owns the browser thread.
-    browser_open_request = Signal()
-    browser_close_request = Signal()
+    #: The one button of the browser window asks ``app.py`` for the action: the
+    #: thread is owned there, the window only reports the state of the button (spec 4.3).
+    browser_toggle_request = Signal()
+    #: «Go» with the browser down: ``app.py`` starts the thread on the address of the
+    #: field, so the browser window comes up on the page of the link (spec 4.2 p.4).
+    browser_open_request = Signal(str)
 
     def __init__(
         self,
@@ -132,6 +158,14 @@ class MainWindow(QMainWindow):
         self.sniffer = sniffer
         self.worker = worker
         self.logger = logger or logging.getLogger("pydownloader")
+        #: The color of the icons: the buttons of the accent are white, the buttons
+        #: of the panel and the tray menu take the text color of the theme (spec 4.3).
+        self._accent = icon_color("accent", settings.theme)
+        self._panel = icon_color("panel", settings.theme)
+        #: The marks of the second row: white on the red of «Clear all», the dark of
+        #: the theme on the yellow of «Clear downloaded» (spec 4.1 p.1).
+        self._warn = icon_color("warn", settings.theme)
+        self._danger = icon_color("danger", settings.theme)
         self.cards: dict[str, SourceCard] = {}
         self.out_paths: dict[str, Path] = {}
         #: The tasks that are downloading, for the tooltip of the tray (spec 4.2 p.7).
@@ -154,6 +188,9 @@ class MainWindow(QMainWindow):
         self.tray: TrayController | None = None
         #: Set by the tray «Выход» and the restart: the window really closes.
         self._quitting = False
+        #: The browser thread is being resolved and launched: the one browser button
+        #: is not clickable while it runs, so a second press cannot start a second thread.
+        self._browser_starting = False
 
         self.setObjectName("central")
         self.setWindowTitle(f"{APP_TITLE} {VERSION} — {settings.download_dir}")
@@ -171,7 +208,7 @@ class MainWindow(QMainWindow):
         splitter.setSizes([SPLIT_TOP, SPLIT_BOTTOM])
         splitter.setCollapsible(0, False)
         splitter.setCollapsible(1, False)
-        splitter.setHandleWidth(6)
+        splitter.setHandleWidth(CONSOLE_HANDLE)
         self.splitter = splitter
         #: The console panel is hidden: the list of cards fills the window (spec 4.2 p.5).
         self._console_hidden = not settings.console_open
@@ -180,6 +217,10 @@ class MainWindow(QMainWindow):
         self.play_sound: Callable[[], None] = play_notification
         if self._console_hidden:
             self._hide_console()
+        else:
+            # The window opens with the panel on the screen, so the button in the top
+            # row says «Hide console» from the first frame (spec 4.2 p.5).
+            self._sync_console_button()
 
         central = QWidget()
         layout = QVBoxLayout(central)
@@ -205,6 +246,11 @@ class MainWindow(QMainWindow):
 
     def _cards_section(self) -> QWidget:
         container = QWidget()
+        #: The wall behind the cards is painted by the rule of the theme, not by the
+        #: palette: a plain QWidget takes the color of the palette, and that color is
+        #: not the theme, so the list of cards stayed dark in the light theme.
+        container.setObjectName("cardArea")
+        container.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.cards_layout = QVBoxLayout(container)
         self.cards_layout.setContentsMargins(8, 8, 8, 8)
         self.hint_label = QLabel(tr("window_empty"))
@@ -222,63 +268,106 @@ class MainWindow(QMainWindow):
         self._sync_card_heights()
 
         header = QHBoxLayout()
-        header.addWidget(QLabel(tr("window_found_videos")))
+        # One button for the browser window: the same button shows the window and
+        # takes it away, so its text, tip and icon follow the thread (spec 4.3).
+        self.browser_button = QPushButton(tr("window_open_browser"))
+        self.browser_button.setToolTip(tr("window_open_browser_tip"))
+        attach(self.browser_button, browser_icon(self._accent, True))
+        self.browser_button.clicked.connect(self.browser_toggle_request.emit)
+        header.addWidget(self.browser_button)
+        # «Show console» / «Hide console» is one button of the top row: the panel is
+        # on the screen only when the user asks for it, so the toggle is where the
+        # other commands of the window are (spec 4.2 p.5).
+        self.console_button = QPushButton(tr("console_show"))
+        self.console_button.setToolTip(tr("console_show_tip"))
+        attach(self.console_button, console_icon(self._accent))
+        self.console_button.clicked.connect(self.toggle_console)
+        header.addWidget(self.console_button)
+        # The downloads folder is opened from the top row: the row of the console is
+        # on the screen only with the panel, and the folder is needed without it.
+        self.folder_button = QPushButton(tr("window_open_download_folder"))
+        attach(self.folder_button, folder_icon(self._accent))
+        self.folder_button.clicked.connect(self.open_download_folder)
+        header.addWidget(self.folder_button)
+        self.settings_button = QPushButton(tr("window_settings"))
+        # The gear is drawn: the glyph of the font shows a box on Windows (spec 4.3 p.2).
+        attach(self.settings_button, gear_icon(self._accent))
+        self.settings_button.clicked.connect(self.open_settings)
+        header.addWidget(self.settings_button)
+        # The four commands of the window are in the upper-left corner. «Clear
+        # downloaded» (yellow) and «Clear all» (red) are in the right end of the same
+        # row: the color tells which of the two is the softer action, the yellow takes
+        # only the cards whose file is on the disk, the red takes the whole list
+        # (spec 4.1 p.1).
         header.addStretch(1)
-        # The browser window can be closed by hand: the buttons reopen it and stop
-        # the thread, so a download that is running does not need a restart (spec 4.3).
-        self.open_browser_button = QPushButton(tr("window_open_browser"))
-        self.open_browser_button.setToolTip(tr("window_open_browser_tip"))
-        self.open_browser_button.clicked.connect(self.browser_open_request.emit)
-        header.addWidget(self.open_browser_button)
-        self.close_browser_button = QPushButton(tr("window_close_browser"))
-        self.close_browser_button.setToolTip(tr("window_close_browser_tip"))
-        self.close_browser_button.clicked.connect(self.browser_close_request.emit)
-        header.addWidget(self.close_browser_button)
-        self.clear_all_button = QPushButton(tr("window_clear_all"))
-        self.clear_all_button.setToolTip(tr("window_clear_all_tip"))
-        self.clear_all_button.clicked.connect(self.clear_all_cards)
-        header.addWidget(self.clear_all_button)
         self.clear_downloaded_button = QPushButton(tr("window_clear_downloaded"))
+        self.clear_downloaded_button.setObjectName("clearDownloaded")
         self.clear_downloaded_button.setToolTip(tr("window_clear_downloaded_tip"))
+        attach(self.clear_downloaded_button, clear_downloaded_icon(self._warn))
         self.clear_downloaded_button.clicked.connect(self.clear_downloaded_cards)
         header.addWidget(self.clear_downloaded_button)
-        settings_button = QPushButton(tr("window_settings"))
-        settings_button.clicked.connect(self.open_settings)
-        header.addWidget(settings_button)
+        self.clear_all_button = QPushButton(tr("window_clear_all"))
+        self.clear_all_button.setObjectName("clearAll")
+        self.clear_all_button.setToolTip(tr("window_clear_all_tip"))
+        attach(self.clear_all_button, clear_all_icon(self._danger))
+        self.clear_all_button.clicked.connect(self.clear_all_cards)
+        header.addWidget(self.clear_all_button)
+
+        url_row = QHBoxLayout()
+        # The address of the video is pasted in the window itself, so the user starts
+        # a download without opening the browser and typing the address in it: «Go»
+        # opens the browser on that page, and the browser starts when it is down
+        # (spec 4.2 p.4).
+        self.url_input = QLineEdit()
+        placeholder = tr("window_url_placeholder")
+        self.url_input.setPlaceholderText(placeholder)
+        # A link longer than the field is read in the tooltip.
+        self.url_input.setToolTip(placeholder)
+        self.url_input.textChanged.connect(self.url_input.setToolTip)
+        self.url_input.setClearButtonEnabled(True)
+        self.url_input.returnPressed.connect(self.open_url)
+        self.go_button = QPushButton(tr("window_go"))
+        self.go_button.setToolTip(tr("window_go_tip"))
+        attach(self.go_button, go_icon(self._accent))
+        self.go_button.clicked.connect(self.open_url)
+        url_row.addWidget(self.url_input, 1)
+        url_row.addWidget(self.go_button)
 
         wrapper = QWidget()
         outer = QVBoxLayout(wrapper)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.addLayout(header)
+        outer.addLayout(url_row)
         outer.addWidget(area, 1)
         return wrapper
 
     def _console_section(self, console: ConsolePanel) -> QWidget:
+        """The panel of the console: the row of its buttons and the text.
+
+        The whole section is on the screen only while the console is shown: hidden,
+        there is no row and no divider of the splitter, the list of cards fills the
+        window (spec 4.2 p.5).
+        """
         wrapper = QWidget()
         layout = QVBoxLayout(wrapper)
         layout.setContentsMargins(0, 0, 0, 0)
 
         row = QHBoxLayout()
-        # «Скрыть консоль» gives the whole window back to the list of cards, so the
-        # row of buttons stays on the screen: it is the way to show the panel again.
-        self.console_button = QPushButton(tr("console_hide"))
-        self.console_button.setToolTip(tr("console_hide_tip"))
-        self.console_button.clicked.connect(self.toggle_console)
-        # «Clear» clears the text of the console, so it is shown only while the
-        # panel is on the screen: hidden, the button has nothing to clear (spec 4.2 p.5).
+        # «Clear» clears the text of the console, «Open log file» opens the full
+        # diary of the run: both belong to the panel, so they appear with it. The
+        # commands of the window (console, folder) are in the top row.
         self.console_clear = QPushButton(tr("window_clear"))
+        attach(self.console_clear, cross_icon(self._accent))
         self.console_clear.clicked.connect(console.clear_panel)
-        folder = QPushButton(tr("window_open_download_folder"))
-        folder.clicked.connect(self.open_download_folder)
-        log = QPushButton(tr("window_open_log"))
-        log.clicked.connect(self._open_log_file)
-        row.addWidget(self.console_button)
+        self.log_button = QPushButton(tr("window_open_log"))
+        attach(self.log_button, log_icon(self._accent))
+        self.log_button.clicked.connect(self._open_log_file)
         row.addWidget(self.console_clear)
-        row.addWidget(folder)
-        row.addWidget(log)
+        row.addWidget(self.log_button)
         row.addStretch(1)
         layout.addLayout(row)
         layout.addWidget(console, 1)
+        self.console_section = wrapper
         return wrapper
 
     # --- wiring ----------------------------------------------------------
@@ -311,11 +400,70 @@ class MainWindow(QMainWindow):
         return sniffer is not None and sniffer.isRunning()
 
     def set_browser_running(self, running: bool) -> None:
-        """Enable «Open browser» only when the browser window is down (spec 4.3)."""
-        self.open_browser_button.setEnabled(not running)
-        self.close_browser_button.setEnabled(running)
+        """The browser button is the toggle: its text and icon follow the thread (spec 4.3).
+
+        One button does both jobs, so the state of the window is written on it:
+        «Open browser» with the arrow when the window is down, «Close browser» with
+        the cross when it runs. The button is clickable in both states, only the
+        launch of the browser keeps it disabled (spec 4.3 p.2).
+        """
+        key = "window_close_browser" if running else "window_open_browser"
+        self.browser_button.setText(tr(key))
+        self.browser_button.setToolTip(tr(f"{key}_tip"))
+        # The icon is the action the button does: open and close are one window with
+        # a different mark, so the button is recognized as the same button.
+        attach(self.browser_button, browser_icon(self._accent, not running))
+        self.browser_button.setEnabled(not self._browser_starting)
         if self.tray is not None:
             self.tray.set_browser_running(running)
+
+    def set_browser_starting(self, starting: bool) -> None:
+        """The launch of the browser is running: the button waits for it (spec 4.3 p.2).
+
+        Resolving the browser, reading the settings and the offer to download
+        Chromium are on the click, and a second click of the same button during the
+        launch would start a second thread of Playwright, so the button is disabled
+        for the time of the launch and gets its own tip.
+        """
+        self._browser_starting = starting
+        self.browser_button.setEnabled(not starting)
+        if starting:
+            self.browser_button.setToolTip(tr("window_browser_starting"))
+        else:
+            self.set_browser_running(self.browser_running())
+
+    def open_url(self) -> None:
+        """«Go»: the address of the field goes to the browser (spec 4.2 p.4).
+
+        The link is read from the field of the window, so a download starts without
+        opening the browser and typing the address inside it: with the browser down
+        the thread is launched on the page of the field (the browser button of the
+        window changes to «Close browser» when the thread is up), with the browser up
+        the pump loop of the thread opens the page, and the same response listener
+        finds the manifests of the new site.
+        """
+        url = self.url_input.text().strip()
+        if not url:
+            self.log_info(tr("go_url_missing"))
+            return
+        if not url.startswith(("http://", "https://")):
+            # A domain pasted without the protocol is a page address as well.
+            url = "https://" + url
+        if self._browser_starting:
+            # The launch is running: a second request would start a second thread.
+            self.log_info(tr("window_browser_starting"))
+            return
+        sniffer = self.sniffer
+        if sniffer is not None and sniffer.isRunning():
+            if self.last_url and self.last_url.lower() == url.lower():
+                # The page of the field is the page of the browser: do not reload it.
+                self.log_info(tr("go_same_page"))
+                return
+            sniffer.go(url)
+            self.last_url = url
+            self.log_info(tr("go_page_opened", url=url))
+            return
+        self.browser_open_request.emit(url)
 
     def _page_changed(self, url: str, title: str) -> None:
         """Remember the page, so «Open browser» opens the site the user was on."""
@@ -352,34 +500,55 @@ class MainWindow(QMainWindow):
             self._hide_console()
 
     def show_console(self) -> None:
-        """The console panel comes back with the room it had before (spec 4.2 p.5)."""
+        """The console panel comes back with the room it had before (spec 4.2 p.5).
+
+        The section of the console is the row of its buttons and the text, so the
+        row and the panel appear together, and the handle of the splitter gets its
+        width back: with the panel on the screen the divider is the line between the
+        two sections.
+        """
         self._console_hidden = False
-        self.console.setVisible(True)
-        self.console_clear.setVisible(True)
+        self.console_section.setVisible(True)
+        self.splitter.setHandleWidth(CONSOLE_HANDLE)
         self.splitter.setSizes([SPLIT_TOP, SPLIT_BOTTOM])
-        self.console_button.setText(tr("console_hide"))
-        self.console_button.setToolTip(tr("console_hide_tip"))
+        self._sync_console_button()
         self.settings.console_open = True
         self._save_settings()
         self.log_info(tr("console_shown"))
 
     def _hide_console(self) -> None:
-        """Only the text of the console is hidden, the row of buttons stays visible.
+        """The console section goes away: the list of cards is the whole window.
 
-        The panel is half the window, which is what the list of cards has to have
-        for a person who is picking a video, so the panel is taken away and the
-        state is stored: the window opens the next time the way the user left it.
+        The row of the console and the panel are one section, so hidden the window
+        has no divider at all: the handle of the splitter is 0 px. The top row keeps
+        the button of the console, and the state is stored, so the window opens the
+        next time the way the user left it (spec 4.2 p.5).
         """
         self._console_hidden = True
-        self.console.setVisible(False)
-        # The row of buttons stays, and the button of clearing the console goes with
-        # the panel: there is no text to clear while the panel is hidden.
-        self.console_clear.setVisible(False)
-        self.splitter.setSizes([SPLIT_CARDS_ONLY, SPLIT_CONSOLE_MIN])
-        self.console_button.setText(tr("console_show"))
-        self.console_button.setToolTip(tr("console_show_tip"))
+        self.console_section.setVisible(False)
+        self.splitter.setHandleWidth(0)
+        self.splitter.setSizes([SPLIT_CARDS_ONLY, 0])
+        self._sync_console_button()
         self.settings.console_open = False
         self._save_settings()
+
+    def _sync_console_button(self) -> None:
+        """The button in the top row says what the console will do (spec 4.2 p.5).
+
+        The window opens with the panel the user left, so the state is written on the
+        button at the start and after every toggle: «Show console» with the terminal
+        when the panel is not on the screen, «Hide console» with the chevron when it
+        is.
+        """
+        key = "console_show" if self._console_hidden else "console_hide"
+        self.console_button.setText(tr(key))
+        self.console_button.setToolTip(tr(f"{key}_tip"))
+        # The terminal is the panel that is not on the screen, the chevron points to
+        # the panel that goes away: the mark is the action of the button.
+        icon = chevron_icon(self._accent, False)
+        if self._console_hidden:
+            icon = console_icon(self._accent)
+        attach(self.console_button, icon)
 
     def log_info(self, message: str) -> None:
         self.logger.info(message)
@@ -420,7 +589,7 @@ class MainWindow(QMainWindow):
         """A source passed the filters: add its card under the existing ones."""
         if entry.id in self.cards:
             return
-        card = SourceCard(entry)
+        card = SourceCard(entry, theme=self.settings.theme)
         card.download_clicked.connect(self._start_download)
         card.cancel_clicked.connect(self._cancel_download)
         card.open_file_clicked.connect(self._open_result_file)
@@ -440,6 +609,10 @@ class MainWindow(QMainWindow):
         card = self.cards.get(entry_id)
         if card is None or self.worker is None:
             return
+        if self._queue_drained():
+            # A queue that was empty is a new batch: the balloon reports the end of
+            # a batch, so its counter starts from 0 (spec 4.2 p.7).
+            self._count_done = 0
         self.worker.enqueue(card.entry)
         card.set_state("queued")
         self.log_info(tr("window_queued", title=card.entry.title or card.entry.url))
@@ -458,23 +631,44 @@ class MainWindow(QMainWindow):
         self._runs.pop(entry_id, None)
         self._push_tray_tooltip(True)
         if self._queue_drained():
-            self._report_queue_done()
+            # A cancelled task is not a finished download: the icon goes quiet, the
+            # balloon stays away (spec 4.2 p.7).
+            self._idle_tray()
 
     def _queue_drained(self) -> bool:
         """Whether the queue is empty now: the last task of the worker is done."""
         return self.worker is None or not self.worker.pending()
 
-    def _report_queue_done(self) -> None:
-        """Every download is over: the tray goes back to the icon of the program, a
-        balloon and a sound tell it to the user, who may keep the window in the tray
-        (spec 4.2 p.7).
+    def _idle_tray(self) -> None:
+        """The queue is empty: the arrow of the tray goes back to white (spec 4.2 p.7).
+
+        The state of the icon only, no balloon and no sound. The queue can be empty
+        for reasons that are not a finished batch: the user took a card out of the
+        list, a task was cancelled, one download ended. None of them is the report
+        the user asks for, so the icon is set quiet and the balloon stays away.
         """
         if self.tray is not None:
             self.tray.set_download_active(False)
-            self.tray.notify(tr("tray_download", n=self._count_done))
         self._push_tray_tooltip(True)
+
+    def _report_queue_done(self) -> None:
+        """A batch of downloads is over: the balloon and the sound (spec 4.2 p.7).
+
+        The queue is empty and every task of the batch is finished, so the report
+        is sent once for the whole batch, not after every file. A batch is at least
+        `MIN_BATCH` files: a single download gives no balloon and no sound, and
+        removing a card or cancelling a task is not a finished download at all. The
+        counter is reset, so the next batch is counted from the start and a single
+        download after a batch stays quiet.
+        """
+        self._idle_tray()
+        if self._count_done < MIN_BATCH:
+            return
+        if self.tray is not None:
+            self.tray.notify(tr("tray_download", n=self._count_done))
         self.play_sound()
         self.log_info(tr("window_all_done", n=self._count_done))
+        self._count_done = 0
 
     def _push_tray_tooltip(self, force: bool = False) -> None:
         """The tooltip of the tray icon: the files that are downloading (spec 4.2 p.7).
@@ -555,7 +749,9 @@ class MainWindow(QMainWindow):
         self._push_tray_tooltip(True)
         self._remove_card(card)
         if self._queue_drained():
-            self._report_queue_done()
+            # Removing a card is not a finished download: nothing was downloaded in
+            # this batch, so the icon goes quiet and the balloon stays away.
+            self._idle_tray()
 
     def _update_hint(self) -> None:
         self.hint_label.setVisible(not self.cards)
@@ -626,7 +822,9 @@ class MainWindow(QMainWindow):
         self._push_tray_tooltip(True)
         self.log_error(tr("window_task_failed", title=message))
         if self._queue_drained():
-            self._report_queue_done()
+            # A failed task is not a finished download: the batch did not end with
+            # every file on the disk, so the icon goes quiet without a balloon.
+            self._idle_tray()
 
     def _open_result_file(self, entry_id: str) -> None:
         """«Открыть файл»: play the downloaded video with the default player."""

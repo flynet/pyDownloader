@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
 
 from pydownloader.browser.launcher import chromium_executable
 from pydownloader.config import paths as paths_mod
-from pydownloader.config.paths import application_dir, default_paths
+from pydownloader.config.paths import application_dir, default_paths, isolate_app_data
 
 
 @pytest.fixture(autouse=True)
@@ -147,3 +148,25 @@ def test_application_dir_of_a_frozen_build_is_the_exe_folder(
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setattr(sys, "executable", str(exe))
     assert application_dir() == tmp_path
+
+
+def test_a_script_that_builds_a_window_runs_in_its_own_app_data(
+    tmp_path: Path, monkeypatch
+):
+    """The tool of the screenshots and the suite run outside the folders of the user.
+
+    A window writes ``%APPDATA%/PyDownloader/settings.json`` on the console toggle,
+    the Apply of the dialog and the close, so a script that builds a window of the
+    program has to run with its own app data, temp folder and data folders
+    (spec 7.4).
+    """
+    old = tmp_path / "temp"
+    old.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(tempfile, "tempdir", str(old))
+    root = isolate_app_data()
+    paths = default_paths()
+    for path in (paths.settings_file, paths.log_file, paths.profile_dir, paths.browsers_dir):
+        assert path.is_relative_to(root)
+    if paths.legacy_browsers_dir is not None:
+        assert paths.legacy_browsers_dir.is_relative_to(root)
+    assert Path(tempfile.gettempdir()).is_relative_to(root)

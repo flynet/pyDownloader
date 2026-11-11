@@ -21,6 +21,10 @@ work/
 /profile/
 /.profile/
 
+# App data produced next to the program during development
+/extensions/
+/logs/
+
 # IDE
 .idea/
 .vscode/

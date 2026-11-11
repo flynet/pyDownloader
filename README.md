@@ -8,12 +8,13 @@ with FFmpeg into one `.mp4` (a source of sound only is written as `.mp3`). The
 interface is dark by default; light and system themes are available in the
 settings, the program lives in the Windows tray, and the browser window can be
 opened and closed by the user. The console panel starts hidden, so the list of
-found videos takes the whole window, and "Show console" opens it back.
+found videos takes the whole window: no divider, no console row, and the top row
+of the window has the button that opens the panel back.
 
 ## Screenshots
 
 ![Main window: the cards of found videos with the cross on the right, the console
-row is closed](assets/screenshots/window.png)
+panel open with its row of buttons](assets/screenshots/window.png)
 
 ![Settings dialog: quality, browser, language, theme, the tray rows and the console
 panel](assets/screenshots/settings.png)
@@ -22,17 +23,22 @@ The screenshots are rendered by the `tools/make_screenshots.py` script (`uv run 
 tools/make_screenshots.py`): it fills the cards and the console with demo data, and
 the script has no browser and no downloads, so the screenshots are reproducible. The
 windows are never shown on the desktop — the snapshot is taken with `QWidget.grab()`
-on the offscreen Qt platform.
+on the offscreen Qt platform. The script runs with its own `%APPDATA%`,
+`%LOCALAPPDATA%` and temp folder (`isolate_app_data` of `config/paths.py`, the same
+rule the tests follow), so a run of the screenshots cannot rewrite the settings of
+the user: a window saves its settings on the close and on the Apply of the dialog.
 
 ## How it works
 
 1. Launch → pick the downloads folder (first run only). The main window opens with
-   the **console hidden**: the list of found videos takes the whole window, and the
-   row under it shows **"Show console"**. Press it to see the log of the program,
-   "Hide console" takes the panel away again and gives the room back to the cards.
-   The state is stored, so the window opens the way the user left it. **The browser
-   is not started automatically** — press "Open browser" when you want to look for
-   a video.
+   the **console section hidden**: the list of found videos takes the whole window,
+   there is no divider between the sections, and the top row of the window shows
+   **"Show console"**. Press it to see the log of the program — the row of the
+   console appears with the panel, and the same top button now reads **"Hide
+   console"**, which takes the whole section away and gives the room back to the
+   cards. The state is stored, so the window opens the way the user left it. **The
+   browser is not started automatically** — press "Open browser" when you want to
+   look for a video.
 2. The browser window opens maximised on the last page you visited, with the uBlock
    ad blocker enabled (see below). It carries no banners of a driver: neither
    "this build is for automated testing" nor the "unsupported command-line flag"
@@ -75,25 +81,76 @@ when it is known, or `MP3`. A card with a source is never cut off: the list of
 cards has its own scrollbar, and when the window is made small the card section
 keeps its minimum height and the console shrinks.
 
-On the right of every card there is a **"✕"**: it takes this one entry out of the
-list. A queued or running task is **cancelled** first (the card goes with it), a
-finished card is removed and the file on the disk stays, a found card is simply
-taken away. "Clear all" and "Clear downloaded" work on the whole list, the cross
-works on one card.
+On the right of every card there is a **"✕"** — a square box of 26 px with the mark
+in the middle: the button has no text, so nothing is asked for next to the icon and
+the box is not stretched into a rectangle with the mark to the left. It takes this
+one entry out of the list. A queued or running task is **cancelled** first (the
+card goes with it), a finished card is removed and the file on the disk stays, a
+found card is simply taken away. "Clear all" and "Clear downloaded" work on the
+whole list, the cross works on one card.
 
-Above the list of found videos there are five buttons:
-- **"Open browser"** — show the browser window, on the page where the user was last.
-- **"Close browser"** — close the browser window. Downloads keep running.
-- **"Clear all"** — remove every card.
-- **"Clear downloaded"** — remove only the cards whose files are on disk.
+Above the list of found videos the window has **two rows** of buttons. The top row is
+the commands of the window, in the **upper-left corner**:
+- **"Open browser"** / **"Close browser"** — one button whose label is the action it
+  does: while the browser window is down the button reads "Open browser" and shows
+  the page where the user was last, once it runs the same button reads "Close
+  browser" and stops the window. Downloads keep running in both cases.
+- **"Show console"** / **"Hide console"** — one button with the same rule: the
+  console section is a whole section (its row of buttons and the text of the log),
+  so hidden it is not on the screen at all, the list of cards fills the window and
+  there is no divider between the two sections. Pressed, the section comes back with
+  the room it had, the button reads "Hide console" and gives the window to the cards
+  again. The state is stored, so the window opens the way the user left it.
+- **"Open download folder"** — the folder the finished files are written to. The
+  button stands in the top row, not under the list: the row of the console is on the
+  screen only while the console is open, and the folder is needed without it.
 - **"Settings"** — the settings dialog.
 
-Under the list of cards there is the row of the console panel: **"Show console"** /
-**"Hide console"** (the console starts hidden, so the list of cards gets the whole
-window; the row stays on the screen as the way to open the panel back), **"Clear"**
-(the text of the console — the button is shown only while the console is open,
-there is nothing to clear while the panel is hidden), **"Open download folder"**,
-**"Open log file"**. The console command is in the tray menu as well.
+The right end of the same row carries the two commands of the list, each in
+its own color:
+- **"Clear downloaded"** — **yellow**: remove only the cards whose files are on disk.
+- **"Clear all"** — **red**: remove every card.
+The colors are keys of the theme, so the yellow and the red are the same in the dark
+theme, the light theme and the screenshots, and the mark of a button takes the color
+of its text: the dark of the theme on the yellow, white on the red.
+
+The second row is the address of the video: a field with the label *"Paste the link to
+the video"* and the **"Go"** button at its right. A link is pasted into the window, and
+"Go" — or Enter in the field — opens the browser on that page: with the browser down,
+its thread is launched on the address of the field and the browser button of the window
+changes to "Close browser" when the browser window is up; with the browser running, the
+address goes to the pump loop of the thread, which opens the page in the window that is
+already there, and the same listener that reads any page of the browser finds the
+manifests of the new site. A domain pasted without the protocol gets `https://`, a link
+longer than the field is read in the tooltip, and the page is remembered, so "Open
+browser" opens the same site after the browser is restarted. The label "Found videos"
+is gone: the row of the commands starts at the left edge of the window.
+
+Every button carries a mark drawn by the program: the browser window with the globe,
+the list with the cross, the list with the check, the terminal, the folder, the gear. The marks are painted
+with `QPainter` in a 16 px grid, not typed: the font of the Windows buttons does not
+carry the gear (it shows a box), so the same picture is drawn in every theme, in
+every language and in the screenshots above, as the icon of the program and the cross
+of a card are drawn.
+
+The theme colors the whole window, not only the widgets with a rule of their own.
+A plain widget paints the **palette** of the application, and the palette Qt reads
+from Windows is the palette of the system dark mode, so on a machine with the dark
+mode of Windows the light theme showed a dark wall behind the list of cards. The
+palette of the application is set to the colors of the theme that is chosen in the
+settings (window, base, button, text, accent), and the wall behind the cards has its
+own rule in the stylesheet, so the list of cards, the console panel and the status
+bar are light in the light theme and dark in the dark theme. The **system** choice
+keeps the palette of Windows.
+
+The console section is one block: the row of two buttons and the panel of the log,
+and it is on the screen only while the console is open. Its buttons are **"Clear"**
+(the text of the console) and **"Open log file"** (the diary of the run on disk):
+both belong to the console, so hidden there is nothing to clear and no room for the
+log. The commands of the window — the console itself and the downloads folder —
+stand in the top row, so they are reachable while the section is away, and so is
+"Show console" / "Hide console": one button that brings the section back and takes
+it away. The console command is in the tray menu as well.
 
 ## Tray
 
@@ -101,10 +158,12 @@ The program lives in the Windows notification area. Pressing **X** in the window
 title bar **hides the window to the tray**: the downloads keep running, the
 browser window stays open, and the tray menu is the only way to quit — "Exit"
 asks for confirmation when a download is running, cancels it, closes the browser
-and terminates the program. The tray menu offers: show the window, open and close
-the browser, show the console, check for updates, open the downloads folder,
-exit. A single click or a double click on the tray icon shows the window; the
-menu items of the browser follow the state of the browser window. The first time
+and terminates the program. The tray menu offers: show the window, the browser,
+show the console, check for updates, open the downloads folder, exit — six items,
+each with its painted mark. The item of the browser is the button of the window:
+one item whose text is "Open browser" while the window is down and "Close browser"
+while it runs. A single click or a double click on the tray icon shows the window.
+The first time
 the window is hidden, the tray icon shows a balloon explaining the menu (the hint
 is shown once and stored in the settings).
 
@@ -113,11 +172,15 @@ pointing down and the line of the tray under it. The icon of the desktop, the
 installer and the window title bar is the same picture, drawn by the same code.
 Only the colour of the arrow marks the state: a **green arrow** while a download
 is running, and the arrow jumps up and down (the frames of a timer); the white
-arrow of the program when nothing is downloading. When the last task of the queue
-is finished, the icon goes back to white, a Windows balloon appears next to it
-("All downloads are finished: N saved") and the system notification sound is
-played — this is how the user who works with the window hidden learns that the
-program is done.
+arrow of the program when nothing is downloading. When a batch of downloads is
+over — the queue is empty and every task of it is finished — the icon goes back to
+white, a Windows balloon appears next to it ("All downloads are finished: N saved")
+and the system notification sound is played: this is how the user who works with
+the window hidden learns that the program is done. The report is the end of a
+batch, so it comes once for the whole batch and not after every file, it is not
+sent for a single download (a batch is at least two files), and it is not sent
+when the user takes cards out of the list, cancels a task or a task ends with an
+error: in all these cases the icon only goes back to white.
 
 Putting the mouse over the icon (without clicking) shows the list of the files
 that are downloading: the name, the percent, the speed, the time left, and the
@@ -133,19 +196,23 @@ one), and the finished downloads are reported in the window console only.
 
 ## Browser controls
 
-"Open browser" shows the browser window on the last page the user visited,
-maximised; "Close browser" closes it. The program does not open the browser by
-itself: the first window of the run is the window of the program, and the
-browser appears only after the user presses the button, so nothing is launched
-in the background. Closing the browser window does not stop
-an active download: the segments are downloaded by the program itself, not by
-the browser, so the task finishes after the window is closed. When the browser
-is closed, its thread is replaced by a new one (the Playwright objects of a
-closed browser belong to the event loop of the old thread), and the user's
-profile is read from disk again, so cookies, logins and site settings are the
-same as before the closing. If the browser is not open, "Open browser" starts
-it with the program's profile on the last page; when it is already open, the
-button does nothing and "Close browser" is enabled.
+The button "Open browser" shows the browser window on the last page the user
+visited, maximised; the same button, reading "Close browser", closes it. The
+program does not open the browser by itself: the first window of the run is the
+window of the program, and the browser appears only after the user presses the
+button, so nothing is launched in the background. Closing the browser window does
+not stop an active download: the segments are downloaded by the program itself, not
+by the browser, so the task finishes after the window is closed. When the browser
+is closed, its thread is replaced by a new one (the Playwright objects of a closed
+browser belong to the event loop of the old thread), and the user's profile is read
+from disk again, so cookies, logins and site settings are the same as before the
+closing. If the browser is not open, the button starts it with the program's
+profile on the last page; when it is already open, the button closes the window.
+The button is disabled while the browser is being resolved and launched (the first
+launch can download Chromium and ask a question in a dialog box), so a second press
+cannot start a second thread: during the launch the tip of the button says that the
+browser is starting. Pressing "Close browser" when nothing runs writes the message
+"the browser is not running" and keeps the window as it was.
 
 ## Logging
 
@@ -157,9 +224,10 @@ quality decisions, the selected variant, the task plan, the FFmpeg command and
 errors. The window console shows only the important lines (INFO and above), so
 the window does not slow down on long segment lists.
 
-If a stream is not found or a download fails — press "Open log file" in the window
-(the log path is also printed to the console at startup) and send the file: the
-log shows which URLs the player requested and what the server answered.
+If a stream is not found or a download fails — press "Show console" in the top row
+of the window and then "Open log file" in the row of the console (the log path is
+also printed to the console at startup) and send the file: the log shows which URLs
+the player requested and what the server answered.
 
 ## Settings
 
@@ -169,10 +237,21 @@ minimum MP4 size, browser, anti-bot, ad blocker, language, tray icon, console
 panel, update check, window size and position (and the state of the console
 panel). The downloads folder is asked only on the first
 run; on later runs the program takes it from the settings and creates it if it
-was deleted. The folder can be changed in "Settings" → "Downloads folder" — the
+was deleted. A settings file naming a folder inside the system temp folder is not
+taken as the choice of the user — the program does not write videos there, so the
+folder is asked again. The settings of the user are never written by the test suite:
+the tests of the suite run with their own `%APPDATA%` and `%LOCALAPPDATA%`, so a
+run of `pytest` cannot leave the temp folder of a test as the downloads folder of
+the user. The folder can be changed in "Settings" → "Downloads folder" — the
 value is saved right after pressing "Save". The settings dialog takes 80% of the
 main window's width and height, can be resized manually, and a long path is
-fully visible (and in the tooltip on hover).
+fully visible (and in the tooltip on hover). The row at the bottom has the two
+main buttons — **"Save"** and **"Cancel"** — in the **right lower corner**, where
+the buttons that finish a dialog are looked for; "Check updates" and "Restart"
+stand on the left of that row. The dialog can be resized, but not under the height
+its rows need: every field, select, checkbox and button keeps the height its own
+font asks for, so the smallest dialog shows all the rows readable — no field is
+squeezed to half a letter.
 
 "Resolution (p)" is a combo with three presets: **1080p, 720p, 480p** (an
 out-of-list height saved in an edited `settings.json` gets its own entry). "MP3
@@ -268,11 +347,19 @@ in `<downloads folder>\.profile`.
 | Unpacked ad blocker | `<install folder>\extensions` |
 | Log file | `<install folder>\logs` |
 | Settings | `%APPDATA%\PyDownloader\settings.json` |
+| Settings of the previous save | `%APPDATA%\PyDownloader\settings.json.bak` |
 
 Everything except the settings lives in the install folder: deleting it deletes
 the profile, the downloaded browser, the blocker and the logs too. The settings
 stay in `%APPDATA%` to survive a reinstall. If the install folder is not
 writable, these folders are created in `%LOCALAPPDATA%\PyDownloader`.
+
+The settings are written atomically: the file is written as `settings.json.new`
+and moved in one call, and the file that was there is kept as `settings.json.bak`.
+A `settings.json` that cannot be read (a start killed in the middle of a write)
+is read from the backup, so the theme, the language, the state of the console
+panel and the downloads folder come back on the next start instead of falling to
+the defaults.
 
 ## Requirements
 

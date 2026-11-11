@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import threading
 from pathlib import Path
 
-from PySide6.QtGui import QCloseEvent, QColor, QImage
-from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QCloseEvent, QColor, QIcon, QImage, QPalette
+from PySide6.QtWidgets import QAbstractButton, QApplication, QPushButton
 
 from pydownloader.config.paths import Paths, default_paths
 from pydownloader.config.settings import Settings
@@ -15,6 +17,7 @@ from pydownloader.manifest.registry import SourceEntry
 from pydownloader.ui import main_window as main_window_mod
 from pydownloader.ui import tray as tray_mod
 from pydownloader.ui.app_icon import ACCENT, BACKGROUND, TRAY_SIZE, WHITE, draw
+from pydownloader.ui.button_icons import ICON_SIZE, browser_icon, icon_color
 from pydownloader.ui.card import (
     DONE_COLOR,
     SourceCard,
@@ -24,6 +27,7 @@ from pydownloader.ui.card import (
 )
 from pydownloader.ui.console import MAX_LINES, ConsolePanel
 from pydownloader.ui.main_window import (
+    CONSOLE_HANDLE,
     SPLIT_CONSOLE_MIN,
     LogBridge,
     MainWindow,
@@ -39,7 +43,7 @@ from pydownloader.ui.settings_panel import (
     MIN_DIALOG_WIDTH,
     SettingsDialog,
 )
-from pydownloader.ui.theme import apply_theme, qss_for
+from pydownloader.ui.theme import DARK, LIGHT, apply_theme, color_for, qss_for
 from pydownloader.ui.tray import ACTIVE_COLOR, IDLE_COLOR, TrayController, make_tray
 
 
@@ -75,6 +79,31 @@ def test_card_shows_title_quality_and_size(qtbot):
     assert card.download_button.isEnabled()
     assert not card.cancel_button.isVisible()
     assert not card.bar.isVisible()
+
+
+def test_the_cross_button_of_a_card_is_a_square(qtbot):
+    """The cross on the right of a card is a square box with the mark in the middle.
+
+    A `QToolButton` with no text is left as the icon only: asking for the text
+    beside the icon reserves the room of a label, and the box of the cross becomes
+    a rectangle with the mark shifted to the left (spec 4.1 p.1).
+    """
+    card = SourceCard(entry(), theme="dark")
+    qtbot.addWidget(card)
+    # The QSS of the theme is what gives the button its padding, so the test puts
+    # the stylesheet of the dark theme on the card, as the window does.
+    card.setStyleSheet(qss_for("dark"))
+    button = card.remove_button
+    assert button.text() == ""
+    assert button.toolButtonStyle() != Qt.ToolButtonStyle.ToolButtonTextBesideIcon
+    card.resize(940, 110)
+    card.show()
+    assert button.width() == button.height()
+    assert button.iconSize().width() == button.iconSize().height()
+    # A button with a text keeps the text next to the mark (spec 4.1 p.4).
+    card.set_state("downloading")
+    assert card.cancel_button.text()
+    assert card.cancel_button.toolButtonStyle() == Qt.ToolButtonStyle.ToolButtonTextBesideIcon
 
 
 def test_card_url_is_elided_with_tooltip(qtbot):
@@ -327,6 +356,24 @@ def test_window_minimum_size(qtbot, tmp_path):
     assert window.minimumHeight() >= 600
 
 
+def test_the_window_writes_its_settings_in_the_test_tree(qtbot, tmp_path, isolated_app_data):
+    """The suite must not touch the settings of the developer (spec 3.1).
+
+    A window saves the settings on every toggle of the console, on the Apply of the
+    dialog and on the close, and the path it writes is the settings file of
+    ``default_paths`` — the file of the user. The session fixture of ``conftest.py``
+    redirects the app data, so the downloads folder the user chose survives a run of
+    the suite: the temp folder of a test must never become his videos.
+    """
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    window.toggle_console()  # the toggle of the console writes the settings
+    written = json.loads(window.paths.settings_file.read_text(encoding="utf-8"))
+    assert window.paths.settings_file.is_relative_to(isolated_app_data)
+    assert written["download_dir"] == str(tmp_path)
+    assert written["console_open"] is True
+
+
 def test_window_geometry_is_saved_and_restored(qtbot, tmp_path):
     window = make_window(tmp_path)
     qtbot.addWidget(window)
@@ -488,6 +535,60 @@ def test_settings_dialog_is_wide_and_resizable(tmp_path: Path, qtbot):
     assert dialog.download_edit.toolTip() == long_path
 
 
+def test_the_main_buttons_of_the_settings_dialog_are_at_the_bottom_right(qtbot, tmp_path):
+    """«Save» and «Cancel» are in the right lower corner, the update commands on the left.
+
+    The buttons that finish a dialog are looked for in the bottom-right corner, so
+    the two main buttons are right-aligned there, and "Check updates" and "Restart"
+    stand on the left of the row (spec 4.3 p.2).
+    """
+    dialog = SettingsDialog(Settings(download_dir=str(tmp_path)))
+    qtbot.addWidget(dialog)
+    dialog.show()
+    left = (dialog.update_check_button, dialog.restart_button)
+    right = (dialog.save_button, dialog.cancel_button)
+    # One row, the main buttons after the gap.
+    for button in right:
+        assert button.geometry().top() == left[0].geometry().top()
+        assert button.geometry().left() > max(b.geometry().right() for b in left)
+    # "Save" is the first of the two, "Cancel" is the last button of the row.
+    assert dialog.save_button.geometry().left() < dialog.cancel_button.geometry().left()
+    assert dialog.cancel_button.geometry().right() > dialog.save_button.geometry().right()
+    # "Save" is the button of Enter, and it is one of the two in the corner.
+    assert dialog.save_button.isDefault()
+
+
+def test_the_settings_dialog_cannot_be_squeezed(qtbot, tmp_path):
+    """The rows keep the height their text needs, so the dialog cannot be squeezed.
+
+    A field of the form has the minimum height of zero, so a dialog shrunk by the
+    user showed half of a letter in the fields, the selects and the buttons
+    (spec 4.3 p.2). The floor of every widget is the height of its ``sizeHint``, the
+    layout gets the minimum height of its rows, and the dialog cannot go under it.
+    """
+    dialog = SettingsDialog(Settings(download_dir=str(tmp_path)))
+    qtbot.addWidget(dialog)
+    dialog.show()
+    QApplication.processEvents()
+
+    assert dialog.minimumSize().height() >= MIN_DIALOG_HEIGHT
+    row = (
+        dialog.download_edit,
+        dialog.height_box,
+        dialog.browser_box,
+        dialog.theme_box,
+        dialog.save_button,
+    )
+    for widget in row:
+        assert widget.minimumHeight() == widget.sizeHint().height()
+
+    # A request for a smaller dialog keeps every row at the height the font asks for.
+    dialog.resize(dialog.width(), 300)
+    QApplication.processEvents()
+    for widget in row:
+        assert widget.height() == widget.sizeHint().height()
+
+
 def test_themes_have_stylesheets():
     assert qss_for("system") == ""
     dark = qss_for("dark")
@@ -503,6 +604,33 @@ def test_apply_theme(qtbot, qapp: QApplication):
     assert qapp.styleSheet()
     apply_theme(qapp, "system")
     assert qapp.styleSheet() == ""
+
+
+def test_the_palette_follows_the_theme(qapp: QApplication):
+    """The palette of the application is the palette of the theme, not of Windows.
+
+    A widget with no rule of its own paints the palette, and the palette Qt reads
+    from Windows is the palette of the system dark mode, so the light theme showed a
+    dark wall behind the list of cards on a machine with the dark mode of Windows
+    (spec 4.3). The system choice keeps the palette of the style.
+    """
+    apply_theme(qapp, "light")
+    light = qapp.palette()
+    assert light.color(QPalette.ColorRole.Window).name().lower() == LIGHT["background"]
+    assert light.color(QPalette.ColorRole.Base).name().lower() == LIGHT["panel"]
+    assert light.color(QPalette.ColorRole.Button).name().lower() == LIGHT["panel"]
+
+    apply_theme(qapp, "dark")
+    dark = qapp.palette()
+    assert dark.color(QPalette.ColorRole.Window).name().lower() == DARK["background"]
+    assert dark.color(QPalette.ColorRole.ButtonText).name().lower() == DARK["text"]
+    assert dark.color(QPalette.ColorRole.Highlight).name().lower() == DARK["accent"]
+
+    apply_theme(qapp, "system")
+    standard = qapp.style().standardPalette()
+    assert qapp.palette().color(QPalette.ColorRole.Window) == standard.color(
+        QPalette.ColorRole.Window
+    )
 
 
 def test_log_bridge_forwards_from_another_thread(qtbot, tmp_path):
@@ -547,6 +675,27 @@ class FakeTray:
         self.active = active
 
 
+class FakeSniffer:
+    """Stand-in of the browser thread: the window reads only its running state."""
+
+    def __init__(self, running: bool = True) -> None:
+        self._running = running
+        self.navigated: list[str] = []
+
+    def isRunning(self) -> bool:
+        return self._running
+
+    def go(self, url: str) -> None:
+        # The real thread takes the address from the queue of its pump loop (spec 4.2).
+        self.navigated.append(url)
+
+    def stop(self) -> None:
+        self._running = False
+
+    def wait(self, milliseconds: int) -> bool:
+        return True
+
+
 class FakeWorker:
     """Stand-in of the queue: the ids of the tasks, the running one is out of the queue."""
 
@@ -573,19 +722,22 @@ class FakeWorker:
         return True
 
 
-def test_browser_buttons_are_wired_to_the_top_panel(qtbot, tmp_path):
+def test_browser_button_is_one_toggle_of_the_top_panel(qtbot, tmp_path):
     window = make_window(tmp_path)
     qtbot.addWidget(window)
-    # The browser thread is not up yet, so only «Open browser» is clickable.
-    assert window.open_browser_button.isEnabled()
-    assert not window.close_browser_button.isEnabled()
-    with qtbot.waitSignal(window.browser_open_request):
-        window.open_browser_button.click()
+    # One button says what it will do: the thread is not up, so the label is
+    # «Open browser», and the press asks app.py to start it (spec 4.3).
+    assert window.browser_button.text() == tr("window_open_browser")
+    assert window.browser_button.isEnabled()
+    with qtbot.waitSignal(window.browser_toggle_request):
+        window.browser_button.click()
     window.set_browser_running(True)
-    assert not window.open_browser_button.isEnabled()
-    assert window.close_browser_button.isEnabled()
-    with qtbot.waitSignal(window.browser_close_request):
-        window.close_browser_button.click()
+    assert window.browser_button.text() == tr("window_close_browser")
+    assert window.browser_button.toolTip() == tr("window_close_browser_tip")
+    # The same button is clickable in both states: it closes the window.
+    assert window.browser_button.isEnabled()
+    with qtbot.waitSignal(window.browser_toggle_request):
+        window.browser_button.click()
 
 
 def test_browser_closed_by_the_user_allows_to_open_it_again(qtbot, tmp_path):
@@ -593,10 +745,111 @@ def test_browser_closed_by_the_user_allows_to_open_it_again(qtbot, tmp_path):
     qtbot.addWidget(window)
     window.set_browser_running(True)
     window._browser_closed()
-    assert window.open_browser_button.isEnabled()
-    assert not window.close_browser_button.isEnabled()
+    assert window.browser_button.text() == tr("window_open_browser")
+    assert window.browser_button.isEnabled()
     # The running download is not stopped by the closed browser window (spec 3.7).
     assert window.worker is None
+
+
+def test_the_browser_button_waits_for_the_launch(qtbot, tmp_path):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    # Resolving the browser, the settings and the offer to download Chromium are on
+    # the click, so a second press during the launch would start a second thread of
+    # Playwright (spec 4.3 p.2): the button is disabled while it is starting.
+    window.set_browser_starting(True)
+    assert not window.browser_button.isEnabled()
+    assert window.browser_button.toolTip() == tr("window_browser_starting")
+    window.set_browser_starting(False)
+    assert window.browser_button.isEnabled()
+    assert window.browser_button.toolTip() == tr("window_open_browser_tip")
+    # The state of the window is kept across the launch: the thread is up, so the
+    # button goes back to «Close browser» when the launch is over.
+    window.sniffer = FakeSniffer(running=True)
+    window.set_browser_running(True)
+    window.set_browser_starting(True)
+    window.set_browser_starting(False)
+    assert window.browser_button.text() == tr("window_close_browser")
+    assert window.browser_button.toolTip() == tr("window_close_browser_tip")
+    assert window.browser_button.isEnabled()
+
+
+def painted(icon: QIcon) -> int:
+    """The pixels a painted mark covers: an empty icon gives zero."""
+    image = icon.pixmap(ICON_SIZE, ICON_SIZE).toImage()
+    return sum(
+        1
+        for y in range(ICON_SIZE)
+        for x in range(ICON_SIZE)
+        if image.pixelColor(x, y).alpha() > 200
+    )
+
+
+def test_the_buttons_of_the_window_carry_their_marks(qtbot, tmp_path):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    # Every button of the window is drawn by hand: the glyph of a font is not in the
+    # UI font of Windows, so «⚙» shows a box (spec 4.3 p.2).
+    buttons = window.findChildren(QAbstractButton)
+    assert len(buttons) >= 8
+    for button in buttons:
+        assert not button.icon().isNull(), button.text()
+        assert painted(button.icon()) > 10, button.text()
+
+
+def test_the_buttons_of_a_card_carry_their_marks(qtbot):
+    card = SourceCard(entry("s1"))
+    qtbot.addWidget(card)
+    for button in (
+        card.download_button,
+        card.cancel_button,
+        card.open_button,
+        card.retry_button,
+        card.remove_button,
+    ):
+        assert not button.icon().isNull(), button
+        assert painted(button.icon()) > 10, button
+    # A QToolButton shows the icon only by default: the text of «Cancel» has to stay
+    # next to the mark, or the button of a card loses its label (spec 4.1 p.4).
+    for button in (card.cancel_button, card.open_button, card.retry_button):
+        assert button.toolButtonStyle() == Qt.ToolButtonStyle.ToolButtonTextBesideIcon
+
+
+def test_the_buttons_of_the_settings_dialog_carry_their_marks(qtbot):
+    dialog = SettingsDialog(Settings())
+    qtbot.addWidget(dialog)
+    # The check boxes and the combos draw their own marks in the stylesheet, only
+    # the buttons of the dialog carry a painted icon (spec 4.3 p.2).
+    buttons = dialog.findChildren(QPushButton)
+    assert len(buttons) >= 4
+    for button in buttons:
+        assert not button.icon().isNull(), button.text()
+        assert painted(button.icon()) > 10, button.text()
+
+
+def test_the_two_states_of_the_browser_button_are_one_window():
+    white = QColor("#ffffff")
+    opening = browser_icon(white, True).pixmap(ICON_SIZE, ICON_SIZE).toImage()
+    closing = browser_icon(white, False).pixmap(ICON_SIZE, ICON_SIZE).toImage()
+    # The frame, the title bar and the globe of the page are the same drawing in both
+    # icons: only the mark on the right of the title bar changes, so the button is
+    # read as the browser of the program in both states (spec 4.3).
+    for y in range(6, ICON_SIZE):
+        for x in range(ICON_SIZE):
+            assert opening.pixelColor(x, y) == closing.pixelColor(x, y)
+    assert painted(browser_icon(white, True)) > 10
+    assert painted(browser_icon(white, False)) > 10
+
+
+def test_the_color_of_the_marks_follows_the_theme():
+    # The buttons of the accent carry the white mark, the buttons of the panel carry
+    # the color of the text of the theme (spec 4.3 p.2).
+    assert icon_color("accent", "dark") == QColor("#ffffff")
+    assert icon_color("accent", "light") == QColor("#ffffff")
+    for theme in ("dark", "light"):
+        assert icon_color("panel", theme) == color_for(theme, "text")
+    # The system theme has no stylesheet: the mark takes the color of the palette.
+    assert icon_color("panel", "system").isValid()
 
 
 def test_page_url_is_remembered_for_open_browser(qtbot, tmp_path):
@@ -689,16 +942,18 @@ def test_tray_menu_tracks_the_browser_window(qtbot, tmp_path):
     tray = TrayController(window, None)
     assert tray.show_action.text() == tr("tray_show")
     assert tray.quit_action.text() == tr("tray_quit")
-    assert tray.open_action.isEnabled()
-    assert not tray.close_action.isEnabled()
+    # One item of the menu for the browser, as the button of the window: the text
+    # says what the item will do, so nothing is disabled in the menu (spec 4.3).
+    assert tray.browser_action.text() == tr("window_open_browser")
+    assert tray.browser_action.isEnabled()
     tray.set_browser_running(True)
-    assert not tray.open_action.isEnabled()
-    assert tray.close_action.isEnabled()
+    assert tray.browser_action.text() == tr("window_close_browser")
+    assert tray.browser_action.isEnabled()
     assert tray.contextMenu().actions()[0] is tray.show_action
     # The console panel is in the menu, so the hidden panel is opened from the tray
-    # (spec 4.2 p.5): the menu has the seven items of the window.
+    # (spec 4.2 p.5): the menu has the six items of the window.
     assert tray.console_action.text() == tr("window_open_console")
-    assert len(tray.contextMenu().actions()) == 7
+    assert len(tray.contextMenu().actions()) == 6
 
 
 def tray_image(tray: TrayController) -> QImage:
@@ -740,27 +995,206 @@ def test_the_console_panel_is_hidden_and_shown(qtbot, tmp_path):
     window = make_window(tmp_path)
     qtbot.addWidget(window)
     # The program starts with the console hidden: the list of found videos gets the
-    # whole window, which is what a person picking a video needs (spec 4.2 p.5), and
-    # the row of buttons stays on the screen as the way to show the panel back.
+    # whole window, which is what a person picking a video needs (spec 4.2 p.5). The
+    # row of the console is one section with the panel, so hidden there is no row
+    # and no divider of the splitter.
     assert not window.console.isVisible()
+    assert not window.console_section.isVisible()
     assert not window.console_clear.isVisible()
+    assert not window.log_button.isVisible()
     assert window.console_button.text() == tr("console_show")
+    assert window.splitter.handleWidth() == 0
     hidden = window.splitter.sizes()
-    assert hidden[1] <= SPLIT_CONSOLE_MIN + 40
+    assert hidden[1] == 0
 
     window.toggle_console()
-    # «Clear» belongs to the text of the console, so it appears with the panel.
+    # «Clear» and «Open log file» belong to the panel, so they appear with it.
     assert window.console.isVisible()
+    assert window.console_section.isVisible()
     assert window.console_clear.isVisible()
+    assert window.log_button.isVisible()
     shown = window.splitter.sizes()
     assert shown[1] > SPLIT_CONSOLE_MIN + 40
+    assert window.splitter.handleWidth() == CONSOLE_HANDLE
     assert window.settings.console_open
     assert window.console_button.text() == tr("console_hide")
 
     window.toggle_console()
     assert not window.console.isVisible()
+    assert not window.console_section.isVisible()
     assert not window.console_clear.isVisible()
+    assert not window.log_button.isVisible()
     assert window.settings.console_open is False
+
+
+def test_the_top_row_carries_the_console_toggle_and_the_folder(qtbot, tmp_path):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    # The commands of the window are in the header: the toggle of the console and the
+    # downloads folder; «Open log file» is the row of the panel, so it is on the
+    # screen only while the console is shown (spec 4.2 p.5). The two buttons of the
+    # list are in the right end of the same row.
+    header = window.splitter.widget(0)
+    assert window.console_button.parent() is header
+    assert window.folder_button.parent() is header
+    assert window.log_button.parent() is window.console_section
+    assert not window.log_button.isVisibleTo(window)
+    assert window.folder_button.isVisibleTo(window)
+    row = window.settings_button.geometry()
+    assert window.clear_all_button.geometry().top() == row.top()
+    assert window.clear_all_button.geometry().left() > row.right()
+    window.toggle_console()
+    assert window.log_button.isVisibleTo(window)
+    assert window.console_button.text() == tr("console_hide")
+    # The row of the list is not the console: it stays on the screen without the panel.
+    assert window.clear_all_button.isVisibleTo(window)
+    assert window.clear_downloaded_button.isVisibleTo(window)
+
+
+def test_the_card_area_wall_follows_the_theme(qtbot, qapp, tmp_path):
+    """The wall behind the cards is the background of the theme, not the palette.
+
+    A plain `QWidget` paints the color of the palette of the style, which is not the
+    color of the theme, so the list of cards stayed dark in the light theme (spec 4.3).
+    """
+    for theme, want in (("light", LIGHT["background"]), ("dark", DARK["background"])):
+        settings = Settings(download_dir=str(tmp_path), theme=theme)
+        window = MainWindow(settings, default_paths(downloads_dir=tmp_path), None, None)
+        qtbot.addWidget(window)
+        apply_theme(qapp, theme)
+        window.resize(900, 600)
+        window.show()
+        # The container of the cards has no card in it, so the wall is on the screen.
+        color = window.card_container.grab().toImage().pixelColor(120, 300)
+        assert QColor(want).getRgb()[:3] == (color.red(), color.green(), color.blue())
+        window.close()
+
+
+def test_the_clear_buttons_are_the_right_end_of_the_top_row(qtbot, tmp_path):
+    """«Clear downloaded» is yellow, «Clear all» is red, in the right corner of the top row.
+
+    The colors are the keys of the theme and the QSS rules of the object names, so
+    the two actions of the list are told apart by the color in the dark theme, the
+    light theme and the screenshots (spec 4.1 p.1).
+    """
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    window.show()
+    yellow = window.clear_downloaded_button.geometry()
+    red = window.clear_all_button.geometry()
+    # The yellow is the left button, the red is the right one, both in the row of the
+    # commands of the window, after the four blue buttons of the corner.
+    assert yellow.right() < red.left()
+    assert yellow.top() == red.top()
+    assert yellow.left() > window.settings_button.geometry().right()
+    assert window.clear_downloaded_button.objectName() == "clearDownloaded"
+    assert window.clear_all_button.objectName() == "clearAll"
+    # The colors of the buttons are the colors of the theme.
+    dark = qss_for("dark")
+    assert DARK["warn"] in dark
+    assert DARK["danger"] in dark
+    assert "#clearDownloaded" in dark
+    assert "#clearAll" in dark
+    light = qss_for("light")
+    assert LIGHT["warn"] in light
+    assert LIGHT["danger"] in light
+    # The mark of a button takes the color of the text of that button: the dark of
+    # the theme on the yellow, white on the red (spec 4.3).
+    assert window._warn.name().lower() == DARK["warn_text"]
+    assert window._danger.name().lower() == DARK["danger_text"]
+
+
+def test_the_commands_of_the_window_are_in_the_upper_left_corner(qtbot, tmp_path):
+    """The four commands stand in the upper-left corner, in one row, in their order.
+
+    The row used to be pushed to the right by the label «Found videos», and the label
+    is gone: the row of the commands starts at the left margin of the section, so the
+    first button a person sees is the browser (spec 4.2 p.4).
+    """
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    window.show()
+    order = [
+        window.browser_button,
+        window.console_button,
+        window.folder_button,
+        window.settings_button,
+    ]
+    lefts = [b.geometry().left() for b in order]
+    assert lefts == sorted(lefts)
+    # The row is the first thing on the screen, at the left edge.
+    assert order[0].geometry().left() <= 12
+    assert all(b.geometry().bottom() == order[0].geometry().bottom() for b in order)
+
+
+def test_the_row_under_the_commands_is_the_address_field_with_go(qtbot, tmp_path):
+    """The row of the address is under the commands: the field and the «Go» button.
+
+    The link is pasted in the window itself, so a download starts without opening the
+    browser and typing the address inside it: the field takes the whole row, the
+    button is at its right end, and the row of the console stays below (spec 4.2 p.4).
+    """
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    window.show()
+    header = window.splitter.widget(0)
+    assert window.url_input.parent() is header
+    assert window.go_button.parent() is header
+    assert window.url_input.geometry().top() > window.settings_button.geometry().bottom()
+    assert window.go_button.geometry().left() > window.url_input.geometry().right()
+    assert window.url_input.placeholderText() == tr("window_url_placeholder")
+    # A link longer than the field is read in the tooltip.
+    long_url = "https://www.youtube.com/watch?v=" + "x" * 60
+    window.url_input.setText(long_url)
+    assert window.url_input.toolTip() == long_url
+
+
+def test_go_sends_the_address_of_the_field_to_the_running_browser(qtbot, tmp_path):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    sniffer = FakeSniffer(running=True)
+    window.sniffer = sniffer
+    window.url_input.setText("https://www.youtube.com/watch?v=abc")
+    window.go_button.click()
+    assert sniffer.navigated == ["https://www.youtube.com/watch?v=abc"]
+    # The page of the browser is remembered, so «Open browser» opens the same site.
+    assert window.last_url == "https://www.youtube.com/watch?v=abc"
+
+
+def test_go_of_the_link_the_browser_is_on_says_so(qtbot, tmp_path, monkeypatch):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    sniffer = FakeSniffer(running=True)
+    window.sniffer = sniffer
+    window.last_url = "https://site.example/watch"
+    window.url_input.setText("https://site.example/watch")
+    messages: list[str] = []
+    monkeypatch.setattr(window, "log_info", messages.append)
+    window.go_button.click()
+    assert sniffer.navigated == []
+    assert messages == [tr("go_same_page")]
+
+
+def test_go_launches_the_browser_when_the_browser_is_down(qtbot, tmp_path):
+    """A domain pasted without the protocol is a page address as well (spec 4.2 p.4)."""
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    requests: list[str] = []
+    window.browser_open_request.connect(requests.append)
+    window.url_input.setText("youtube.com/watch?v=1")
+    window.go_button.click()
+    assert requests == ["https://youtube.com/watch?v=1"]
+
+
+def test_go_without_a_link_says_that_the_field_is_empty(qtbot, tmp_path, monkeypatch):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    window.sniffer = FakeSniffer(running=True)
+    messages: list[str] = []
+    monkeypatch.setattr(window, "log_info", messages.append)
+    window.go_button.click()
+    assert messages == [tr("go_url_missing")]
+    assert window.sniffer.navigated == []
 
 
 def test_the_window_opens_with_the_console_the_user_left(qtbot, tmp_path):
@@ -770,9 +1204,12 @@ def test_the_window_opens_with_the_console_the_user_left(qtbot, tmp_path):
     qtbot.addWidget(window)
     window.show()
     # The state of the panel is stored in the settings, so the window opens the way
-    # the user left it (spec 4.2 p.1), and the button says how to hide the console.
+    # the user left it (spec 4.2 p.1), and the button in the top row says how to hide
+    # the console. The row of the console is shown with the panel.
     assert window.console.isVisible()
+    assert window.console_section.isVisible()
     assert window.console_clear.isVisible()
+    assert window.log_button.isVisible()
     assert window.console_button.text() == tr("console_hide")
 
 
@@ -831,7 +1268,41 @@ def test_the_card_cross_of_a_finished_card_keeps_the_file(qtbot, tmp_path):
     assert video.is_file()
 
 
-def test_the_tray_marks_the_running_download_and_reports_the_end(qtbot, tmp_path):
+def test_the_tray_marks_the_running_download_and_reports_the_end_of_a_batch(qtbot, tmp_path):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    tray = FakeTray()
+    window.tray = tray
+    heard: list[int] = []
+    window.play_sound = lambda: heard.append(1)
+    worker = FakeWorker()
+    window.worker = worker
+
+    window.add_source(entry("s1"))
+    window.add_source(entry("s2"))
+    window._start_download("s1")
+    window._start_download("s2")
+    # The green arrow: the program downloads while the window is minimized (spec 4.2 p.7).
+    assert tray.active is True
+
+    # The first file of a batch is not its end: a task is left in the queue, so the
+    # balloon and the sound stay away, and the arrow of the tray keeps the green mark.
+    window._task_finished("s1", str(tmp_path / "a.mp4"))
+    assert tray.active is True
+    assert tray.hints == []
+    assert heard == []
+
+    # The last task leaves the queue before it is reported: the batch is over, so one
+    # balloon for the whole batch and one sound (spec 4.2 p.7).
+    worker.queued.clear()
+    window._task_finished("s2", str(tmp_path / "b.mp4"))
+    assert tray.active is False
+    assert tray.hints == [tr("tray_download", n=2)]
+    assert heard == [1]
+
+
+def test_a_single_download_gives_no_balloon_and_no_sound(qtbot, tmp_path):
+    """One download is not a batch: the icon goes quiet, the balloon stays away (spec 4.2 p.7)."""
     window = make_window(tmp_path)
     qtbot.addWidget(window)
     tray = FakeTray()
@@ -843,15 +1314,69 @@ def test_the_tray_marks_the_running_download_and_reports_the_end(qtbot, tmp_path
 
     window.add_source(entry("s1"))
     window._start_download("s1")
-    # The green arrow: the program downloads while the window is minimized (spec 4.2 p.7).
-    assert tray.active is True
-
-    # The last task leaves the queue before it is reported, so the queue is empty now.
     worker.queued.clear()
     window._task_finished("s1", str(tmp_path / "a.mp4"))
     assert tray.active is False
-    assert tr("tray_download", n=1) in tray.hints
-    assert heard == [1]
+    assert tray.hints == []
+    assert heard == []
+
+    # The counter is per batch: the next single download starts from 0, so a row of
+    # single downloads never becomes the report of a finished batch.
+    window.add_source(entry("s2"))
+    window._start_download("s2")
+    worker.queued.clear()
+    window._task_finished("s2", str(tmp_path / "b.mp4"))
+    assert tray.hints == []
+    assert heard == []
+
+
+def test_removing_cards_gives_no_balloon_and_no_sound(qtbot, tmp_path):
+    """The user downloaded nothing: taking cards out of the list is not a batch (spec 4.2 p.7)."""
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    tray = FakeTray()
+    window.tray = tray
+    heard: list[int] = []
+    window.play_sound = lambda: heard.append(1)
+    worker = FakeWorker()
+    window.worker = worker
+
+    window.add_source(entry("s1"))
+    window.add_source(entry("s2"))
+    for entry_id in ("s1", "s2"):
+        window.cards[entry_id].remove_button.click()
+    assert window.cards == {}
+    assert tray.hints == []
+    assert heard == []
+
+    # Clearing the list is the same: the queue drains with no finished file.
+    window.add_source(entry("s3"))
+    window.clear_all_cards()
+    assert tray.hints == []
+    assert heard == []
+
+
+def test_a_failed_task_gives_no_balloon(qtbot, tmp_path):
+    """A batch that ends with an error is not the end of all downloads (spec 4.2 p.7)."""
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    tray = FakeTray()
+    window.tray = tray
+    heard: list[int] = []
+    window.play_sound = lambda: heard.append(1)
+    worker = FakeWorker()
+    window.worker = worker
+
+    window.add_source(entry("s1"))
+    window.add_source(entry("s2"))
+    window._start_download("s1")
+    window._start_download("s2")
+    window._task_finished("s1", str(tmp_path / "a.mp4"))
+    worker.queued.clear()
+    window._task_failed("s2", "HTTP 410: the signed link expired")
+    assert tray.active is False
+    assert tray.hints == []
+    assert heard == []
 
 
 def test_the_tray_tooltip_lists_the_files_that_download(qtbot, tmp_path):
@@ -1008,9 +1533,8 @@ def test_make_tray_shows_the_icon_and_keeps_the_window(qtbot, tmp_path, monkeypa
 
     assert tray is not None
     assert window.tray is tray
-    # The browser thread is not running yet: only «Open browser» is enabled.
-    assert tray.open_action.isEnabled()
-    assert not tray.close_action.isEnabled()
+    # The browser thread is not running yet: the item of the menu says «Open browser».
+    assert tray.browser_action.text() == tr("window_open_browser")
 
 
 def test_a_tray_created_while_a_task_runs_shows_the_file_and_the_green_arrow(

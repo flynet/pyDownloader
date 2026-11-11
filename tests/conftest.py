@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -13,6 +15,42 @@ DATA_DIR = Path(__file__).parent / "data"
 # Final URL of a manifest after redirects: relative links are resolved against it.
 HLS_URL = "https://cdn.example.com/video/master.m3u8"
 MPD_URL = "https://cdn.example.com/dash/manifest.mpd"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def isolated_app_data(tmp_path_factory: pytest.TempPathFactory):
+    """The whole suite writes to its own ``%APPDATA%`` and ``%LOCALAPPDATA%``.
+
+    A window of the UI tests saves the settings on every console toggle, on the
+    Apply of the dialog and on the close, and the path it writes is
+    ``%APPDATA%/PyDownloader/settings.json`` — the file of the user. Without the
+    redirect the suite leaves the downloads folder of the developer as the temp
+    folder of one test, so the installed program starts with that temp path, and
+    the profile, the logs and Chromium of the tests go to the real LocalAppData.
+    The redirect is for the whole session: the profile is moved once by the code
+    of ``paths.py``, so a per-test folder would run the migration every time.
+
+    The system temp folder is moved out of the tree of the tests as well: the
+    startup code treats a settings path inside ``%TEMP%`` as the folder of a test
+    run, and the temp folder of pytest would make every ``tmp_path`` one. The tool
+    of the screenshots runs with the same rule (``isolate_app_data`` of
+    ``config/paths.py``).
+    """
+    root = tmp_path_factory.mktemp("appdata")
+    temp = root / "temp"
+    temp.mkdir(parents=True, exist_ok=True)
+    old_env = {key: os.environ.get(key) for key in ("APPDATA", "LOCALAPPDATA")}
+    old_temp = tempfile.tempdir
+    os.environ["APPDATA"] = str(root / "roaming")
+    os.environ["LOCALAPPDATA"] = str(root / "local")
+    tempfile.tempdir = str(temp)
+    yield root
+    for key, value in old_env.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
+    tempfile.tempdir = old_temp
 
 
 @pytest.fixture(scope="session", autouse=True)

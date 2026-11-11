@@ -15,7 +15,7 @@ from __future__ import annotations
 from typing import Literal
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor, QGuiApplication, QIcon, QPainter, QPen, QPixmap
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -28,13 +28,19 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from pydownloader.config.settings import ThemeName
 from pydownloader.i18n import tr
 from pydownloader.manifest.registry import SourceEntry
+from pydownloader.ui.button_icons import (
+    attach,
+    cross_icon,
+    download_icon,
+    icon_color,
+    play_icon,
+    retry_icon,
+)
 
 CardState = Literal["new", "queued", "downloading", "done", "error"]
-
-#: The side of the cross of a card, in pixels.
-CROSS_SIZE = 16
 
 #: The bar of a finished download is green: the colour says the file is on the
 #: disk, so a person sees the end of the queue without reading the text (spec 4.1 p.3).
@@ -48,26 +54,16 @@ def bar_style(state: CardState) -> str:
     return DONE_BAR if state == "done" else ""
 
 
-def cross_icon(size: int = CROSS_SIZE, color: str = "#9ea2b0") -> QIcon:
-    """The «remove» cross of a card, drawn by hand (spec 4.1 p.1).
+# The «✕» of a card and the marks of its buttons are painted, not typed: the text
+# glyph «✕» (U+2715) is not in the font of the Windows buttons, so a character with
+# the glyph shows a box. The drawings of ``button_icons`` give the same marks in
+# every theme, in every language, and in the screenshots of the README (spec 4.1 p.1).
 
-    The text glyph «✕» (U+2715) is not in the UI font of the Windows buttons, so
-    a label with the character shows a box. Two painted lines give the same
-    cross in every theme, in every language, and in the screenshots of the
-    README, which is what the row of a card needs.
-    """
-    pixmap = QPixmap(size, size)
-    pixmap.fill(QColor(0, 0, 0, 0))
-    pen = QPen(QColor(color))
-    pen.setWidth(max(1, size // 8))
-    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-    painter = QPainter(pixmap)
-    painter.setPen(pen)
-    margin = size // 4
-    painter.drawLine(margin, margin, size - margin, size - margin)
-    painter.drawLine(size - margin, margin, margin, size - margin)
-    painter.end()
-    return QIcon(pixmap)
+#: The box of the cross on the right of a card: the icon of 16 px, the padding of
+#: 4 px and the border of 1 px of the theme, so the box is a square 26 x 26 px and
+#: the mark stands in the middle of it (spec 4.1 p.1). The row of the card gives a
+#: button the height of the label, which is 16 px, so the size is fixed.
+CROSS_BUTTON = 26
 
 #: State -> the key of its text in the meta line (spec 4.1 p.2); ``new`` shows none.
 STATE_KEYS: dict[CardState, str] = {
@@ -149,11 +145,15 @@ class SourceCard(QFrame):
     #: «✕» on the right of the card: take this one entry out of the list (spec 4.1 p.1).
     remove_clicked = Signal(str)
 
-    def __init__(self, entry: SourceEntry, parent=None) -> None:
+    def __init__(self, entry: SourceEntry, parent=None, theme: ThemeName = "dark") -> None:
         super().__init__(parent)
         self.entry = entry
         self.state: CardState = "new"
         self.stage = "download"
+        #: The color of the marks of the card: the buttons of the card are of the panel
+        #: background, so the icon takes the text color of the theme (spec 4.3 p.2).
+        self._panel = icon_color("panel", theme)
+        self._accent = icon_color("accent", theme)
         self.setObjectName("card")
         # The height comes from the layout (labels, progress bar, buttons): an
         # explicit minimum used to win over the layout minimum and squeezed the
@@ -185,7 +185,8 @@ class SourceCard(QFrame):
         # a finished card, an error card (spec 4.1 p.1).
         self.remove_button = QToolButton()
         self.remove_button.setObjectName("cardRemove")
-        self.remove_button.setIcon(cross_icon())
+        attach(self.remove_button, cross_icon(self._panel))
+        self.remove_button.setFixedSize(CROSS_BUTTON, CROSS_BUTTON)
         self.remove_button.setAutoRaise(True)
         self.remove_button.setToolTip(tr("card_remove_tip"))
         self.remove_button.clicked.connect(lambda: self.remove_clicked.emit(self.entry.id))
@@ -226,6 +227,9 @@ class SourceCard(QFrame):
         row = QHBoxLayout()
         self.download_button = QPushButton(tr("card_download"))
         self.download_button.setObjectName("download")
+        # The arrow to the line of the disk is the mark of the program icon: the button
+        # is the start of the download (spec 4.1 p.6).
+        attach(self.download_button, download_icon(self._accent))
         # The floor of the button is its own hint: a squeezed layout can give an
         # item less than minimumSizeHint(), and the text of «Download» disappeared
         # with the last pixel of the row. minimumSize() is the hard floor of QLayout.
@@ -235,18 +239,23 @@ class SourceCard(QFrame):
 
         self.cancel_button = QToolButton()
         self.cancel_button.setText(tr("card_cancel"))
+        attach(self.cancel_button, cross_icon(self._panel))
         self.cancel_button.clicked.connect(lambda: self.cancel_clicked.emit(self.entry.id))
         self.cancel_button.hide()
         row.addWidget(self.cancel_button)
 
         self.open_button = QToolButton()
         self.open_button.setText(tr("card_open_file"))
+        # The triangle of a player: the file opens in the player of the system (spec 4.1 p.4).
+        attach(self.open_button, play_icon(self._panel))
         self.open_button.clicked.connect(lambda: self.open_file_clicked.emit(self.entry.id))
         self.open_button.hide()
         row.addWidget(self.open_button)
 
         self.retry_button = QToolButton()
         self.retry_button.setText(tr("card_retry"))
+        # The arc of the arrow is the same mark as the check for an update (spec 8.3).
+        attach(self.retry_button, retry_icon(self._panel))
         self.retry_button.clicked.connect(lambda: self.download_clicked.emit(self.entry.id))
         self.retry_button.hide()
         row.addWidget(self.retry_button)

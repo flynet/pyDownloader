@@ -1,12 +1,14 @@
 """Dark and light styling (spec 4.3).
 
-The theme is applied as a QSS stylesheet, so the widgets of the window follow
-the choice in the settings. ``system`` uses the palette of Windows.
+The theme is applied as a QSS stylesheet and as the palette of the application, so
+the widgets of the window follow the choice in the settings: a widget with no rule
+of its own paints the palette, and the palette of Windows is not the theme.
+``system`` uses the palette of Windows.
 """
 
 from __future__ import annotations
 
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import QApplication
 
 from pydownloader.config.settings import ThemeName
@@ -22,6 +24,16 @@ DARK = {
     "border": "#3a3a3a",
     "success": "#2e7d32",
     "error": "#b3261e",
+    # The second row of the window: «Clear downloaded» is yellow, «Clear all» is
+    # red, so the two actions of the list are told apart by the color (spec 4.1 p.1).
+    "warn": "#d9a441",
+    "warn_hover": "#e3b155",
+    "warn_pressed": "#b98c36",
+    "warn_text": "#202020",
+    "danger": "#b3261e",
+    "danger_hover": "#c23127",
+    "danger_pressed": "#8e1f19",
+    "danger_text": "#ffffff",
 }
 LIGHT = {
     "background": "#ffffff",
@@ -34,6 +46,17 @@ LIGHT = {
     "border": "#d0d0d0",
     "success": "#2e7d32",
     "error": "#b3261e",
+    # The same two colors of the second row in the light theme: the yellow of
+    # «Clear downloaded» is darker than the white of the window, so the yellow text
+    # stays dark and the row reads the same in both themes.
+    "warn": "#d9a441",
+    "warn_hover": "#e3b155",
+    "warn_pressed": "#b98c36",
+    "warn_text": "#202020",
+    "danger": "#b3261e",
+    "danger_hover": "#c23127",
+    "danger_pressed": "#8e1f19",
+    "danger_text": "#ffffff",
 }
 QSS_TEMPLATE = """
 QMainWindow, QWidget#central, QDialog {{ background: {background}; }}
@@ -54,11 +77,22 @@ QPushButton {{
 QPushButton:hover {{ background: {accent_hover}; }}
 QPushButton:pressed {{ background: {accent_pressed}; }}
 QPushButton:disabled {{ color: {muted}; background: {panel}; }}
+#clearDownloaded {{
+    background: {warn}; color: {warn_text}; border: 1px solid {border};
+}}
+#clearDownloaded:hover {{ background: {warn_hover}; }}
+#clearDownloaded:pressed {{ background: {warn_pressed}; }}
+#clearAll {{
+    background: {danger}; color: {danger_text}; border: 1px solid {border};
+}}
+#clearAll:hover {{ background: {danger_hover}; }}
+#clearAll:pressed {{ background: {danger_pressed}; }}
 QToolButton {{
     background: {panel}; color: {text}; border: 1px solid {border};
     border-radius: 4px; padding: 4px 8px;
 }}
 QToolButton:hover {{ background: {border}; }}
+#cardRemove {{ padding: 4px; }}
 QMenu {{ background: {panel}; color: {text}; border: 1px solid {border}; }}
 QMenu::item {{ padding: 5px 22px 5px 16px; }}
 QMenu::item:selected {{ background: {accent}; color: #ffffff; }}
@@ -85,6 +119,7 @@ QComboBox QAbstractItemView {{
     selection-background-color: {accent}; selection-color: #ffffff;
 }}
 QScrollArea {{ background: {background}; border: none; }}
+#cardArea {{ background: {background}; }}
 QScrollBar:vertical {{ background: {background}; width: 12px; margin: 0; }}
 QScrollBar::handle:vertical {{
     background: {border}; border-radius: 6px; min-height: 24px;
@@ -112,14 +147,36 @@ def qss_for(theme: ThemeName) -> str:
 
 
 def apply_palette(app: QApplication, theme: ThemeName) -> None:
-    """Reset the palette to the style default for the system theme.
+    """Set the palette of the app to the colors of the theme.
 
-    The dark and light themes paint everything through QSS, so the palette of
-    the style is only relevant for the ``system`` choice.
+    The dark and light themes paint the widgets through QSS, but a widget with no
+    rule of its own (the wall behind the cards, the wrapper of a section) paints the
+    color of the palette. The palette Qt reads from Windows follows the system theme:
+    on a machine with the dark mode of Windows the palette is dark, so the light theme
+    showed a dark wall behind the list of cards. The palette of the app is set to the
+    colors of the chosen theme, so every widget takes the theme, whatever Windows
+    says (spec 4.3). The ``system`` choice takes the palette of the style.
     """
-    if theme != "system":
-        return
     palette = app.style().standardPalette()
+    if theme == "system":
+        app.setPalette(palette)
+        return
+    colors = DARK if theme == "dark" else LIGHT
+    window = QColor(colors["background"])
+    panel = QColor(colors["panel"])
+    text = QColor(colors["text"])
+    accent = QColor(colors["accent"])
+    palette.setColor(QPalette.ColorRole.Window, window)
+    palette.setColor(QPalette.ColorRole.WindowText, text)
+    palette.setColor(QPalette.ColorRole.Base, panel)
+    palette.setColor(QPalette.ColorRole.Text, text)
+    palette.setColor(QPalette.ColorRole.Button, panel)
+    palette.setColor(QPalette.ColorRole.ButtonText, text)
+    palette.setColor(QPalette.ColorRole.ToolTipBase, panel)
+    palette.setColor(QPalette.ColorRole.ToolTipText, text)
+    palette.setColor(QPalette.ColorRole.PlaceholderText, QColor(colors["muted"]))
+    palette.setColor(QPalette.ColorRole.Highlight, accent)
+    palette.setColor(QPalette.ColorRole.HighlightedText, QColor("#ffffff"))
     app.setPalette(palette)
 
 

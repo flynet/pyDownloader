@@ -23,7 +23,7 @@ from playwright.sync_api import BrowserContext, sync_playwright
 from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import QWidget
 
-from pydownloader.browser.events import CookieRequest, ResponseEvent
+from pydownloader.browser.events import CookieRequest, NavigateRequest, ResponseEvent
 from pydownloader.browser.launcher import BrowserChoice, launch_kwargs
 from pydownloader.browser.stealth import DEFAULT_LOCALE, stealth_script
 from pydownloader.download.http import (
@@ -103,7 +103,7 @@ class SnifferThread(QThread):
         self.user_agent = user_agent
         #: ``Accept-Language`` of the browser, the language of the interface.
         self.locale = locale
-        self._events: queue.Queue[ResponseEvent | CookieRequest] = queue.Queue()
+        self._events: queue.Queue[ResponseEvent | CookieRequest | NavigateRequest] = queue.Queue()
         self._stop = False
         self._context: BrowserContext | None = None
         self._last_page: tuple[str, str] | None = None
@@ -121,6 +121,31 @@ class SnifferThread(QThread):
     def is_browser_open(self) -> bool:
         """Whether the browser window is up: the top panel buttons use this."""
         return self._context is not None and not self._stop
+
+    def go(self, url: str) -> None:
+        """Ask the pump loop to open ``url`` in the browser window (spec 4.2 p.4).
+
+        The page object of Playwright belongs to the event loop of this thread, so the
+        GUI thread only puts the address in the queue: the pump loop opens the page
+        there, and the responses of the new page are read by the same listener that
+        reads any other page of the browser.
+        """
+        self._events.put(NavigateRequest(url=url))
+
+    def _navigate(self, context: BrowserContext, url: str) -> None:
+        """Open the address in the browser window, in the loop that owns the page."""
+        pages = context.pages
+        page = pages[0] if pages else context.new_page()
+        with contextlib.suppress(Exception):
+            page.goto(url)
+        # The page of the browser is remembered, so «Open browser» opens this address.
+        self.last_url = url
+        title = ""
+        with contextlib.suppress(Exception):
+            title = page.title()
+        self._last_page = (url, title)
+        logger.info(tr("browser_page", url=url, title=title))
+        self.page_changed.emit(url, title)
 
     def _log_page_state(self, page: Any) -> None:
         """What a bot detector reads on its first check, written for analysis.
@@ -304,6 +329,9 @@ class SnifferThread(QThread):
                 item.cookies = context.cookies(item.url)
                 logger.debug(tr("browser_cookies", url=item.url, count=len(item.cookies)))
                 item.event.set()
+                continue
+            if isinstance(item, NavigateRequest):
+                self._navigate(context, item.url)
                 continue
             events.append(item)
         for event in events:

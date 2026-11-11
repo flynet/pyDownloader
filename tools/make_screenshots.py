@@ -9,6 +9,10 @@
 берутся из каталога переводов, поэтому снимок совпадает с тем, что видит
 пользователь.
 
+Окно снимков сохраняет настройки, поэтому рисование запускается со своими
+``%APPDATA%``, ``%LOCALAPPDATA%`` и временной папкой: файл настроек
+пользователя от запуска снимков не меняется (spec 7.4).
+
 Окна не показываются на рабочем столе: снимок берётся ``QWidget.grab()`` на
 offscreen-платформе Qt, а шрифты Windows регистрируются в приложении вручную —
 без них текст рисуется квадратиками.
@@ -26,7 +30,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtGui import QFont, QFontDatabase
 from PySide6.QtWidgets import QApplication
 
-from pydownloader.config.paths import Paths, default_paths
+from pydownloader.config.paths import Paths, default_paths, isolate_app_data
 from pydownloader.config.settings import Settings
 from pydownloader.i18n import DEFAULT_LANGUAGE, set_language, tr
 from pydownloader.manifest.registry import SourceEntry
@@ -38,7 +42,7 @@ OUT = Path("assets") / "screenshots"
 DOWNLOADS = Path("D:\\Videos")
 #: Version printed in the console lines: the screenshots are for the release page,
 #: so the tag is written out and stays stable between runs.
-DISPLAY_VERSION = "0.4.5"
+DISPLAY_VERSION = "0.4.6"
 WINDOW_SIZE = (1060, 860)
 #: Splitter sizes of the screenshot: the five demo cards, the row of the console
 #: buttons and a dozen console lines.
@@ -165,6 +169,8 @@ def register_fonts() -> None:
 
 
 def main() -> int:
+    # Настройки пишутся в дерево снимков, файл пользователя не трогается (spec 7.4).
+    isolate_app_data()
     OUT.mkdir(parents=True, exist_ok=True)
     app = QApplication(sys.argv)
     register_fonts()
@@ -177,6 +183,9 @@ def main() -> int:
         language=DEFAULT_LANGUAGE,
         threads=6,
         target_height=1080,
+        # The screenshot shows the console section: its row of buttons is on the
+        # screen only with the panel, so the panel has to be open for the picture.
+        console_open=True,
     )
     apply_theme(app, settings.theme)
     paths: Paths = default_paths()

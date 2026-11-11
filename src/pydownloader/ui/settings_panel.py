@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QHBoxLayout,
     QLabel,
+    QLayout,
     QLineEdit,
     QPushButton,
     QSpinBox,
@@ -37,6 +38,14 @@ from pydownloader.config.settings import (
     ThemeName,
 )
 from pydownloader.i18n import LANGUAGE_NAMES, SUPPORTED_LANGUAGES, Language, current_language, tr
+from pydownloader.ui.button_icons import (
+    attach,
+    check_icon,
+    cross_icon,
+    folder_icon,
+    icon_color,
+    retry_icon,
+)
 
 MIN_THREADS = 1
 MAX_THREADS = 16
@@ -44,6 +53,10 @@ MAX_THREADS = 16
 DIALOG_WIDTH_RATIO = 0.8
 DIALOG_HEIGHT_RATIO = 0.8
 MIN_DIALOG_WIDTH = 640
+#: The floor of the height of the dialog. Every row of the form sets its own floor
+#: (``_set_row_floor``), so the dialog cannot be squeezed under the height the font
+#: of the rows asks for; this number is the least height the dialog gets, so a small
+#: main window does not make the dialog unreadable (spec 4.3 p.2).
 MIN_DIALOG_HEIGHT = 420
 #: Theme value -> the key of its name (the value itself stays in the settings).
 THEME_KEYS: dict[ThemeName, str] = {
@@ -58,6 +71,28 @@ BROWSER_KEYS: dict[BrowserName, str] = {
     "msedge": "browser_edge",
     "chromium": "browser_chromium",
 }
+
+
+def _set_row_floor(layout: QLayout) -> None:
+    """Give every widget of a layout the height its own text asks for.
+
+    A field of the form has the minimum height of zero, so the layout can squeeze a
+    row to 15 px: the letters of the text show half and cannot be read. The
+    ``sizeHint`` of a widget is the height its font and its content ask for, and it
+    becomes the floor of the widget, so the rows keep their height, the layout gets
+    the minimum height it needs, and the dialog cannot be squeezed under it
+    (spec 4.3 p.2).
+    """
+    for index in range(layout.count()):
+        item = layout.itemAt(index)
+        if item is None:
+            continue
+        widget = item.widget()
+        if widget is not None:
+            widget.setMinimumHeight(widget.sizeHint().height())
+        inner = item.layout()
+        if inner is not None:
+            _set_row_floor(inner)
 
 
 def theme_label(name: ThemeName) -> str:
@@ -82,6 +117,8 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(tr("settings_title"))
         self.settings = settings
+        #: The buttons of the dialog are of the accent of the theme, so the marks are white.
+        self._accent = icon_color("accent", settings.theme)
         self._form = QFormLayout()
         self._form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
 
@@ -92,6 +129,8 @@ class SettingsDialog(QDialog):
         folder_row = QHBoxLayout()
         folder_row.addWidget(self.download_edit)
         browse = QPushButton(tr("settings_browse"))
+        # The folder is the mark of the picker of the downloads folder (spec 4.3 p.2).
+        attach(browse, folder_icon(self._accent))
         browse.clicked.connect(self._pick_folder)
         folder_row.addWidget(browse)
         self._form.addRow(tr("settings_folder_row"), folder_row)
@@ -193,20 +232,30 @@ class SettingsDialog(QDialog):
         layout.addWidget(hint)
 
         buttons = QHBoxLayout()
-        save = QPushButton(tr("settings_save"))
-        save.setDefault(True)
-        save.clicked.connect(self._accept)
-        cancel = QPushButton(tr("settings_cancel"))
-        cancel.clicked.connect(self.reject)
-        check = QPushButton(tr("settings_check_updates_button"))
-        check.clicked.connect(self.check_requested.emit)
+        # The update commands are secondary, so they stand on the left. "Save" and
+        # "Cancel" are the main buttons of the dialog: they are in the bottom-right
+        # corner, where a person looks for the buttons that finish a dialog
+        # (spec 4.3 p.2).
+        self.update_check_button = QPushButton(tr("settings_check_updates_button"))
+        # The arc of the arrow is the mark of the update check (spec 8.3).
+        attach(self.update_check_button, retry_icon(self._accent))
+        self.update_check_button.clicked.connect(self.check_requested.emit)
         self.restart_button = QPushButton(tr("settings_restart"))
+        attach(self.restart_button, retry_icon(self._accent))
         self.restart_button.clicked.connect(self._restart)
-        buttons.addWidget(save)
-        buttons.addWidget(cancel)
-        buttons.addStretch(1)
-        buttons.addWidget(check)
+        self.save_button = QPushButton(tr("settings_save"))
+        # The check is the mark of the values written to settings.json (spec 4.3 p.2).
+        attach(self.save_button, check_icon(self._accent))
+        self.save_button.setDefault(True)
+        self.save_button.clicked.connect(self._accept)
+        self.cancel_button = QPushButton(tr("settings_cancel"))
+        attach(self.cancel_button, cross_icon(self._accent))
+        self.cancel_button.clicked.connect(self.reject)
+        buttons.addWidget(self.update_check_button)
         buttons.addWidget(self.restart_button)
+        buttons.addStretch(1)
+        buttons.addWidget(self.save_button)
+        buttons.addWidget(self.cancel_button)
         layout.addLayout(buttons)
 
         # The restart is only useful when the chosen language is not the running one.
@@ -214,7 +263,11 @@ class SettingsDialog(QDialog):
         self._refresh_restart()
 
         self.setSizeGripEnabled(True)
-        self.setMinimumSize(MIN_DIALOG_WIDTH, MIN_DIALOG_HEIGHT)
+        # The rows keep the height the font asks for, and the height of the dialog
+        # cannot go under the height of the rows (spec 4.3 p.2).
+        _set_row_floor(layout)
+        floor = max(MIN_DIALOG_HEIGHT, layout.totalMinimumSize().height())
+        self.setMinimumSize(MIN_DIALOG_WIDTH, floor)
         if parent is not None:
             window = parent.window()
             self.resize(

@@ -37,6 +37,27 @@ def _local_app_data_root() -> Path:
     return Path(base) / APP_NAME if base else Path.home() / "AppData" / "Local" / APP_NAME
 
 
+def isolate_app_data() -> Path:
+    """Run the program with its own app data: nothing of the user is touched.
+
+    A window writes ``%APPDATA%/PyDownloader/settings.json`` when the console is
+    toggled, when the dialog is applied and when the window is closed. Any script
+    that builds a window of the program — the test suite, the tool of the
+    screenshots — writes that file, so it has to run with its own
+    ``%APPDATA%``, ``%LOCALAPPDATA%`` and temp folder: without the redirect a run
+    leaves the settings of the user pointing at the temp folder of the run, and the
+    profile, the logs and Chromium of the run go to the real folders
+    (spec 7.4).
+    """
+    root = Path(tempfile.mkdtemp())
+    temp = root / "Temp"
+    temp.mkdir(parents=True, exist_ok=True)
+    os.environ["APPDATA"] = str(root / "Roaming")
+    os.environ["LOCALAPPDATA"] = str(root / "Local")
+    tempfile.tempdir = str(temp)
+    return root
+
+
 def application_dir() -> Path:
     """Folder of the program: next to ``PyDownloader.exe`` or the checkout root.
 

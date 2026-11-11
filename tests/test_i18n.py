@@ -133,6 +133,41 @@ def test_settings_fall_back_to_english(tmp_path: Path):
     assert load_settings(tmp_path / "absent.json").language == DEFAULT_LANGUAGE
 
 
+def test_a_damaged_settings_file_is_read_from_the_backup(tmp_path: Path):
+    """A settings file that cannot be read falls back to ``settings.json.bak`` (spec 7.4).
+
+    Every start of the program writes the settings, so a start that cannot read
+    them loses the theme, the language, the state of the console panel and the
+    folder of the videos. The backup is the file the previous save kept.
+    """
+    path = tmp_path / "settings.json"
+    save_settings(Settings(theme="dark", console_open=False, language="ru"), path)
+    save_settings(Settings(theme="light", console_open=True, language="ru"), path)
+    assert load_settings(path).theme == "light"
+    # A half-written file: the settings of the last good save come back.
+    path.write_text("{ not json", encoding="utf-8")
+    back = load_settings(path)
+    assert back.theme == "dark"
+    assert back.console_open is False
+    assert back.language == "ru"
+    # A missing file with no backup is the first start: the defaults.
+    path.unlink()
+    assert load_settings(path).theme == "dark"
+
+
+def test_the_save_leaves_no_temp_file(tmp_path: Path):
+    """The settings are written in one move, so a killed start cannot leave a half file."""
+    path = tmp_path / "settings.json"
+    save_settings(Settings(theme="dark"), path)
+    save_settings(Settings(theme="light"), path)
+    assert not (tmp_path / "settings.json.new").exists()
+    assert (tmp_path / "settings.json.bak").is_file()
+    assert load_settings(path).theme == "light"
+    # The backup is the file of the previous save, not the current one.
+    kept = json.loads((tmp_path / "settings.json.bak").read_text(encoding="utf-8"))
+    assert kept["theme"] == "dark"
+
+
 def test_settings_keep_the_browser_choice(tmp_path: Path):
     path = tmp_path / "settings.json"
     save_settings(Settings(browser_name="chromium", user_agent="Dev 1.0", anti_bot=False), path)
@@ -196,3 +231,31 @@ def test_restart_command_runs_the_program_again():
     exe, args = restart_command()
     assert exe
     assert args in ([], ["-m", "pydownloader"])
+
+
+def test_no_text_of_the_catalog_needs_a_glyph_the_ui_font_lacks():
+    """The marks of the buttons are painted, not typed (spec 4.1 p.1, 4.3 p.2).
+
+    The Windows font of the buttons does not carry the gear and the cross, so a
+    label with these code points shows a box. The catalog has no such character,
+    every mark is drawn by ``button_icons``.
+    """
+    missing_glyphs = "⚙✕✓▶"
+    for language, catalog in CATALOG.items():
+        for key, text in catalog.items():
+            for char in missing_glyphs:
+                assert char not in text, f"{key} in {language}: {char}"
+
+
+def test_the_browser_starting_tip_is_in_every_language():
+    # The one browser button is disabled while it launches, and says so (spec 4.3 p.2).
+    for language in SUPPORTED_LANGUAGES:
+        assert CATALOG[language]["window_browser_starting"]
+
+
+def test_the_tray_has_one_item_for_the_browser_window():
+    # The item of the menu is the button of the window: it changes its text, so the
+    # menu does not carry the two keys of the old pair (spec 4.3).
+    for language in SUPPORTED_LANGUAGES:
+        assert "tray_open_browser" not in CATALOG[language]
+        assert "tray_close_browser" not in CATALOG[language]
