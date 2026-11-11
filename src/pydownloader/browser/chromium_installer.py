@@ -24,8 +24,9 @@ from playwright._impl._driver import compute_driver_executable
 from pydownloader.browser.launcher import chromium_executable
 from pydownloader.i18n import tr
 
-#: Windows flag so the console window of the installer process stays hidden.
-CREATE_NO_WINDOW = 0x00000000
+#: Windows flag so the console window of the installer process stays hidden
+#: (``CREATE_NO_WINDOW``). A zero flag shows the console.
+CREATE_NO_WINDOW = 0x08000000
 INSTALL_ARGS = ("install", "chromium")
 
 

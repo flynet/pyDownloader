@@ -17,8 +17,10 @@ from dataclasses import dataclass
 
 from pydownloader.ffmpeg.locate import Ffmpeg, ffmpeg_env
 
-#: Windows flag: the FFmpeg console window stays hidden.
-CREATE_NO_WINDOW = 0x00000000
+#: Windows flag: the FFmpeg console window stays hidden (``CREATE_NO_WINDOW``).
+#: A zero flag shows the console of every probe, and the program probes a stream
+#: on each request the page makes, so the windows flash on the screen.
+CREATE_NO_WINDOW = 0x08000000
 PROBE_TIMEOUT = 25.0
 _VIDEO_RE = re.compile(r"Video:.*?\s(\d{2,5})x(\d{2,5})", re.IGNORECASE)
 #: The audio stream line of FFmpeg, the sign that a source is an audio file.

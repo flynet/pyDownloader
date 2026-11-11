@@ -6,6 +6,35 @@ on `main`.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-11
+
+### Fixed
+- MP3 of an audio source (SoundCloud and other audio-only HLS): the AAC
+  bitstream filter `-bsf:a aac_adtstoasc` is no longer applied to the MP3
+  stream. The filter converts the ADTS header of a stream that is *copied* into
+  MP4, and FFmpeg applies it to the stream of the output file, so the MP3
+  encode ended with "Codec 'mp3' is not supported by the bitstream filter",
+  exit code `-22` and an empty output file. The MP3 path is its own method now:
+  the merged stream is decoded with `libmp3lame` at the bitrate of the settings,
+  the input format of the merged stream is told from the extensions of the
+  segments (`mp4` for `.m4s`/`.m4a`, `mpegts` for `.ts`), and a direct `.mp3`
+  download is copied without re-encode.
+- An audio-only source has no video files, and `all()` of an empty list is true:
+  the empty video list was read as MPEG-TS, which is what added the filter to
+  the audio task. An empty list is no longer TS, and the format of the stream
+  comes from the segments that are merged.
+- The console window of the child processes is hidden: `CREATE_NO_WINDOW` is the
+  flag `0x08000000` in every run, not `0`. The FFmpeg probe runs on every
+  request a page makes, so on a page that plays many audio files the program
+  flashed a console window for each of them, and the same happened to the
+  Chromium installer and to the update commands.
+- The command of a failed FFmpeg run is written to `app.log`, so an
+  "Invalid argument" report shows the input format that did not fit the stream.
+- Tests: the MP3 commands and the hidden console flag are checked, and a new
+  integration file runs the real FFmpeg binary on an audio-only HLS of
+  fragmented MP4 and of MPEG-TS segments, and the result is a playable MP3 with
+  audio and no video. The file is skipped when no FFmpeg binary is available.
+
 ## [0.4.0] - 2026-11-11
 
 ### Added

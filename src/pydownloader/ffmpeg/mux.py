@@ -19,12 +19,33 @@ from pathlib import Path
 from pydownloader.ffmpeg.locate import Ffmpeg, ffmpeg_env
 from pydownloader.i18n import tr
 
-#: Windows flag: the FFmpeg console window stays hidden.
-CREATE_NO_WINDOW = 0x00000000
+#: Windows flag: the FFmpeg console window stays hidden (``CREATE_NO_WINDOW``).
+#: A zero flag shows the console of every FFmpeg run, which flashes on the screen
+#: when the program probes a stream for each page request (spec 6.4).
+CREATE_NO_WINDOW = 0x08000000
 TS_EXTENSIONS = {".ts", ".ifs"}
 #: Bitstream filter needed when AAC in MPEG-TS is put into MP4 (spec 6.4).
 AAC_BSF = ["-bsf:a", "aac_adtstoasc"]
 MUXING_QUEUE = ["-max_muxing_queue_size", "2048"]
+#: Input format of a merged stream file by the extension of its segments: FFmpeg
+#: reads the stream of ``.m4s``/``.m4a`` fragments as MP4, of ``.ts`` as MPEG-TS,
+#: of raw ``.aac`` as AAC. The format is told to FFmpeg, so an audio stream of
+#: concatenated fragments is decoded without probing a file with no header.
+INPUT_FORMATS = {
+    ".ts": "mpegts",
+    ".ifs": "mpegts",
+    ".mp4": "mp4",
+    ".m4a": "mp4",
+    ".m4s": "mp4",
+    ".mov": "mp4",
+    ".mp3": "mp3",
+    ".aac": "aac",
+    ".ogg": "ogg",
+    ".opus": "ogg",
+    ".flac": "flac",
+    ".wav": "wav",
+    ".ac3": "ac3",
+}
 
 logger = logging.getLogger("pydownloader.ffmpeg")
 
@@ -40,8 +61,29 @@ class MuxResult:
 
 
 def is_ts(files: Sequence[Path]) -> bool:
-    """All files are MPEG-TS segments (the AAC bitstream filter is then needed)."""
-    return all(file.suffix.lower() in TS_EXTENSIONS for file in files)
+    """All files are MPEG-TS segments (the AAC bitstream filter is then needed).
+
+    An empty list is not TS: ``all()`` of nothing is true, and an audio-only
+    source has no video files, so the empty video list made the filter apply to
+    the audio stream FFmpeg cannot filter, and the task failed with
+    "Invalid argument".
+    """
+    return bool(files) and all(file.suffix.lower() in TS_EXTENSIONS for file in files)
+
+
+def stream_format(files: Sequence[Path]) -> str | None:
+    """Input format of the merged stream file, ``None`` when the kinds are mixed.
+
+    Segments of one stream are appended one after another, and FFmpeg gets the
+    format from the extensions of the segments: ``.m4a``/``.m4s`` fragments are
+    MP4, ``.ts`` is MPEG-TS, a raw ``.aac`` is AAC. Mixed extensions (a stream
+    of TS and fMP4 fragments) are left to the FFmpeg probe.
+    """
+    formats = {INPUT_FORMATS.get(file.suffix.lower()) for file in files}
+    formats.discard(None)
+    if len(formats) == 1:
+        return formats.pop()
+    return None
 
 
 def merge_streams(files: Sequence[Path], target: Path) -> None:
@@ -62,20 +104,28 @@ def mp3_command(
     audio_source: Path,
     out_path: Path,
     bitrate: int,
-    ts: bool = False,
+    input_format: str | None = None,
 ) -> list[str]:
     """FFmpeg command for an audio file: MP3 of the chosen bitrate (spec 5.2 p.4).
 
-    An audio-only stream has no video, so ``-vn`` drops any video track the
-    container may carry, and the audio is re-encoded with ``libmp3lame``: the
-    codecs of an HLS audio track (AAC, Opus) cannot be put into an MP3 container
-    as they are, so the stream is decoded once (spec 6.4 p.3).
+    The audio is decoded once with ``libmp3lame``: the codecs of an HLS audio
+    track (AAC, Opus) cannot be put into an MP3 container as they are, so the
+    stream is re-encoded (spec 6.4 p.3). ``-vn`` drops any video track the
+    container may carry, and ``input_format`` tells FFmpeg what the merged
+    stream file is (``mp4`` for fMP4 fragments, ``mpegts`` for TS), because a
+    stream of concatenated fragments has no header FFmpeg can probe on a file
+    named ``audio.stream``.
+
+    The AAC bitstream filter is not used here: it converts the ADTS header for a
+    stream that is *copied* into MP4, and a stream that is decoded to MP3 is read
+    without a header filter. A filter that does not fit the stream fails the task
+    with "Invalid argument" and the output file stays empty.
     """
     cmd = [str(ffmpeg.path), "-hide_banner", "-loglevel", "warning", "-y"]
+    if input_format is not None:
+        cmd += ["-f", input_format]
     cmd += ["-i", str(audio_source)]
     cmd += ["-vn", "-c:a", "libmp3lame", "-b:a", f"{bitrate}k"]
-    if ts:
-        cmd += AAC_BSF
     cmd += MUXING_QUEUE
     cmd += ["-f", "mp3", str(out_path)]
     return cmd
@@ -90,7 +140,14 @@ def to_mp3(src: Path, out_path: Path, ffmpeg: Ffmpeg, bitrate: int) -> MuxResult
     if src.suffix.lower() == ".mp3":
         out_path.write_bytes(src.read_bytes())
         return MuxResult(out_path=out_path, log=tr("ffmpeg_direct_mp3"))
-    log = run_ffmpeg(mp3_command(ffmpeg, src, out_path, bitrate))
+    command = mp3_command(
+        ffmpeg,
+        src,
+        out_path,
+        bitrate,
+        INPUT_FORMATS.get(src.suffix.lower()),
+    )
+    log = run_ffmpeg(command)
     return MuxResult(out_path=out_path, log=log)
 
 
@@ -141,6 +198,10 @@ def run_ffmpeg(command: Sequence[str], on_line: Callable[[str], None] | None = N
                 on_line(line)
     if process.returncode != 0:
         tail = " ".join(output.splitlines()[-3:]) if output else tr("ffmpeg_no_output")
+        # The command of the failed run is logged as it was: an input format that
+        # does not fit the stream is the reason of "Invalid argument" and of an
+        # empty output file, and the user sends the log, not the command.
+        logger.error("FFmpeg: %s", subprocess.list2cmdline(list(command)))
         logger.error(tr("ffmpeg_exit_log", code=process.returncode, tail=tail))
         raise FfmpegError(tr("ffmpeg_failed", code=process.returncode, tail=tail))
     logger.debug(tr("ffmpeg_done_output", lines=len(output.splitlines())))
@@ -170,9 +231,9 @@ def assemble(
     """
     if mp3_bitrate is not None:
         mp3_stream = work_dir / "audio.stream"
-        merge_streams(list(files) + list(audio_files), mp3_stream)
-        ts = is_ts(files) or is_ts(audio_files)
-        command = mp3_command(ffmpeg, mp3_stream, out_path, mp3_bitrate, ts)
+        sources = list(files) + list(audio_files)
+        merge_streams(sources, mp3_stream)
+        command = mp3_command(ffmpeg, mp3_stream, out_path, mp3_bitrate, stream_format(sources))
         log = run_ffmpeg(command, on_line)
         return MuxResult(out_path=out_path, log=log)
     video_stream = work_dir / "video.stream"

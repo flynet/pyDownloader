@@ -14,6 +14,7 @@ from pydownloader.ffmpeg.mux import (
     merge_streams,
     mp3_command,
     remux_command,
+    stream_format,
     to_mp3,
 )
 from pydownloader.ffmpeg.probe import (
@@ -41,5 +42,6 @@ __all__ = [
     "probe_height",
     "probe_media",
     "remux_command",
+    "stream_format",
     "to_mp3",
 ]
