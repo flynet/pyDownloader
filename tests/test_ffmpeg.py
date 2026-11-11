@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -14,11 +16,13 @@ from pydownloader.ffmpeg.locate import (
     locate_ffmpeg,
 )
 from pydownloader.ffmpeg.mux import (
+    FfmpegError,
     assemble,
     is_ts,
     merge_streams,
     mp3_command,
     remux_command,
+    run_ffmpeg,
     stream_format,
     to_mp3,
 )
@@ -332,3 +336,53 @@ def test_missing_packaged_binary_is_not_an_error(monkeypatch):
     fake.get_ffmpeg_exe = boom  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "imageio_ffmpeg", fake)
     assert imageio_ffmpeg_path() is None
+
+
+class Collect(logging.Handler):
+    """A handler collecting the messages of the logger, for the log assertions."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.lines: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.lines.append(record.getMessage())
+
+
+def test_a_failed_ffmpeg_run_logs_the_command(tmp_path: Path, monkeypatch):
+    """The command of the failed run goes to ``app.log`` (spec 6.4 p.3).
+
+    An input format that does not fit the stream is the reason of
+    "Invalid argument" and of an empty output file: the user sends the log,
+    so the command of the run has to be in it.
+    """
+    handler = Collect()
+    log = logging.getLogger("pydownloader.ffmpeg")
+    log.addHandler(handler)
+    log.setLevel(logging.DEBUG)
+    command = [
+        "ffmpeg.exe",
+        "-hide_banner",
+        "-y",
+        "-f",
+        "mp4",
+        "-i",
+        "audio.stream",
+        "-f",
+        "mp3",
+        "out.mp3",
+    ]
+
+    def fake_run(cmd, **kwargs):
+        # FFmpeg prints its error to stdout here: ``run_ffmpeg`` reads that stream.
+        return subprocess.CompletedProcess(cmd, returncode=1, stdout="Invalid argument", stderr="")
+
+    monkeypatch.setattr("pydownloader.ffmpeg.mux.subprocess.run", fake_run)
+    try:
+        with pytest.raises(FfmpegError, match="1"):
+            run_ffmpeg(command)
+    finally:
+        log.removeHandler(handler)
+    text = "\n".join(handler.lines)
+    expected = "ffmpeg.exe -hide_banner -y -f mp4 -i audio.stream -f mp3 out.mp3"
+    assert expected in text
