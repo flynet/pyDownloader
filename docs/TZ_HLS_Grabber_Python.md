@@ -15,8 +15,10 @@ on GitHub Releases on its own.
 How the program works:
 
 1. The user launches the program and picks the downloads folder.
-2. A managed browser and the main window of two sections open: found videos
-   (top) and console (bottom).
+2. The main window of two sections opens: found videos (top) and console
+   (bottom). **The browser is not launched at startup** — the user opens it with
+   the "Open browser" button. "Hide console" gives the whole window to the list
+   of cards, "Show console" brings the panel back.
 3. The user visits the site and starts the video.
 4. The application intercepts the browser's network requests and finds HLS
    (`.m3u8`), MPEG-DASH (`.mpd`), direct MP4 and audio-only sources (SoundCloud,
@@ -25,8 +27,9 @@ How the program works:
    **only after pressing "Download"** on a specific video.
 6. Segments are downloaded into a temporary folder and joined by FFmpeg into
    one `.mp4`. A source that contains sound only is written as `.mp3`.
-7. Closing the window hides the program to the Windows tray; the tray menu is
-   the only way to quit.
+7. Closing the window with "X" hides it to the Windows tray: the downloads keep
+   running and the browser stays open; "Exit" in the tray menu is the only way to
+   quit, and the tray icon shows the state of the queue.
 
 The principle: the browser already receives and decrypts (AES-128) the stream, so
 the program does the same with the same URLs and keys. DRM (Widevine / PlayReady /
@@ -75,12 +78,12 @@ FairPlay) is not supported: such videos are skipped.
 6. After the join, the task's temporary folder is deleted and the card moves to
    the "Done" state. On error, temporary files are kept, the reason is written
    to the log and the console.
-7. Closing the window with "X" hides it to the tray (the downloads keep running);
-   "Exit" in the tray menu is the way to quit. If a download is running, "Exit"
-   asks for confirmation, cancels the download, closes the browser and
-   terminates the program. If the user closed the browser window, the console
-   writes a message and the current download continues to the end (the program
-   downloads the segments itself, not through the browser).
+7. Closing the window with "X" hides it to the tray (the downloads keep running,
+   the browser stays open); "Exit" in the tray menu is the way to quit. If a
+   download is running, "Exit" asks for confirmation, cancels the download,
+   closes the browser and terminates the program. If the user closed the browser
+   window, the console writes a message and the current download continues to the
+   end (the program downloads the segments itself, not through the browser).
 8. "Open browser" shows the browser window on the page where the user was last;
    "Close browser" closes it.
 
@@ -118,17 +121,23 @@ window size 900×600, size and position are remembered.
     video in the default player).
   - **Error**: red caption and a "Retry" button, details in the console.
 - Pressing "Download" only queues the task.
-- In the section header there are four buttons:
-  - **"Clear all"** — removes all cards;
-  - **"Clear downloaded"** — removes only the cards whose files are already
-    downloaded and lie on disk;
+- In the section header there are five buttons:
   - **"Open browser"** — shows the browser window, maximised, on the page where
     the user was last (starts the browser if it is not open). The program does
     not open the browser on its own: the window is opened by this button;
   - **"Close browser"** — closes the browser window. An active download is not
     cancelled and continues in the background.
+  - **"Clear all"** — removes all cards;
+  - **"Clear downloaded"** — removes only the cards whose files are already
+    downloaded and lie on disk;
+  - **"Settings"** — the settings dialog.
   An active download is not cancelled when clearing and continues in the
   background.
+- Under the list of cards there is the row of the console panel: **"Show
+  console"** / **"Hide console"** (the label changes with the state), **"Clear"**
+  (the text of the console), **"Open downloads folder"**, **"Open log file"**.
+  The row stays on the screen when the console is hidden, so pressing "Show
+  console" brings the panel back; the same command is in the tray menu.
 - There is no separate shared progress bar between the sections: progress lives
   inside the card.
 
@@ -143,8 +152,12 @@ window size 900×600, size and position are remembered.
   (live, DRM, no preset of the chosen quality), segments, retries, FFmpeg
   calls, update checks, errors.
 - Line format: `[12:34:56] INFO  Found HLS stream 1080p: https://...`
-- Above the console, small buttons: "Clear", "Open downloads folder", "Open log
-  file".
+- Above the console, small buttons: "Show console" / "Hide console", "Clear",
+  "Open downloads folder", "Open log file".
+- **"Hide console"** takes the panel away and gives the whole window to the list
+  of cards; **"Show console"** brings it back with the room it had. The state is
+  stored in the settings, so the window opens the way the user left it, and the
+  row of buttons is the way to open the panel from the tray menu.
 
 ### 4.3. Extras
 
@@ -155,19 +168,30 @@ window size 900×600, size and position are remembered.
   (128 / 192 / 320 kbps)**, **Audio only (MP3)** mode, minimum MP4 size,
   **browser (Automatic / Chrome / Edge / Chromium)**, **anti-bot**, ad blocker,
   **language** (English, Русский, Українська, 中文, Français, Deutsch; English
-  by default, applied after a restart), tray options, automatic update checks
+  by default, applied after a restart), tray icon and hide-to-tray rows, the
+  console panel row ("Show the console panel below the list"), automatic update
+  checks
   (enabled by default), theme (system / light / dark). The dialog takes 80% of
   the main window's width and height and can be resized; a long folder path is
   fully visible (and in the tooltip on hover).
-- **Tray (Windows notification area).** Pressing "X" hides the window to the
-  tray, downloads keep running; "Exit" in the tray menu is the only way to
-  quit. The tray menu: show the window, open browser, close browser, check for
-  updates, open downloads folder, exit. A single click or a double click on the
-  icon shows the window, the browser items of the menu follow the state of the
-  browser window; the first time the window is hidden a balloon hint explains
-  the menu (shown once). If the system has no notification area (Windows
-  Server, RDP, CI), "X" closes the program as before and the tray rows of the
-  settings are unused.
+- **Tray (Windows notification area).** Pressing "X" hides the window to the tray
+  and the downloads keep running; "Exit" in the tray menu is the only way to
+  quit (it asks for confirmation when a download is running). The tray menu: show
+  the window, open browser, close browser, show the console, check for updates,
+  open downloads folder, exit. A single click or a double click on the icon shows
+  the window, the browser items of the menu follow the state of the browser
+  window; the first time the window is hidden a balloon hint explains the menu
+  (shown once, the flag is stored).
+- **The icon shows the state of the queue:** a **green arrow** with a jumping
+  animation (the frames of a timer) while a download is running, a **blue
+  arrow** when the queue is empty. When the last download is finished, a Windows
+  balloon appears next to the icon ("All downloads are finished: N saved") and
+  the system notification sound is played — this is the report for the user who
+  works with the window hidden.
+- If the system has no notification area (Windows Server, RDP, the offscreen CI
+  of the tests), the tray icon is not created: "X" closes the program as before,
+  the sound is not played, and the finished downloads are reported in the window
+  console only.
 - Window title: "PyDownloader `<version>` — `<downloads folder>`".
 
 ### 4.4. Threads and responsiveness
@@ -551,7 +575,13 @@ pydownloader/
   desktop while a page is sniffed.
 - "X" hides the window to the tray and the download keeps running; the program
   exits only through the tray menu ("Exit"), where the window, the browser, the
-  update check and the downloads folder are also available.
+  console panel, the update check and the downloads folder are also available.
+- While a download runs, the tray icon is a green arrow with the jumping
+  animation; when the queue is empty it is a blue arrow, and the finished
+  downloads are reported by a Windows balloon and the notification sound.
+- "Show console" / "Hide console" take the console panel away and back; hidden,
+  the list of cards fills the window, and the state is remembered for the next
+  start.
 - An audio source (SoundCloud, an audio-only playlist) is recognized, shown with
   an `MP3` badge, and saved as `.mp3` at the chosen bitrate; audio is never
   muxed into a black video file.

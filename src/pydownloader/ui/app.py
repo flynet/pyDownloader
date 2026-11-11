@@ -351,6 +351,9 @@ def main(argv: list[str] | None = None) -> int:
     tray = make_tray(window, icon) if settings.tray_enabled else None
     if tray is not None:
         app.setQuitOnLastWindowClosed(False)
+        # The first balloon points at the tray: the window is closed with «X» and
+        # the program stays in the notification area, where «Exit» quits it (spec 4.3).
+        window.hint_tray()
     # The browser is not launched here: the user opens it with the "Open browser"
     # button when he wants it (spec 4.3), and the sniffer runs only with it.
     window.show()

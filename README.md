@@ -7,7 +7,8 @@ direct MP4, YouTube streams and audio sources, and joins the downloaded segments
 with FFmpeg into one `.mp4` (a source of sound only is written as `.mp3`). The
 interface is dark by default; light and system themes are available in the
 settings, the program lives in the Windows tray, and the browser window can be
-opened and closed by the user.
+opened and closed by the user. The console panel can be hidden, so the list of
+found videos takes the whole window.
 
 ## Screenshots
 
@@ -26,6 +27,8 @@ on the offscreen Qt platform.
 1. Launch → pick the downloads folder (first run only). The main window opens with
    two sections: found videos (top) and console (bottom). **The browser is not
    started automatically** — press "Open browser" when you want to look for a video.
+   "Hide console" in the row under the list takes the console away and gives the
+   whole window to the cards; "Show console" brings the panel back.
 2. The browser window opens maximised on the last page you visited, with the uBlock
    ad blocker enabled (see below). It carries no banners of a driver: neither
    "this build is for automated testing" nor the "unsupported command-line flag"
@@ -64,28 +67,45 @@ when it is known, or `MP3`. A card with a source is never cut off: the list of
 cards has its own scrollbar, and when the window is made small the card section
 keeps its minimum height and the console shrinks.
 
-Above the list of found videos there are four buttons:
-- **"Clear all"** — remove every card.
-- **"Clear downloaded"** — remove only the cards whose files are on disk.
+Above the list of found videos there are five buttons:
 - **"Open browser"** — show the browser window, on the page where the user was last.
 - **"Close browser"** — close the browser window. Downloads keep running.
+- **"Clear all"** — remove every card.
+- **"Clear downloaded"** — remove only the cards whose files are on disk.
+- **"Settings"** — the settings dialog.
+
+Under the list of cards there is the row of the console panel: **"Show console"** /
+**"Hide console"** (hidden, the list takes the whole window and the row stays on
+the screen as the way to open the panel back), **"Clear"** (the text of the
+console), **"Open download folder"**, **"Open log file"**. The console command is
+in the tray menu as well.
 
 ## Tray
 
 The program lives in the Windows notification area. Pressing **X** in the window
-title bar hides the window to the tray, the downloads keep running, and the
-browser stays open; closing the program from the tray menu is the only way to
-quit. The tray menu offers: show the window, open and close the browser, check
-for updates, open the downloads folder, exit. A single click or a double click
-on the tray icon shows the window; the menu items of the browser follow the
-state of the browser window. The first time the window is hidden, the tray icon
-shows a balloon explaining the menu (the hint is shown once).
+title bar **hides the window to the tray**: the downloads keep running, the
+browser window stays open, and the tray menu is the only way to quit — "Exit"
+asks for confirmation when a download is running, cancels it, closes the browser
+and terminates the program. The tray menu offers: show the window, open and close
+the browser, show the console, check for updates, open the downloads folder,
+exit. A single click or a double click on the tray icon shows the window; the
+menu items of the browser follow the state of the browser window. The first time
+the window is hidden, the tray icon shows a balloon explaining the menu (the hint
+is shown once and stored in the settings).
+
+The icon shows the state of the queue: a **green arrow** while a download is
+running, and the arrow jumps up and down (the frames of a timer), a **blue
+arrow** when nothing is downloading. When the last task of the queue is finished,
+the icon goes back to blue, a Windows balloon appears next to it ("All downloads
+are finished: N saved") and the system notification sound is played — this is how
+the user who works with the window hidden learns that the program is done.
 
 The tray settings are "Show the icon in the notification area" and "Hide the
 window to the tray when closing" (both on by default). If the system has no
 notification area (Windows Server, a remote desktop session, the offscreen CI of
-the tests), the tray icon is not created and "X" works as before: it closes the
-program.
+the tests), the tray icon is not created: "X" works as a normal close, the sound
+of the finished downloads is not played (the sound of the system is a Windows
+one), and the finished downloads are reported in the window console only.
 
 ## Browser controls
 
@@ -121,8 +141,9 @@ log shows which URLs the player requested and what the server answered.
 
 Settings are stored in `%APPDATA%\PyDownloader\settings.json`: downloads folder,
 number of threads, theme, quality preset, MP3 bitrate, audio-only mode,
-minimum MP4 size, browser, anti-bot, ad blocker, language, tray options, update
-check, window size and position. The downloads folder is asked only on the first
+minimum MP4 size, browser, anti-bot, ad blocker, language, tray icon, console
+panel, update check, window size and position (and the state of the console
+panel). The downloads folder is asked only on the first
 run; on later runs the program takes it from the settings and creates it if it
 was deleted. The folder can be changed in "Settings" → "Downloads folder" — the
 value is saved right after pressing "Save". The settings dialog takes 80% of the
@@ -135,7 +156,10 @@ bitrate" is 128 / 192 / 320 kbps, "Audio only (MP3)" downloads only the sound
 part, "User agent" imitates another device (an empty field takes the Chrome
 string of the version launched), "Hide the flags a bot driver leaves (anti-bot)"
 switches stealth on and off, "Load the bundled ad blocker" is on by default,
-and the tray rows are described above.
+"Show the icon in the notification area" and "Hide the window to the tray when
+closing" are the tray rows, "Show the console panel below the list" is the panel
+of the window: hidden, the list of cards takes the whole window. The state of the
+panel is stored, so the window opens the way the user left it.
 
 ## Languages
 
@@ -233,7 +257,8 @@ writable, these folders are created in `%LOCALAPPDATA%\PyDownloader`.
   Chromium specifically. The browser to launch is chosen in the settings.
 - The tray icon needs the Windows notification area. On a system without it
   (Windows Server, a remote desktop session) the program works with the tray
-  switched off.
+  switched off, and the sound of the finished downloads is not played (the
+  sound of the system is a Windows one).
 - Python 3.12 only for building; the installed application runs without Python.
 
 ## Running from source

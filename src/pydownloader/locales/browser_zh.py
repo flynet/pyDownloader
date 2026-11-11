@@ -20,8 +20,7 @@ TEXTS: dict[str, str] = {
         "请安装 Chrome 或 Edge, 或允许下载 Chromium。"
     ),
     "browser_codec_warning": (
-        "Playwright 的 Chromium 在部分网站可能无法播放 H.264/AAC: "
-        "建议使用已安装的 Chrome 或 Edge"
+        "Playwright 的 Chromium 在部分网站可能无法播放 H.264/AAC: 建议使用已安装的 Chrome 或 Edge"
     ),
     "browser_none": "无",
     "browser_placeholder": "-",
@@ -60,10 +59,7 @@ TEXTS: dict[str, str] = {
     "profile_dir_writable": "程序文件夹 {dir} 不可写入, 配置文件保留在 {fallback}",
     "profile_move_failed": "无法将配置文件 {src} 移动到 {dst}: {error}",
     # --- FFmpeg (spec 6.5) -----------------------------------------------
-    "ffmpeg_not_found": (
-        "未找到 FFmpeg。请把 ffmpeg.exe 放在程序旁的 bin 文件夹, "
-        "或将其加入 PATH"
-    ),
+    "ffmpeg_not_found": ("未找到 FFmpeg。请把 ffmpeg.exe 放在程序旁的 bin 文件夹, 或将其加入 PATH"),
     "ffmpeg_ready": "FFmpeg 就绪, 输出 {lines} 行",
     "ffmpeg_code": "FFmpeg 代码 {code}: {output}",
     "ffmpeg_exit_code": "FFmpeg 以代码 {code} 退出",

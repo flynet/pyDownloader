@@ -5,7 +5,7 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 
-from PySide6.QtGui import QCloseEvent
+from PySide6.QtGui import QCloseEvent, QColor
 from PySide6.QtWidgets import QApplication
 
 from pydownloader.config.paths import Paths, default_paths
@@ -17,6 +17,7 @@ from pydownloader.ui import tray as tray_mod
 from pydownloader.ui.card import SourceCard, format_duration, format_quality, format_size
 from pydownloader.ui.console import MAX_LINES, ConsolePanel
 from pydownloader.ui.main_window import (
+    SPLIT_CONSOLE_MIN,
     LogBridge,
     MainWindow,
     geometry_from_hex,
@@ -30,7 +31,7 @@ from pydownloader.ui.settings_panel import (
     SettingsDialog,
 )
 from pydownloader.ui.theme import apply_theme, qss_for
-from pydownloader.ui.tray import TrayController, make_tray
+from pydownloader.ui.tray import ACTIVE_COLOR, IDLE_COLOR, TRAY_SIZE, TrayController, make_tray
 
 
 def entry(id: str = "s1", kind: str = "hls", height: int | None = 1080) -> SourceEntry:
@@ -337,24 +338,30 @@ def test_settings_dialog_writes_the_values(qtbot, tmp_path):
     dialog.theme_box.setCurrentIndex(dialog.theme_box.findData("light"))
     dialog.update_check.setChecked(False)
     dialog.tray_check.setChecked(True)
-    dialog.close_tray_check.setChecked(False)
+    dialog.close_tray_check.setChecked(True)
+    dialog.console_check.setChecked(False)
     target = dialog.apply_to(Settings())
     assert target.threads == 4
     assert target.target_height == 720
     assert target.min_mp4_size == 3 * 1024 * 1024
     assert target.theme == "light"
     assert not target.auto_update
-    # The tray and the «X» behaviour are settings of the window (spec 4.3).
+    # «X» hides the window to the tray (spec 4.3), and the console panel is a setting
+    # of the window as well: hidden, the list of videos gets the room (spec 4.2 p.5).
     assert target.tray_enabled
-    assert not target.close_to_tray
+    assert target.close_to_tray
+    assert not target.console_open
 
 
 def test_settings_dialog_shows_the_saved_tray_state(qtbot, tmp_path):
-    settings = Settings(download_dir=str(tmp_path), tray_enabled=False, close_to_tray=False)
+    settings = Settings(
+        download_dir=str(tmp_path), tray_enabled=False, close_to_tray=False, console_open=False
+    )
     dialog = SettingsDialog(settings)
     qtbot.addWidget(dialog)
     assert not dialog.tray_check.isChecked()
     assert not dialog.close_tray_check.isChecked()
+    assert not dialog.console_check.isChecked()
 
 
 def test_settings_dialog_writes_the_browser_choice(qtbot, tmp_path):
@@ -486,17 +493,44 @@ def test_paths_for_the_window(tmp_path):
 
 
 class FakeTray:
-    """Stand-in for the tray icon: the balloons and the browser state are recorded."""
+    """Stand-in for the tray icon: the balloons, the browser and the queue are recorded."""
 
     def __init__(self) -> None:
         self.hints: list[str] = []
         self.running: bool | None = None
+        self.active: bool | None = None
 
     def notify(self, text: str) -> None:
         self.hints.append(text)
 
     def set_browser_running(self, running: bool) -> None:
         self.running = running
+
+    def set_download_active(self, active: bool) -> None:
+        self.active = active
+
+
+class FakeWorker:
+    """Stand-in of the queue: the ids of the tasks, the running one is out of the queue."""
+
+    def __init__(self) -> None:
+        self.queued: list[str] = []
+        self.download_dir = ""
+        self.parallel = 1
+
+    def enqueue(self, entry: SourceEntry) -> str:
+        self.queued.append(entry.id)
+        return entry.id
+
+    def cancel(self, task_id: str) -> None:
+        if task_id in self.queued:
+            self.queued.remove(task_id)
+
+    def pending(self) -> list[str]:
+        return list(self.queued)
+
+    def stop(self) -> None:
+        pass
 
 
 def test_browser_buttons_are_wired_to_the_top_panel(qtbot, tmp_path):
@@ -552,11 +586,27 @@ def test_closing_the_window_hides_it_to_the_tray(qtbot, tmp_path):
     event = QCloseEvent()
     window.closeEvent(event)
 
-    # The window is hidden, the threads of the browser and of the queue stay alive.
+    # The window is hidden, the threads of the browser and of the queue stay alive,
+    # so the green arrow of the tray keeps reporting the download (spec 4.3 p.4).
     assert not event.isAccepted()
     assert not window.isVisible()
     assert window.settings.tray_hint_seen
     assert tr("tray_hint") in tray.hints
+
+
+def test_the_tray_hint_is_shown_on_the_first_start(qtbot, tmp_path):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    tray = FakeTray()
+    window.tray = tray
+
+    window.hint_tray()
+    assert tr("tray_hint") in tray.hints
+    assert window.settings.tray_hint_seen
+
+    window.hint_tray()
+    # The balloon explains the tray once, the flag is stored in the settings (spec 4.3).
+    assert len(tray.hints) == 1
 
 
 def test_the_tray_hint_is_shown_only_once(qtbot, tmp_path):
@@ -589,6 +639,7 @@ def test_closing_quits_when_the_window_is_not_hidden_to_the_tray(qtbot, tmp_path
 
     event = QCloseEvent()
     window.closeEvent(event)
+    # Without the hide setting «X» is a normal close: the browser and the queue stop.
     assert event.isAccepted()
 
 
@@ -604,7 +655,105 @@ def test_tray_menu_tracks_the_browser_window(qtbot, tmp_path):
     assert not tray.open_action.isEnabled()
     assert tray.close_action.isEnabled()
     assert tray.contextMenu().actions()[0] is tray.show_action
-    assert len(tray.contextMenu().actions()) == 6
+    # The console panel is in the menu, so the hidden panel is opened from the tray
+    # (spec 4.2 p.5): the menu has the seven items of the window.
+    assert tray.console_action.text() == tr("window_open_console")
+    assert len(tray.contextMenu().actions()) == 7
+
+
+def icon_pixel(tray: TrayController, x: int, y: int) -> QColor:
+    """A pixel of the tray icon, in the size the notification area draws it."""
+    return tray.icon().pixmap(TRAY_SIZE, TRAY_SIZE).toImage().pixelColor(x, y)
+
+
+def tray_pixels(tray: TrayController) -> list[int]:
+    """The pixels of the tray icon: the test compares the frames of the animation."""
+    image = tray.icon().pixmap(TRAY_SIZE, TRAY_SIZE).toImage()
+    return [image.pixelColor(x, y).green() for y in range(TRAY_SIZE) for x in range(TRAY_SIZE)]
+
+
+def test_the_console_panel_is_hidden_and_shown(qtbot, tmp_path):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    # The console takes half the window: hiding it gives all the room to the list
+    # of cards, which is what a person picking a video needs (spec 4.2 p.5).
+    window.toggle_console()
+    assert not window.console.isVisible()
+    hidden = window.splitter.sizes()
+    assert hidden[1] <= SPLIT_CONSOLE_MIN + 40
+    assert hidden[0] > hidden[1]
+    # The row of buttons stays on the screen: it is the way to show the panel back.
+    assert window.console_button.text() == tr("console_show")
+
+    window.toggle_console()
+    assert window.console.isVisible()
+    shown = window.splitter.sizes()
+    assert shown[1] > SPLIT_CONSOLE_MIN + 40
+    assert window.settings.console_open
+    assert window.console_button.text() == tr("console_hide")
+
+
+def test_the_window_opens_with_the_console_hidden(qtbot, tmp_path):
+    settings = Settings(download_dir=str(tmp_path), console_open=False)
+    paths = default_paths(downloads_dir=tmp_path)
+    window = MainWindow(settings, paths, None, None)
+    qtbot.addWidget(window)
+    window.show()
+    # The state of the panel is stored in the settings, so the window opens the way
+    # the user left it (spec 4.2 p.1), and the button says how to show the console.
+    assert not window.console.isVisible()
+    assert window.console_button.text() == tr("console_show")
+
+
+def test_the_tray_marks_the_running_download_and_reports_the_end(qtbot, tmp_path):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    tray = FakeTray()
+    window.tray = tray
+    heard: list[int] = []
+    window.play_sound = lambda: heard.append(1)
+    worker = FakeWorker()
+    window.worker = worker
+
+    window.add_source(entry("s1"))
+    window._start_download("s1")
+    # The green arrow: the program downloads while the window is minimized (spec 4.2 p.7).
+    assert tray.active is True
+
+    # The last task leaves the queue before it is reported, so the queue is empty now.
+    worker.queued.clear()
+    window._task_finished("s1", str(tmp_path / "a.mp4"))
+    assert tray.active is False
+    assert tr("tray_download", n=1) in tray.hints
+    assert heard == [1]
+
+
+def test_the_tray_icon_is_a_green_arrow_while_a_download_runs(qtbot, tmp_path):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    tray = TrayController(window, None)
+    # A pixel of the circle away from the shaft of the arrow: the colour of the state.
+    edge = (TRAY_SIZE // 2 - TRAY_SIZE // 3, TRAY_SIZE // 2)
+    # The idle tray is the blue arrow of the program (spec 4.2 p.7).
+    assert icon_pixel(tray, *edge) == IDLE_COLOR
+
+    tray.set_download_active(True)
+    # A running download: the green arrow, and the animation is on.
+    assert icon_pixel(tray, *edge) == ACTIVE_COLOR
+    assert tray.bounce.timer.isActive()
+
+    # The arrow jumps up and down: the frame of the timer is the other drawing,
+    # and the third frame is the first one again.
+    first = tray_pixels(tray)
+    tray.bounce._frame()
+    second = tray_pixels(tray)
+    tray.bounce._frame()
+    assert first != second
+    assert tray_pixels(tray) == first
+
+    tray.set_download_active(False)
+    assert not tray.bounce.timer.isActive()
+    assert icon_pixel(tray, *edge) == IDLE_COLOR
 
 
 def test_make_tray_is_skipped_without_a_notification_area(qtbot, tmp_path, monkeypatch):

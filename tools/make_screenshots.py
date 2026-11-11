@@ -38,10 +38,11 @@ OUT = Path("assets") / "screenshots"
 DOWNLOADS = Path("D:\\Videos")
 #: Version printed in the console lines: the screenshots are for the release page,
 #: so the tag is written out and stays stable between runs.
-DISPLAY_VERSION = "0.4.0"
+DISPLAY_VERSION = "0.4.3"
 WINDOW_SIZE = (1060, 860)
-#: Splitter sizes of the screenshot: the five demo cards and a dozen console lines.
-CARD_SECTION_HEIGHT = (730, 130)
+#: Splitter sizes of the screenshot: the five demo cards, the row of the console
+#: buttons and a dozen console lines.
+CARD_SECTION_HEIGHT = (690, 170)
 UI_FONT = "Segoe UI"
 #: The offscreen platform has no font database: the letters become boxes
 #: until the fonts of Windows are registered in the application.

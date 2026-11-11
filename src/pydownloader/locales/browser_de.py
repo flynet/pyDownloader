@@ -57,13 +57,11 @@ TEXTS: dict[str, str] = {
     # --- Programmdaten und Profil (spec 7.2) -----------------------------
     "profile_moved": "Browserprofil verschoben: {src} -> {dst}",
     "profile_data_dir_writable": (
-        "Der Programmordner {dir} ist nicht beschreibbar, "
-        "die Daten bleiben in {fallback}"
+        "Der Programmordner {dir} ist nicht beschreibbar, die Daten bleiben in {fallback}"
     ),
     "profile_dir_taken": "Der Profilpfad ist durch eine Datei belegt: {path}",
     "profile_dir_writable": (
-        "Der Programmordner {dir} ist nicht beschreibbar, "
-        "das Profil bleibt in {fallback}"
+        "Der Programmordner {dir} ist nicht beschreibbar, das Profil bleibt in {fallback}"
     ),
     "profile_move_failed": "Der Profil {src} lässt sich nicht nach {dst} verschieben: {error}",
     # --- FFmpeg (spec 6.5) ------------------------------------------------
