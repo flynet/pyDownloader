@@ -6,13 +6,18 @@ the browser, show the console, check for an update, open the download folder,
 exit. «Exit» is the only way to quit when the window is hidden (spec 4.3 p.4),
 so it runs the same teardown as a close that is not a hide.
 
-The icon is drawn by the program, not taken from the file, because its colour
-marks the state: a green arrow points down while a download is running, a blue
-one when the queue is empty (spec 4.2 p.7). Windows draws the tray icon in the
-notification area, so the arrow cannot be moved there: the animation is the
-arrow jumping between the up and the down drawing, which is the same motion.
-The balloon of the finished downloads uses the same ``showMessage`` as the hint
-of the tray.
+The icon is the icon of the program (spec 7.3): the dark square with the arrow
+pointing down. Only the colour of the arrow marks the state, white when the
+queue is empty, green while a download runs (spec 4.2 p.7). Windows draws the
+icon in its own grid, so the arrow cannot be moved there: the animation of a
+running download is the arrow drawn in the shifted frames of a timer, which
+reads as the arrow jumping up and down.
+
+The tooltip of the icon is the list of the files that are downloading, with the
+percent, the speed and the time left (spec 4.2 p.7): the window writes it on the
+progress of the queue, so a person who works with the window hidden sees the
+queue without opening the program. The balloon of the finished downloads uses the
+same ``showMessage`` as the hint of the tray.
 """
 
 from __future__ import annotations
@@ -20,89 +25,53 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QObject, Qt, QTimer
-from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
+from PySide6.QtCore import QObject, QTimer
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
 from pydownloader._version import VERSION
 from pydownloader.config.constants import APP_NAME
 from pydownloader.i18n import tr
+from pydownloader.ui.app_icon import GREEN, WHITE, tray_icon
 
 if TYPE_CHECKING:
     from pydownloader.ui.main_window import MainWindow
 
 #: Balloon of the first minimize: how long it stays on the screen, in ms.
 HINT_MS = 4000
-#: Side of the tray icon, the size the notification area draws.
-TRAY_SIZE = 32
-#: Blue of the program icon: the tray is idle when nothing is downloaded.
-IDLE_COLOR = QColor(84, 120, 209)
-#: Green arrow: the tray shows that a download is running in the background.
-ACTIVE_COLOR = QColor(46, 164, 79)
+#: The arrow of the icon when nothing is downloaded: the icon of the program.
+IDLE_COLOR = WHITE
+#: The green arrow of a running download (spec 4.2 p.7).
+ACTIVE_COLOR = GREEN
 #: Period of the jumping arrow while a download runs, in ms.
 BOUNCE_MS = 500
+#: The shifts of the arrow for the frames of the jump: base, up, base, down.
+BOUNCE_SHIFTS = (0, -2, 0, 2)
 #: Reasons of ``QSystemTrayIcon.activated`` that open the window back.
 OPEN_TRIGGER = QSystemTrayIcon.ActivationReason.Trigger
 OPEN_DOUBLE = QSystemTrayIcon.ActivationReason.DoubleClick
 OPEN_REASONS = (OPEN_TRIGGER, OPEN_DOUBLE)
+#: The tooltip the tray shows when no download runs.
+BASE_TOOLTIP = f"{APP_NAME} {VERSION}"
 
 
-def arrow_icon(color: QColor, down: bool, size: int = TRAY_SIZE) -> QIcon:
-    """Round icon of ``color`` with a white arrow: the state of the downloads.
-
-    The arrow points down while a download runs, up when the queue is empty, so
-    the icon of the tray changes with the state of the program.
-    """
-    pm = QPixmap(size, size)
-    pm.fill(QColor(0, 0, 0, 0))
-    painter = QPainter(pm)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    painter.setPen(Qt.PenStyle.NoPen)
-    painter.setBrush(color)
-    painter.drawEllipse(1, 1, size - 2, size - 2)
-    pen = QPen(QColor(255, 255, 255), max(2, size // 10))
-    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-    painter.setPen(pen)
-    painter.setBrush(Qt.BrushStyle.NoBrush)
-    middle = size // 2
-    far = size * 3 // 4 - 1
-    near = size // 4
-    half = size // 6
-    head = size // 4
-    if down:
-        painter.drawLine(middle, near, middle, far)
-        painter.drawLine(middle, far, middle - half, far - head)
-        painter.drawLine(middle, far, middle + half, far - head)
-    else:
-        painter.drawLine(middle, far, middle, near)
-        painter.drawLine(middle, near, middle - half, near + head)
-        painter.drawLine(middle, near, middle + half, near + head)
-    painter.end()
-    return QIcon(pm)
+def idle_icon() -> QIcon:
+    """The tray icon of the program: the same icon as the desktop, white arrow."""
+    return tray_icon(WHITE)
 
 
-def blue_icon() -> QIcon:
-    """Idle tray icon: the blue arrow of the program, nothing is downloading."""
-    return arrow_icon(IDLE_COLOR, down=True)
-
-
-def green_icon() -> QIcon:
-    """Green arrow of a running download, the first frame of the animation."""
-    return arrow_icon(ACTIVE_COLOR, down=True)
-
-
-def green_up_icon() -> QIcon:
-    """Green arrow pointing up: the frame the animation alternates with."""
-    return arrow_icon(ACTIVE_COLOR, down=False)
+def frame_icon(shift: int) -> QIcon:
+    """The icon of a running download: the green arrow drawn in the shifted frame."""
+    return tray_icon(GREEN, shift)
 
 
 class Bounce(QObject):
     """Animation of the tray icon while a download runs: the arrow jumps (spec 4.2 p.7).
 
-    Windows draws the icon in the notification area, so it cannot be moved
-    there: the arrow flips between the down and the up drawing every
-    ``BOUNCE_MS``, which reads as the icon jumping up and down.
+    Windows draws the icon in the grid of the notification area, so it cannot be
+    moved there: the green arrow is drawn with the shift of the next frame every
+    ``BOUNCE_MS``, which reads as the arrow jumping up and down over the line of
+    the tray.
     """
 
     def __init__(self, tray: QSystemTrayIcon) -> None:
@@ -121,22 +90,22 @@ class Bounce(QObject):
 
     def _frame(self) -> None:
         self.phase += 1
-        self.tray.setIcon(green_up_icon() if self.phase % 2 else green_icon())
+        self.tray.setIcon(frame_icon(BOUNCE_SHIFTS[self.phase % len(BOUNCE_SHIFTS)]))
 
 
 class TrayController(QSystemTrayIcon):
     """Icon of the program in the tray, with the menu of the main window."""
 
     def __init__(self, window: MainWindow, icon: Path | None) -> None:
-        """The tray icon is drawn for the state, ``icon`` is the file of the window.
+        """The tray is the icon of the program, ``icon`` is the file of the window.
 
         ``icon`` is the PNG of the program in the title bar and the taskbar; the
-        tray has to show the state of the queue, so the arrow is painted here and
-        the file is not used.
+        tray paints the same picture with the colour of the arrow, so the file is
+        not used (spec 7.3, 4.2 p.7).
         """
-        super().__init__(blue_icon(), window)
+        super().__init__(idle_icon(), window)
         self._window = window
-        self.setToolTip(f"{APP_NAME} {VERSION}")
+        self.setToolTip(BASE_TOOLTIP)
         menu = QMenu()
         self.show_action = menu.addAction(tr("tray_show"))
         self.open_action = menu.addAction(tr("tray_open_browser"))
@@ -164,25 +133,38 @@ class TrayController(QSystemTrayIcon):
         self._active = False
 
     def set_download_active(self, active: bool) -> None:
-        """The icon is a green arrow with a jumping animation while a download runs.
+        """The icon is the green arrow with a jumping animation while a download runs.
 
         The tray is the place the user sees when the window is minimized, so
         the colour is the state of the queue: green while the worker has tasks
-        (spec 4.2 p.7), blue when every download is done.
+        (spec 4.2 p.7), the white arrow of the program when every download is done.
         """
         if active == self._active:
             return
         self._active = active
         if active:
-            self.setIcon(green_icon())
+            self.setIcon(frame_icon(BOUNCE_SHIFTS[0]))
             self.bounce.start()
         else:
             self.bounce.stop()
-            self.setIcon(blue_icon())
+            self.setIcon(idle_icon())
 
     def download_state(self) -> bool:
         """Whether the tray shows the green arrow."""
         return self._active
+
+    def set_progress_lines(self, lines: list[str]) -> None:
+        """The tooltip of the icon: the files that are downloading (spec 4.2 p.7).
+
+        The window writes the lines on the progress of the queue: the name of the
+        file, the percent, the speed, the time left. The tooltip is the only
+        report a person gets when the window is hidden and the mouse is over the
+        icon, so the text is written with no balloon.
+        """
+        text = BASE_TOOLTIP
+        if lines:
+            text = "\n".join([BASE_TOOLTIP, tr("tray_tooltip_download"), *lines])
+        self.setToolTip(text)
 
     def notify(self, text: str) -> None:
         """A balloon next to the tray icon: the hint of the first minimize."""
@@ -211,23 +193,26 @@ def make_tray(window: MainWindow, icon: Path | None) -> TrayController | None:
         return None
     window.tray = tray
     tray.show()
+    # The tray is created after the window, sometimes while a task is running
+    # (the tray row of the settings): the state and the tooltip are written at once.
+    tray.set_download_active(bool(window._runs))
+    window._push_tray_tooltip(True)
     return tray
 
 
 __all__ = [
     "ACTIVE_COLOR",
+    "BASE_TOOLTIP",
     "BOUNCE_MS",
+    "BOUNCE_SHIFTS",
     "HINT_MS",
     "IDLE_COLOR",
     "OPEN_DOUBLE",
     "OPEN_REASONS",
     "OPEN_TRIGGER",
-    "TRAY_SIZE",
     "Bounce",
     "TrayController",
-    "arrow_icon",
-    "blue_icon",
-    "green_icon",
-    "green_up_icon",
+    "frame_icon",
+    "idle_icon",
     "make_tray",
 ]

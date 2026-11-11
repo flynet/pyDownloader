@@ -4,7 +4,60 @@ The format is [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versioning is [SemVer](https://semver.org/). A release is a `vX.Y.Z` tag
 on `main`.
 
-## [Unreleased]
+## [0.4.5] - 2026-11-11
+
+### Added
+- **The tray icon is the icon of the program**: the dark rounded square, the arrow
+  pointing down, the line of the tray under it. The same drawing (`ui/app_icon.py`)
+  makes `assets/icon.ico`, the pictures of the setup wizard and the icon of the
+  title bar, so the desktop, the installer and the notification area are one style
+  (spec 7.3). Only the colour of the arrow marks the state: **white** when the
+  queue is empty, **green** while a download runs, and the arrow jumps up and down
+  over the line of the tray (the frames of a timer).
+- **The tooltip of the tray icon is the queue of the program** (spec 4.2 p.7):
+  hovering over the icon, without clicking, shows the files that are downloading
+  with the name, the percent, the speed, the time left, and the number of the
+  tasks waiting in the queue. The text is rewritten at most once a second (the
+  tooltip of Windows is a heavy call), the start and the end of a task at once; a
+  source of unknown size shows the percent only.
+- The progress bar of a card turns **green** when the file is on the disk, so the
+  end of a download is seen at a glance (spec 4.1 p.3); a running download keeps
+  the accent colour of the theme.
+
+### Tests
+- The tray icon is the picture of the program icon (pixel by pixel), only the
+  colour of the arrow changes, the line of the tray does not move while the arrow
+  jumps, the white arrow is back when the queue is empty.
+- The tooltip of the tray lists the running files with the percent, the speed and
+  the time left, the queued count, and the file is taken out of the tooltip when
+  the card cross cancels it.
+- The bar of a finished card is green, the bar of a running and of a cancelled one
+  is not.
+
+## [0.4.4] - 2026-11-11
+
+### Added
+- Every card has a **«✕»** on the right, in every state: it takes this one entry
+  out of the list. A queued or running task is cancelled first and its card goes
+  with it, a finished card is removed and the file on the disk stays, a found
+  card is simply taken away. The line is written to the console ("Cancelled and
+  removed from the list: {title}", "Removed from the list: {title}"), so the
+  console and the tray report what happened while the window was hidden. The
+  cross is painted by hand: the text glyph «✕» (U+2715) is not in the UI font of
+  Windows, so a label shows a box. The cross works on one card, "Clear all" and
+  "Clear downloaded" work on the whole list.
+
+### Changed
+- The console panel is **hidden at startup**: from the first start the list of
+  found videos gets the whole window, and the row of buttons shows «Show
+  console».
+- The «Clear» button of the console text is shown only while the console panel
+  is on the screen: there is nothing to clear while the panel is hidden.
+
+### Tests
+- The card cross (a found entry, a running task cancelled, a finished file kept,
+  the painted icon), the console panel hidden at startup and the «Clear» button
+  with the panel are covered.
 
 ## [0.4.3] - 2026-11-11
 
@@ -17,13 +70,6 @@ on `main`.
   (the menu has the item «Show console» as well). The state is stored in the settings
   and there is a row in the settings dialog, so the window opens the way the user
   left it.
-- Every card has a **«✕»** on the right, in every state: it takes this one entry out
-  of the list. A queued or running task is cancelled first and its card goes with it,
-  a finished card is removed and the file on the disk stays, a found card is simply
-  taken away. The line is written to the console ("Cancelled and removed from the
-  list: {title}", "Removed from the list: {title}"), so the tray menu and the console
-  report what happened while the window was hidden. The cross works on one card, "Clear
-  all" and "Clear downloaded" work on the whole list.
 - The tray icon shows the state of the queue: a **green arrow** with a jumping
   animation (the frames of a `QTimer`: the arrow flips between the down and the up
   drawing, which reads as the icon moving up and down in the notification area) while
@@ -37,16 +83,11 @@ on `main`.
 - The browser is not launched when the program starts: the program opens its own
   window only, and the browser window appears when the user presses «Open
   browser». The console says it at startup, in the language of the interface.
-- The console panel is **hidden at startup**: from the first start the list of
-  found videos gets the whole window, and the row of buttons shows «Show
-  console».
-- The «Clear» button of the console text is shown only while the console panel
-  is on the screen: there is nothing to clear while the panel is hidden.
 - The balloon that explains the tray is shown at startup (the first run with the
   tray on), not only when the window is hidden: the tray is where the window is
-  brought back and where the program is quit. "X" in the title bar still hides
-  the window to the tray, the downloads keep running, and "Exit" in the tray
-  menu is the only way to quit.
+  brought back and where the program is quit. "X" in the title bar hides the
+  window to the tray, the downloads keep running, and "Exit" in the tray menu is
+  the only way to quit.
 
 ### Fixed
 - The banners a driver provokes are hidden in the browser window. Chrome for
@@ -59,13 +100,11 @@ on `main`.
   (the switch the installed Chrome and Edge read), so neither strip is shown.
 
 ### Tests
-- The console panel (hidden state at startup, splitter sizes, settings
-  round-trip, the text of the button, the «Clear» button with the panel), the
-  card cross (a found entry, a running task cancelled, a finished file kept),
-  the tray menu with the console item, the colour of the tray icon and the
-  frames of the animation, and the balloon + sound of the finished downloads are
-  covered. The flags that hide the banners are checked, and the startup path is
-  checked to leave the browser closed.
+- The console panel (hidden state, splitter sizes, settings round-trip, the text
+  of the button), the tray menu with the console item, the colour of the tray icon
+  and the frames of the animation, and the balloon + sound of the finished
+  downloads are covered. The flags that hide the banners are checked, and the
+  startup path is checked to leave the browser closed.
 
 ## [0.4.1] - 2026-11-11
 

@@ -1,4 +1,4 @@
-"""Chinese texts of the ui group: the keys come from ui_en.py.
+﻿"""Chinese texts of the ui group: the keys come from ui_en.py.
 
 Keys of the card (spec 4.1), the main window (spec 4.2, 4.3), the settings
 dialog (spec 4.3, 8.1), the startup messages (spec 4.4, 7.1) and the update
@@ -110,6 +110,10 @@ TEXTS: dict[str, str] = {
     "settings_tray": "在通知区域显示图标",
     "settings_console": "在列表下方显示控制台",
     "settings_console_tip": "隐藏控制台后 找到的视频列表占据整个窗口",
+    "tray_tooltip_download": "下载中:",
+    "tray_tooltip_line": "{name} — {percent}% · {speed} MB/秒 · 剩余 {left}",
+    "tray_tooltip_line_plain": "{name} — {percent}%",
+    "tray_tooltip_queued": "+{n} 在队列中",
     "settings_close_tray": '关闭时把窗口隐藏到托盘',
     "theme_dark": "深色",
     "theme_light": "浅色",

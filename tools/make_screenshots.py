@@ -38,7 +38,7 @@ OUT = Path("assets") / "screenshots"
 DOWNLOADS = Path("D:\\Videos")
 #: Version printed in the console lines: the screenshots are for the release page,
 #: so the tag is written out and stays stable between runs.
-DISPLAY_VERSION = "0.4.4"
+DISPLAY_VERSION = "0.4.5"
 WINDOW_SIZE = (1060, 860)
 #: Splitter sizes of the screenshot: the five demo cards, the row of the console
 #: buttons and a dozen console lines.

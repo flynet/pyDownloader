@@ -65,6 +65,10 @@ preset. DRM bypass (including Widevine) is not supported.
 "Cancel") → `Done` ("Open file" — plays the downloaded file in the default player)
 / `Error` ("Retry").
 
+The progress bar keeps the accent colour of the theme while the file is
+downloading and turns **green** when the file is on the disk, so the end of a
+download is seen at a glance, without reading the text of the card.
+
 Each card shows the source type badge: HLS, DASH, MP4, YOUTUBE, and **MP3** for
 an audio source, plus the quality line: `1080p`, `720p`, `480p`, the resolution
 when it is known, or `MP3`. A card with a source is never cut off: the list of
@@ -104,12 +108,21 @@ menu items of the browser follow the state of the browser window. The first time
 the window is hidden, the tray icon shows a balloon explaining the menu (the hint
 is shown once and stored in the settings).
 
-The icon shows the state of the queue: a **green arrow** while a download is
-running, and the arrow jumps up and down (the frames of a timer), a **blue
-arrow** when nothing is downloading. When the last task of the queue is finished,
-the icon goes back to blue, a Windows balloon appears next to it ("All downloads
-are finished: N saved") and the system notification sound is played — this is how
-the user who works with the window hidden learns that the program is done.
+The tray icon is the icon of the program: the dark square with the white arrow
+pointing down and the line of the tray under it. The icon of the desktop, the
+installer and the window title bar is the same picture, drawn by the same code.
+Only the colour of the arrow marks the state: a **green arrow** while a download
+is running, and the arrow jumps up and down (the frames of a timer); the white
+arrow of the program when nothing is downloading. When the last task of the queue
+is finished, the icon goes back to white, a Windows balloon appears next to it
+("All downloads are finished: N saved") and the system notification sound is
+played — this is how the user who works with the window hidden learns that the
+program is done.
+
+Putting the mouse over the icon (without clicking) shows the list of the files
+that are downloading: the name, the percent, the speed, the time left, and the
+number of the tasks waiting in the queue. The text is rewritten at most once a
+second, and the start and the end of a task are written at once.
 
 The tray settings are "Show the icon in the notification area" and "Hide the
 window to the tray when closing" (both on by default). If the system has no
