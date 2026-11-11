@@ -123,9 +123,11 @@ window size 900×600, size and position are remembered.
   - **Queued**: button disabled, caption "Queued".
   - **Downloading**: instead of the button, a progress bar with speed,
     percentage, "segments X of Y", stage (downloading / decrypting / joining)
-    and a "Cancel" button.
+    and a "Cancel" button. The bar keeps the accent colour of the theme.
   - **Done**: caption "Done" and an "Open file" button (plays the downloaded
-    video in the default player).
+    video in the default player). The bar of the card turns **green**: the file is
+    on the disk, and the end of the download is seen at a glance, without reading
+    the text.
   - **Error**: red caption and a "Retry" button, details in the console.
 - Pressing "Download" only queues the task.
 - In the section header there are five buttons:
@@ -194,12 +196,20 @@ window size 900×600, size and position are remembered.
   the window, the browser items of the menu follow the state of the browser
   window; the first time the window is hidden a balloon hint explains the menu
   (shown once, the flag is stored).
-- **The icon shows the state of the queue:** a **green arrow** with a jumping
-  animation (the frames of a timer) while a download is running, a **blue
-  arrow** when the queue is empty. When the last download is finished, a Windows
-  balloon appears next to the icon ("All downloads are finished: N saved") and
-  the system notification sound is played — this is the report for the user who
-  works with the window hidden.
+- **The icon is the icon of the program** (spec 7.3): the dark square with the
+  arrow pointing down and the line of the tray under it, the same picture as on
+  the desktop and in the installer. **Only the colour of the arrow marks the
+  state:** a **green arrow** with a jumping animation (the frames of a timer)
+  while a download is running, the **white arrow** of the program when the queue
+  is empty. When the last download is finished, a Windows balloon appears next to
+  the icon ("All downloads are finished: N saved") and the system notification
+  sound is played — this is the report for the user who works with the window
+  hidden.
+- **The tooltip of the icon is the queue** (the mouse is over it, no click): the
+  files that are downloading with the name, the percent, the speed, the time left,
+  and the number of the tasks waiting. The text is rewritten at most once a
+  second, because the tooltip of Windows is a heavy call; the start and the end of
+  a task are written at once. A source of unknown size shows the percent only.
 - If the system has no notification area (Windows Server, RDP, the offscreen CI
   of the tests), the tray icon is not created: "X" closes the program as before,
   the sound is not played, and the finished downloads are reported in the window
@@ -386,6 +396,12 @@ black video file.
   removal in the dialog.
 - Modern wizard look: `WizardStyle=modern`, custom `WizardImageFile` and
   `WizardSmallImageFile`, Russian and English localizations (`Languages`).
+- The icon of the program (`assets/icon.ico`), the pictures of the wizard and the
+  icon of the tray are drawn by one code (`ui/app_icon.py`): the dark rounded
+  square, the arrow pointing down, the line of the tray under it. The tray draws
+  the same picture with the colour of the arrow of the state, so the program looks
+  the same on the desktop, in the installer, in the title bar and in the
+  notification area.
 - Running-application check: `CloseApplications=yes`,
   `RestartApplications=no`, so the installer closes the program correctly on
   update.
@@ -589,9 +605,13 @@ pydownloader/
 - "X" hides the window to the tray and the download keeps running; the program
   exits only through the tray menu ("Exit"), where the window, the browser, the
   console panel, the update check and the downloads folder are also available.
-- While a download runs, the tray icon is a green arrow with the jumping
-  animation; when the queue is empty it is a blue arrow, and the finished
-  downloads are reported by a Windows balloon and the notification sound.
+- While a download runs, the tray icon is the icon of the program with a green
+  arrow and the jumping animation; when the queue is empty the arrow is white, so
+  only the colour of the arrow changes and the picture is the icon on the desktop.
+  Hovering over the icon shows the files that are downloading: name, percent,
+  speed, time left. The bar of a card is green when the file is on the disk, and
+  the finished downloads are reported by a Windows balloon and the notification
+  sound.
 - "Show console" / "Hide console" take the console panel away and back; hidden,
   the list of cards fills the window, the "Clear" button of the console text
   disappears with the panel, and the state is remembered for the next start.

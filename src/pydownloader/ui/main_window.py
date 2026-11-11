@@ -11,7 +11,9 @@ from __future__ import annotations
 import logging
 import subprocess
 import sys
+import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
@@ -41,7 +43,7 @@ from pydownloader.download.worker import QueueWorker
 from pydownloader.ffmpeg.locate import Ffmpeg
 from pydownloader.i18n import tr
 from pydownloader.manifest.registry import SourceEntry
-from pydownloader.ui.card import SourceCard
+from pydownloader.ui.card import SourceCard, format_duration
 from pydownloader.ui.console import ConsolePanel
 from pydownloader.ui.settings_panel import SettingsDialog
 from pydownloader.ui.theme import apply_theme
@@ -58,6 +60,44 @@ SPLIT_BOTTOM = 600
 #: the console panel is not shown (spec 4.2 p.5), the handle keeps its 6 px.
 SPLIT_CARDS_ONLY = 1000
 SPLIT_CONSOLE_MIN = 12
+
+#: The tooltip of the tray is rewritten at most once a second: the progress signal
+#: of the queue comes for every segment, and a tooltip of Windows is a heavy call.
+TOOLTIP_MS = 1000
+
+
+@dataclass
+class RunInfo:
+    """One task that is downloading: the name, the size, the percent, the start."""
+
+    name: str
+    size: int | None
+    percent: int
+    started: float
+
+
+def tray_speed_line(info: RunInfo, now: float) -> str:
+    """The tooltip line of a running task: name, percent, speed, time left (spec 4.2 p.7).
+
+    The queue reports the segments, not the bytes, so the speed is the size of the
+    source divided by the time since the start: a tooltip of the tray, not a
+    measurement, and a source with no size shows the percent only.
+    """
+    if info.size is None:
+        return tr("tray_tooltip_line_plain", name=info.name, percent=info.percent)
+    elapsed = max(now - info.started, 0.1)
+    downloaded = info.size * info.percent / 100
+    speed = downloaded / elapsed / (1024 * 1024)
+    if speed <= 0:
+        return tr("tray_tooltip_line_plain", name=info.name, percent=info.percent)
+    left = (info.size - downloaded) / (speed * 1024 * 1024)
+    return tr(
+        "tray_tooltip_line",
+        name=info.name,
+        percent=info.percent,
+        speed=round(speed, 1),
+        left=format_duration(left),
+    )
 
 
 class LogBridge(QObject):
@@ -94,6 +134,10 @@ class MainWindow(QMainWindow):
         self.logger = logger or logging.getLogger("pydownloader")
         self.cards: dict[str, SourceCard] = {}
         self.out_paths: dict[str, Path] = {}
+        #: The tasks that are downloading, for the tooltip of the tray (spec 4.2 p.7).
+        self._runs: dict[str, RunInfo] = {}
+        #: The moment the tooltip of the tray may be written again.
+        self._tooltip_due = 0.0
         #: Chromium download thread, kept referenced so it is not garbage collected.
         self.install_worker: QThread | None = None
         #: FFmpeg binary used for the mux and for probing the resolution of MP4 files.
@@ -411,6 +455,8 @@ class MainWindow(QMainWindow):
         if card is not None:
             card.set_error(tr("card_cancelled"))
             self._sync_card_heights()
+        self._runs.pop(entry_id, None)
+        self._push_tray_tooltip(True)
         if self._queue_drained():
             self._report_queue_done()
 
@@ -419,14 +465,36 @@ class MainWindow(QMainWindow):
         return self.worker is None or not self.worker.pending()
 
     def _report_queue_done(self) -> None:
-        """Every download is over: the tray goes back to blue, a balloon and a sound
-        tell it to the user, who may have the window minimized in the tray (spec 4.2 p.7).
+        """Every download is over: the tray goes back to the icon of the program, a
+        balloon and a sound tell it to the user, who may keep the window in the tray
+        (spec 4.2 p.7).
         """
         if self.tray is not None:
             self.tray.set_download_active(False)
             self.tray.notify(tr("tray_download", n=self._count_done))
+        self._push_tray_tooltip(True)
         self.play_sound()
         self.log_info(tr("window_all_done", n=self._count_done))
+
+    def _push_tray_tooltip(self, force: bool = False) -> None:
+        """The tooltip of the tray icon: the files that are downloading (spec 4.2 p.7).
+
+        The progress of the queue comes for every segment and writing the tooltip of
+        Windows is a heavy call, so the text is rewritten at most once a second.
+        The start and the end of a task are written at once, ``force`` is the way.
+        """
+        if self.tray is None:
+            return
+        now = time.monotonic()
+        if not force and now < self._tooltip_due:
+            return
+        self._tooltip_due = now + TOOLTIP_MS / 1000
+        lines = [tray_speed_line(info, now) for info in self._runs.values()]
+        pending = self.worker.pending() if self.worker is not None else []
+        queued = max(len(pending) - len(self._runs), 0)
+        if queued:
+            lines.append(tr("tray_tooltip_queued", n=queued))
+        self.tray.set_progress_lines(lines)
 
     def clear_all_cards(self) -> None:
         """«Очистить все»: remove every found video from the list.
@@ -483,6 +551,8 @@ class MainWindow(QMainWindow):
         else:
             self.log_info(tr("window_card_removed", title=name))
         self.out_paths.pop(entry_id, None)
+        self._runs.pop(entry_id, None)
+        self._push_tray_tooltip(True)
         self._remove_card(card)
         if self._queue_drained():
             self._report_queue_done()
@@ -519,12 +589,20 @@ class MainWindow(QMainWindow):
             card.set_state("downloading")
             self._sync_card_heights()
             self.log_info(tr("window_download_started", title=name))
+            # The tray tooltip follows the running task: the name, the percent, the
+            # speed, the time left (spec 4.2 p.7).
+            self._runs[entry_id] = RunInfo(name, card.entry.size, 0, time.monotonic())
+            self._push_tray_tooltip(True)
 
     def _task_progress(self, entry_id: str, done: int, total: int) -> None:
         card = self.cards.get(entry_id)
         if card is not None:
             card.set_progress(done, total)
             self._sync_card_heights()
+        info = self._runs.get(entry_id)
+        if info is not None:
+            info.percent = done * 100 // total if total else 0
+            self._push_tray_tooltip()
 
     def _task_finished(self, entry_id: str, path: str) -> None:
         card = self.cards.get(entry_id)
@@ -533,6 +611,8 @@ class MainWindow(QMainWindow):
             card.set_result(path)
             self._sync_card_heights()
         self._count_done += 1
+        self._runs.pop(entry_id, None)
+        self._push_tray_tooltip(True)
         self.log_info(tr("window_finished", path=path))
         if self._queue_drained():
             self._report_queue_done()
@@ -542,6 +622,8 @@ class MainWindow(QMainWindow):
         if card is not None:
             card.set_error(message)
             self._sync_card_heights()
+        self._runs.pop(entry_id, None)
+        self._push_tray_tooltip(True)
         self.log_error(tr("window_task_failed", title=message))
         if self._queue_drained():
             self._report_queue_done()

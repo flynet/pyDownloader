@@ -5,7 +5,7 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 
-from PySide6.QtGui import QCloseEvent, QColor
+from PySide6.QtGui import QCloseEvent, QColor, QImage
 from PySide6.QtWidgets import QApplication
 
 from pydownloader.config.paths import Paths, default_paths
@@ -14,14 +14,23 @@ from pydownloader.i18n import tr
 from pydownloader.manifest.registry import SourceEntry
 from pydownloader.ui import main_window as main_window_mod
 from pydownloader.ui import tray as tray_mod
-from pydownloader.ui.card import SourceCard, format_duration, format_quality, format_size
+from pydownloader.ui.app_icon import ACCENT, BACKGROUND, TRAY_SIZE, WHITE, draw
+from pydownloader.ui.card import (
+    DONE_COLOR,
+    SourceCard,
+    format_duration,
+    format_quality,
+    format_size,
+)
 from pydownloader.ui.console import MAX_LINES, ConsolePanel
 from pydownloader.ui.main_window import (
     SPLIT_CONSOLE_MIN,
     LogBridge,
     MainWindow,
+    RunInfo,
     geometry_from_hex,
     geometry_hex,
+    tray_speed_line,
 )
 from pydownloader.ui.settings_panel import (
     DIALOG_HEIGHT_RATIO,
@@ -31,7 +40,7 @@ from pydownloader.ui.settings_panel import (
     SettingsDialog,
 )
 from pydownloader.ui.theme import apply_theme, qss_for
-from pydownloader.ui.tray import ACTIVE_COLOR, IDLE_COLOR, TRAY_SIZE, TrayController, make_tray
+from pydownloader.ui.tray import ACTIVE_COLOR, IDLE_COLOR, TrayController, make_tray
 
 
 def entry(id: str = "s1", kind: str = "hls", height: int | None = 1080) -> SourceEntry:
@@ -97,6 +106,26 @@ def test_card_state_machine(qtbot):
     assert card.open_button.isVisible()
     card.set_state("error")
     assert card.retry_button.isVisible()
+
+
+def test_the_bar_of_a_finished_card_is_green(qtbot):
+    card = SourceCard(entry())
+    qtbot.addWidget(card)
+    card.show()
+    card.set_state("downloading")
+    # A running download keeps the accent of the theme: the bar is blue (spec 4.1 p.3).
+    assert card.bar.styleSheet() == ""
+    card.set_progress(1, 4)
+    assert card.bar.styleSheet() == ""
+    card.set_state("done")
+    # The file is on the disk: the bar turns green, so the end of the download is
+    # seen without reading the text.
+    assert DONE_COLOR in card.bar.styleSheet()
+    assert card.bar.isVisible()
+    assert card.bar.value() == 100
+    card.set_state("error")
+    # A cancelled or failed task is not a finished file: the green bar is taken back.
+    assert card.bar.styleSheet() == ""
 
 
 def test_card_download_button_emits_the_id(qtbot):
@@ -502,9 +531,14 @@ class FakeTray:
         self.hints: list[str] = []
         self.running: bool | None = None
         self.active: bool | None = None
+        self.lines: list[str] = []
 
     def notify(self, text: str) -> None:
         self.hints.append(text)
+
+    def set_progress_lines(self, lines: list[str]) -> None:
+        """The tooltip text the window wrote for the notification area (spec 4.2 p.7)."""
+        self.lines = lines
 
     def set_browser_running(self, running: bool) -> None:
         self.running = running
@@ -667,9 +701,33 @@ def test_tray_menu_tracks_the_browser_window(qtbot, tmp_path):
     assert len(tray.contextMenu().actions()) == 7
 
 
+def tray_image(tray: TrayController) -> QImage:
+    """The tray icon as the notification area draws it."""
+    return tray.icon().pixmap(TRAY_SIZE, TRAY_SIZE).toImage()
+
+
+def pixels(image: QImage) -> list[QColor]:
+    """Every pixel of an image, in one list the test can compare."""
+    return [image.pixelColor(x, y) for y in range(image.width()) for x in range(image.width())]
+
+
+def solid_pixels(image: QImage) -> list[QColor]:
+    """The pixels of an image that are not blended with the desktop behind them.
+
+    The notification area draws the icon over its own background, so the edge of an
+    antialiased pixel is blended: the test compares the pixels it can see exactly.
+    """
+    return [pixel for pixel in pixels(image) if pixel.alpha() == 255]
+
+
+def pure(image: QImage, color: QColor) -> int:
+    """How many pixels of an image are exactly this colour."""
+    return sum(1 for pixel in pixels(image) if pixel == color)
+
+
 def icon_pixel(tray: TrayController, x: int, y: int) -> QColor:
     """A pixel of the tray icon, in the size the notification area draws it."""
-    return tray.icon().pixmap(TRAY_SIZE, TRAY_SIZE).toImage().pixelColor(x, y)
+    return tray_image(tray).pixelColor(x, y)
 
 
 def tray_pixels(tray: TrayController) -> list[int]:
@@ -796,32 +854,122 @@ def test_the_tray_marks_the_running_download_and_reports_the_end(qtbot, tmp_path
     assert heard == [1]
 
 
-def test_the_tray_icon_is_a_green_arrow_while_a_download_runs(qtbot, tmp_path):
+def test_the_tray_tooltip_lists_the_files_that_download(qtbot, tmp_path):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    tray = FakeTray()
+    window.tray = tray
+    worker = FakeWorker()
+    window.worker = worker
+
+    window.add_source(entry("s1"))
+    window.add_source(entry("s2"))
+    window._start_download("s1")
+    window._start_download("s2")
+    window._task_started("s1", "Мой клип")
+    # The window is in the tray and the mouse is over the icon: the tooltip is the
+    # queue of the program, not a balloon (spec 4.2 p.7).
+    text = "\n".join(tray.lines)
+    assert "Мой клип" in text
+    assert tr("tray_tooltip_queued", n=1) in text
+
+    # The throttle of the tooltip is over, so the next progress is written.
+    window._tooltip_due = 0.0
+    window._task_progress("s1", 2, 4)
+    assert "50%" in "\n".join(tray.lines)
+
+    worker.queued.clear()
+    window._task_finished("s1", str(tmp_path / "a.mp4"))
+    # Nothing is downloading: the tooltip has no queue lines left.
+    assert tray.lines == []
+
+
+def test_the_card_cross_takes_a_running_file_out_of_the_tooltip(qtbot, tmp_path):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    tray = FakeTray()
+    window.tray = tray
+    worker = FakeWorker()
+    window.worker = worker
+
+    window.add_source(entry("s1"))
+    window._start_download("s1")
+    window._task_started("s1", "Мой клип")
+    assert "Мой клип" in "\n".join(tray.lines)
+
+    window._remove_entry("s1")
+    # The task is cancelled and the file is out of the tooltip with the card.
+    assert tray.lines == []
+    assert tray.active is False
+
+
+def test_the_tray_line_of_a_source_without_size():
+    info = RunInfo("Клип", None, 42, 0.0)
+    # An unknown size has no speed and no time left to promise: only the percent.
+    assert tray_speed_line(info, 10.0) == tr("tray_tooltip_line_plain", name="Клип", percent=42)
+
+
+def test_the_tray_line_shows_the_speed_and_the_time_left():
+    # Half of 100 MB in 10 seconds: 5 MB/s, 10 seconds left (spec 4.2 p.7).
+    info = RunInfo("Клип", 100 * 1024 * 1024, 50, 0.0)
+    line = tray_speed_line(info, 10.0)
+    assert "Клип" in line
+    assert "50%" in line
+    assert "5.0" in line
+    assert format_duration(10.0) in line
+
+
+def test_the_tray_icon_is_the_same_picture_as_the_program(qtbot, tmp_path):
     window = make_window(tmp_path)
     qtbot.addWidget(window)
     tray = TrayController(window, None)
-    # A pixel of the circle away from the shaft of the arrow: the colour of the state.
-    edge = (TRAY_SIZE // 2 - TRAY_SIZE // 3, TRAY_SIZE // 2)
-    # The idle tray is the blue arrow of the program (spec 4.2 p.7).
-    assert icon_pixel(tray, *edge) == IDLE_COLOR
+
+    # The tray is the icon of the program: the dark square, the white arrow pointing
+    # down, the line of the tray under it (spec 7.3, 4.2 p.7).
+    assert solid_pixels(tray_image(tray)) == solid_pixels(draw(TRAY_SIZE))
+    head = (TRAY_SIZE // 2, int(TRAY_SIZE * 0.55))
+    assert icon_pixel(tray, *head) == IDLE_COLOR == WHITE
+    # A pixel of the square away from the arrow: the dark background of the icon.
+    assert icon_pixel(tray, int(TRAY_SIZE * 0.13), int(TRAY_SIZE * 0.62)) == BACKGROUND
+
+
+def test_the_tray_arrow_turns_green_and_jumps_while_a_download_runs(qtbot, tmp_path):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    tray = TrayController(window, None)
 
     tray.set_download_active(True)
-    # A running download: the green arrow, and the animation is on.
-    assert icon_pixel(tray, *edge) == ACTIVE_COLOR
+    # A running download: the green arrow, and the animation is on. Only the colour of
+    # the arrow changes: the square, the line of the tray and the shape of the arrow
+    # are the icon of the program (spec 4.2 p.7, 7.3).
+    running = tray_image(tray)
+    program = draw(TRAY_SIZE)
+    assert pure(running, ACTIVE_COLOR) == pure(program, WHITE)
+    assert pure(running, WHITE) == 0
+    assert pure(running, BACKGROUND) == pure(program, BACKGROUND)
+    assert pure(running, ACCENT) == pure(program, ACCENT)
     assert tray.bounce.timer.isActive()
 
-    # The arrow jumps up and down: the frame of the timer is the other drawing,
-    # and the third frame is the first one again.
+    arrow = (TRAY_SIZE // 2, int(TRAY_SIZE * 0.66))
+    line = (TRAY_SIZE // 2, int(TRAY_SIZE * 0.80))
     first = tray_pixels(tray)
+    assert icon_pixel(tray, *line) == ACCENT
+
     tray.bounce._frame()
-    second = tray_pixels(tray)
+    # The line of the tray does not move, the arrow of the icon does: that is the jump.
+    assert icon_pixel(tray, *line) == ACCENT
+    assert pure(tray_image(tray), ACCENT) == pure(program, ACCENT)
+    assert icon_pixel(tray, *arrow) != icon_pixel(tray, *line)
+    assert tray_pixels(tray) != first
+
     tray.bounce._frame()
-    assert first != second
     assert tray_pixels(tray) == first
 
     tray.set_download_active(False)
+    # The queue is empty: the icon of the program with the white arrow, no animation.
     assert not tray.bounce.timer.isActive()
-    assert icon_pixel(tray, *edge) == IDLE_COLOR
+    assert pure(tray_image(tray), WHITE) == pure(program, WHITE)
+    assert pure(tray_image(tray), ACTIVE_COLOR) == 0
 
 
 def test_make_tray_is_skipped_without_a_notification_area(qtbot, tmp_path, monkeypatch):
@@ -863,3 +1011,23 @@ def test_make_tray_shows_the_icon_and_keeps_the_window(qtbot, tmp_path, monkeypa
     # The browser thread is not running yet: only «Open browser» is enabled.
     assert tray.open_action.isEnabled()
     assert not tray.close_action.isEnabled()
+
+
+def test_a_tray_created_while_a_task_runs_shows_the_file_and_the_green_arrow(
+    qtbot, tmp_path, monkeypatch
+):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    worker = FakeWorker()
+    window.worker = worker
+    window.add_source(entry("s1"))
+    window._start_download("s1")
+    window._task_started("s1", "Мой клип")
+    monkeypatch.setattr(tray_mod.QSystemTrayIcon, "supportsMessages", lambda self: True)
+
+    tray = make_tray(window, None)
+    # The tray appears while the task runs (the tray row of the settings): the tooltip
+    # and the green arrow are written at once, not after the next progress (spec 4.2 p.7).
+    assert "Мой клип" in tray.toolTip()
+    assert tr("tray_tooltip_download") in tray.toolTip()
+    assert pure(tray_image(tray), ACTIVE_COLOR) > 0

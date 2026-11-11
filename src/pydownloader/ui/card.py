@@ -36,6 +36,17 @@ CardState = Literal["new", "queued", "downloading", "done", "error"]
 #: The side of the cross of a card, in pixels.
 CROSS_SIZE = 16
 
+#: The bar of a finished download is green: the colour says the file is on the
+#: disk, so a person sees the end of the queue without reading the text (spec 4.1 p.3).
+DONE_COLOR = "#2ea64f"
+#: The rule of the bar for the finished state, the theme gives the rest.
+DONE_BAR = f"QProgressBar::chunk {{ background: {DONE_COLOR}; }}"
+
+
+def bar_style(state: CardState) -> str:
+    """The chunk colour of the progress bar of a state (spec 4.1 p.3)."""
+    return DONE_BAR if state == "done" else ""
+
 
 def cross_icon(size: int = CROSS_SIZE, color: str = "#9ea2b0") -> QIcon:
     """The «remove» cross of a card, drawn by hand (spec 4.1 p.1).
@@ -279,6 +290,9 @@ class SourceCard(QFrame):
         self.cancel_button.setVisible(state == "downloading")
         self.open_button.setVisible(state == "done")
         self.bar.setVisible(state in {"downloading", "done"})
+        # The bar of a finished file is green, the bar of a running one is the
+        # accent of the theme (spec 4.1 p.3).
+        self.bar.setStyleSheet(bar_style(state))
         self.stage_label.setVisible(state == "downloading")
         if state == "done":
             self.bar.setRange(0, 100)
@@ -294,6 +308,7 @@ class SourceCard(QFrame):
         """Segments downloaded, percentage and speed inside the card (spec 4.1 p.3)."""
         self.state = "downloading"
         self.bar.setVisible(True)
+        self.bar.setStyleSheet(bar_style("downloading"))
         self.stage_label.setVisible(True)
         percent = done * 100 // total if total else 0
         self.bar.setRange(0, total)
@@ -334,6 +349,7 @@ class SourceCard(QFrame):
 __all__ = [
     "CardState",
     "SourceCard",
+    "bar_style",
     "format_duration",
     "format_quality",
     "format_size",
