@@ -5,11 +5,12 @@ controlled browser with the "Open browser" button, the program intercepts the
 network requests of that browser, finds HLS (`.m3u8`), MPEG-DASH (`.mpd`),
 direct MP4, YouTube streams and audio sources, and joins the downloaded segments
 with FFmpeg into one `.mp4` (a source of sound only is written as `.mp3`). The
-interface is dark by default; light and system themes are available in the
-settings, the program lives in the Windows tray, and the browser window can be
-opened and closed by the user. The console panel starts hidden, so the list of
-found videos takes the whole window: no divider, no console row, and the top row
-of the window has the button that opens the panel back.
+interface is dark by default; the light theme, the system theme and three theme
+palettes — "Cartoons", "Neon", "Pink" — are available in the settings, the program
+lives in the Windows tray, and the browser window can be opened and closed by the
+user. The console panel starts hidden, so the list of found videos takes the whole
+window: no divider, no console row, and the top row of the window has the button
+that opens the panel back.
 
 ## Screenshots
 
@@ -19,9 +20,23 @@ panel open with its row of buttons](assets/screenshots/window.png)
 ![Settings dialog: quality, browser, language, theme, the tray rows and the console
 panel](assets/screenshots/settings.png)
 
+The same window in the three theme palettes of the settings:
+
+![Cartoons theme: the cream wall, the white cards, the dark navy outlines, the sky
+blue of the buttons, the badges of the formats](assets/screenshots/window_cartoons.png)
+
+![Neon theme: the dark wall of a game, the violet of the buttons, the cyan of the HLS
+badge, the lime of a finished file](assets/screenshots/window_neon.png)
+
+![Pink theme: pastel on a light base, the rose of the buttons, the lavender of the HLS
+badge, the mint of a finished file](assets/screenshots/window_pink.png)
+
 The screenshots are rendered by the `tools/make_screenshots.py` script (`uv run python
 tools/make_screenshots.py`): it fills the cards and the console with demo data, and
 the script has no browser and no downloads, so the screenshots are reproducible. The
+main window is drawn four times — in the dark theme and in each of the three theme
+palettes — because a card is painted once, when it is added to the window, so the
+window is built fresh for every theme. The
 windows are never shown on the desktop — the snapshot is taken with `QWidget.grab()`
 on the offscreen Qt platform. The script runs with its own `%APPDATA%`,
 `%LOCALAPPDATA%` and temp folder (`isolate_app_data` of `config/paths.py`, the same
@@ -142,6 +157,24 @@ settings (window, base, button, text, accent), and the wall behind the cards has
 own rule in the stylesheet, so the list of cards, the console panel and the status
 bar are light in the light theme and dark in the dark theme. The **system** choice
 keeps the palette of Windows.
+
+Six choices stand in the theme row of the settings: **Dark**, **Light**,
+**Cartoons**, **Neon**, **Pink**, **System**. The three new palettes are named by
+their style, not by the age of the person who uses them: "Cartoons" is a warm cream
+wall with white cards and dark navy outlines, "Neon" is the wall of a game with the
+violet of the buttons and the cyan of a badge, "Pink" is pastel on a light base. A
+theme is a set of **keys**, not a set of colors picked widget by widget: the
+background of the window, the panel of a card, the text, the secondary text, the
+accent of the buttons, the yellow of "Clear downloaded", the red of "Clear all", the
+green of a finished file, the color of each badge (HLS, DASH, MP4, YouTube, MP3), the
+wall of the console and the color of the log. One key is one role, so the same
+theme paints the main window, the console panel and the settings dialog, and a
+theme chosen in the settings is applied to the window at once: the marks of the
+buttons, the badge of a card and the bar of a finished card are drawn again with
+the colors of the new theme, no restart is asked. The letters of a theme are
+measured by the WCAG ratio of contrast: the text on the wall, the letters of a
+button, the letters of a badge and the log on the wall of the console are at least
+4.0 apart, so the accent of a bright palette is the darker edge of its family.
 
 The console section is one block: the row of two buttons and the panel of the log,
 and it is on the screen only while the console is open. Its buttons are **"Clear"**

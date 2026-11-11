@@ -62,6 +62,9 @@ MIN_DIALOG_HEIGHT = 420
 THEME_KEYS: dict[ThemeName, str] = {
     "dark": "theme_dark",
     "light": "theme_light",
+    "cartoons": "theme_cartoons",
+    "neon": "theme_neon",
+    "pink": "theme_pink",
     "system": "theme_system",
 }
 #: Browser value -> the key of its name, the names are the ones the vendors use.

@@ -251,9 +251,34 @@ window size 900×600, size and position are remembered.
   by default, applied after a restart), tray icon and hide-to-tray rows, the
   console panel row ("Show the console panel below the list"), automatic update
   checks
-  (enabled by default), theme (system / light / dark). The dialog takes 80% of
+  (enabled by default), theme (**dark** / **light** / **Cartoons** / **Neon** /
+  **Pink** / system). The dialog takes 80% of
   the main window's width and height and can be resized; a long folder path is
   fully visible (and in the tooltip on hover).
+- **The theme paints the whole interface, not only the widgets with a rule of their
+  own:** the wall of the window and the wall of the cards, the frames of the cards
+  and of the fields, the main text and the secondary text (links, size, duration,
+  status), the buttons, the yellow of "Clear downloaded", the red of "Clear all",
+  the bar of a running file and the bar of a finished file, the badges of HLS, DASH,
+  MP4, YouTube and MP3, the console panel and its text, the fields, the lists, the
+  check boxes, the menus, the scroll bars, the tabs and the status bar. Every color
+  of a theme is a key of one palette, so one role is one color in the whole window.
+- **Three theme palettes** ("Cartoons", "Neon", "Pink") are named by their style,
+  not by the age or the sex of the person who chooses them: "Cartoons" is the cream
+  wall with white cards, dark navy outlines and the sky blue of the buttons, "Neon"
+  is the wall of a game with the violet of the buttons, the cyan of a badge and the
+  lime of a finished file, "Pink" is pastel on a light base with the rose of the
+  buttons. The names are translated into the six languages of the catalog.
+- **The letters of a theme are measured by the WCAG ratio of contrast:** the text on
+  the wall of the window, the letters of a button, the letters of a badge and the log
+  on the wall of the console are at least **4.0** apart, so the accent of a bright
+  palette is taken to the darker edge of its family and the white letters stay
+  readable.
+- **The theme is applied to the window without a restart:** the marks of the buttons
+  and of the cards are painted once, when the window is built, and a card is painted
+  once, when it is added, so the marks, the badge of a card, the bar of a finished
+  card, the wall behind the cards, the console panel, the fields, the menus and the
+  status bar are drawn again with the colors of the theme the user picks.
 - **The dialog cannot be squeezed under the height its rows need:** every field,
   select, checkbox and button of the dialog has the minimum height of its own
   ``sizeHint`` (the height its font and its text ask for), so the layout gets the

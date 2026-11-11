@@ -15,9 +15,12 @@ from typing import Literal
 
 from pydownloader.i18n import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, Language
 
-ThemeName = Literal["dark", "light", "system"]
-#: Dark first: it is the default, the system theme is the fallback choice.
-THEMES: tuple[ThemeName, ...] = ("dark", "light", "system")
+ThemeName = Literal["dark", "light", "cartoons", "neon", "pink", "system"]
+#: Dark first: it is the default, the system theme is the fallback choice. The three
+#: theme palettes («Cartoons», «Neon», «Pink») are named by their style, not by the age
+#: or the sex of the person who chooses them, and they stand between the two plain
+#: themes and the system one (spec 4.3 p.3).
+THEMES: tuple[ThemeName, ...] = ("dark", "light", "cartoons", "neon", "pink", "system")
 BrowserName = Literal["auto", "chrome", "msedge", "chromium"]
 #: «Auto» first: Chrome → Edge → Chromium, the order of the spec (spec 7.2).
 BROWSERS: tuple[BrowserName, ...] = ("auto", "chrome", "msedge", "chromium")

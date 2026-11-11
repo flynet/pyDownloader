@@ -123,6 +123,9 @@ TEXTS: dict[str, str] = {
     "settings_close_tray": 'Прятать окно в трей при закрытии',
     "theme_dark": "Тёмная",
     "theme_light": "Светлая",
+    "theme_cartoons": "Мультики",
+    "theme_neon": "Неон",
+    "theme_pink": "Розовая",
     "theme_system": "Системная",
     # --- startup (spec 4.4, 7.1) -------------------------------------------
     "app_started": "PyDownloader {version}, папка загрузок: {dir}",

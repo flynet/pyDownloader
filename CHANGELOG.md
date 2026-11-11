@@ -4,6 +4,35 @@ The format is [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versioning is [SemVer](https://semver.org/). A release is a `vX.Y.Z` tag
 on `main`.
 
+## [0.4.7] - 2026-11-11
+
+### Added
+- **Three theme palettes in the theme row of the settings** (spec 4.3 p.3): «Cartoons»,
+  «Neon» and «Pink», named by their style, standing between the dark and the light
+  themes and the system one. Every color of a theme is a key of its palette, so the
+  new themes color the same parts of the interface as the two themes that were
+  before: the wall of the window and the wall of the cards, the frames of the cards
+  and of the fields, the main text and the secondary text, the buttons, the yellow
+  of "Clear downloaded", the red of "Clear all", the bar of a running file and the
+  bar of a finished file, the badges of HLS, DASH, MP4, YouTube and MP3, the console
+  panel and its text, the fields, the lists, the check boxes, the menus, the scroll
+  bars, the tabs and the status bar. The names of the themes are translated into the
+  six languages of the catalog.
+- **The letters of a theme are checked by the ratio of contrast**: the text on the
+  wall of the window, the letters of the buttons, the letters of a badge and the log
+  on the wall of the console are at least 4.0 apart (WCAG AA), so the accent of a
+  bright palette is taken to the darker edge of its family and the letters stay
+  readable.
+
+### Changed
+- The theme is applied to the window **without a restart**: the marks of the buttons
+  and of the cards, the badge of a card and the bar of a finished card are painted
+  once, so they are drawn again with the colors of the theme the user picks in the
+  settings; the wall behind the cards, the console panel, the fields and the menus
+  take the new palette at the same moment. The marks of the tray menu are repainted
+  as well: the menu is built once, with the theme the program started with
+  (spec 4.3 p.4).
+
 ## [0.4.6] - 2026-11-11
 
 ### Changed

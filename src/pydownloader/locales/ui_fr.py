@@ -123,6 +123,9 @@ TEXTS: dict[str, str] = {
     "settings_close_tray": 'Cacher la fenêtre dans le plateau à la fermeture',
     "theme_dark": "Sombre",
     "theme_light": "Clair",
+    "theme_cartoons": "Cartoon",
+    "theme_neon": "Néon",
+    "theme_pink": "Rose",
     "theme_system": "Système",
     # --- startup (spec 4.4, 7.1) -------------------------------------------
     "app_started": "PyDownloader {version}, dossier de téléchargement : {dir}",

@@ -31,6 +31,7 @@ from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
 from pydownloader._version import VERSION
 from pydownloader.config.constants import APP_NAME
+from pydownloader.config.settings import ThemeName
 from pydownloader.i18n import tr
 from pydownloader.ui.app_icon import GREEN, WHITE, tray_icon
 from pydownloader.ui.button_icons import (
@@ -195,6 +196,23 @@ class TrayController(QSystemTrayIcon):
         key = "window_close_browser" if running else "window_open_browser"
         self.browser_action.setText(tr(key))
         self.browser_action.setIcon(browser_icon(self._color, not running))
+
+    def set_theme(self, theme: ThemeName) -> None:
+        """The marks of the tray menu take the colors of the theme (spec 4.3 p.4).
+
+        The menu is built once, with the theme the program started with, so a theme
+        picked in the settings leaves the items of the menu the color of the old
+        theme. The item of the browser keeps the state of its own thread: the mark of
+        the cross is drawn with the new color on the item that closes the window.
+        """
+        self._color = icon_color("panel", theme)
+        color = self._color
+        self.show_action.setIcon(window_icon(color))
+        self.browser_action.setIcon(browser_icon(color, not self._window.browser_running()))
+        self.console_action.setIcon(console_icon(color))
+        self.check_action.setIcon(retry_icon(color))
+        self.folder_action.setIcon(folder_icon(color))
+        self.quit_action.setIcon(exit_icon(color))
 
     def _open_window(self, reason: QSystemTrayIcon.ActivationReason) -> None:
         if reason in OPEN_REASONS:

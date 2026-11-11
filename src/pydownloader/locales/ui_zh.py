@@ -124,6 +124,9 @@ TEXTS: dict[str, str] = {
     "settings_close_tray": '关闭时把窗口隐藏到托盘',
     "theme_dark": "深色",
     "theme_light": "浅色",
+    "theme_cartoons": "卡通",
+    "theme_neon": "霓虹",
+    "theme_pink": "粉色",
     "theme_system": "跟随系统",
     # --- startup (spec 4.4, 7.1) -------------------------------------------
     "app_started": "PyDownloader {version}, 下载文件夹: {dir}",

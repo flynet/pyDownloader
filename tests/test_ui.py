@@ -6,13 +6,14 @@ import json
 import threading
 from pathlib import Path
 
+import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QCloseEvent, QColor, QIcon, QImage, QPalette
 from PySide6.QtWidgets import QAbstractButton, QApplication, QPushButton
 
 from pydownloader.config.paths import Paths, default_paths
-from pydownloader.config.settings import Settings
-from pydownloader.i18n import tr
+from pydownloader.config.settings import THEMES, Settings
+from pydownloader.i18n import SUPPORTED_LANGUAGES, set_language, tr
 from pydownloader.manifest.registry import SourceEntry
 from pydownloader.ui import main_window as main_window_mod
 from pydownloader.ui import tray as tray_mod
@@ -42,8 +43,21 @@ from pydownloader.ui.settings_panel import (
     MIN_DIALOG_HEIGHT,
     MIN_DIALOG_WIDTH,
     SettingsDialog,
+    theme_label,
 )
-from pydownloader.ui.theme import DARK, LIGHT, apply_theme, color_for, qss_for
+from pydownloader.ui.theme import (
+    CARTOONS,
+    DARK,
+    LIGHT,
+    NEON,
+    PALETTES,
+    PINK,
+    apply_theme,
+    badge_style,
+    color_for,
+    contrast_ratio,
+    qss_for,
+)
 from pydownloader.ui.tray import ACTIVE_COLOR, IDLE_COLOR, TrayController, make_tray
 
 
@@ -633,6 +647,223 @@ def test_the_palette_follows_the_theme(qapp: QApplication):
     )
 
 
+def test_the_theme_list_has_the_six_choices(qtbot, tmp_path):
+    """The theme row of the settings carries the three new palettes (spec 4.3 p.3)."""
+    settings = Settings(download_dir=str(tmp_path), theme="cartoons")
+    dialog = SettingsDialog(settings)
+    qtbot.addWidget(dialog)
+    values = [dialog.theme_box.itemData(i) for i in range(dialog.theme_box.count())]
+    assert values == list(THEMES)
+    assert dialog.theme_box.currentData() == "cartoons"
+
+
+def test_the_names_of_the_new_themes_are_localized():
+    """Every theme has a name in every language of the catalog (spec 8.1)."""
+    for language in SUPPORTED_LANGUAGES:
+        set_language(language)
+        for theme in THEMES:
+            assert theme_label(theme).strip()
+    set_language("ru")
+
+
+@pytest.mark.parametrize("theme", ["cartoons", "neon", "pink"])
+def test_the_new_themes_have_stylesheets(theme):
+    """A theme palette paints the window, the cards and the console like the others."""
+    qss = qss_for(theme)
+    colors = PALETTES[theme]
+    assert colors["background"] in qss
+    assert colors["console_bg"] in qss
+    assert "QPlainTextEdit#console" in qss
+    assert "#cardArea" in qss
+
+
+@pytest.mark.parametrize("theme", ["cartoons", "neon", "pink"])
+def test_the_palette_of_a_theme_palette_follows_its_colors(qapp: QApplication, theme):
+    apply_theme(qapp, theme)
+    palette = qapp.palette()
+    colors = PALETTES[theme]
+    assert palette.color(QPalette.ColorRole.Window).name().lower() == colors["background"]
+    assert palette.color(QPalette.ColorRole.Base).name().lower() == colors["panel"]
+    assert palette.color(QPalette.ColorRole.WindowText).name().lower() == colors["text"]
+    assert palette.color(QPalette.ColorRole.Highlight).name().lower() == colors["accent"]
+
+
+#: The pairs of letters a person reads: the text on the wall of the window, the
+#: letters of the buttons and of the badges, the log on the wall of the console.
+#: The «100%» inside a bar that is already full is not in the list.
+READABLE_PAIRS = [
+    ("text", "background"),
+    ("muted", "background"),
+    ("text", "panel"),
+    ("muted", "panel"),
+    ("console_text", "console_bg"),
+    ("accent", "#ffffff"),
+    ("warn", "warn_text"),
+    ("danger", "danger_text"),
+    ("badge_hls_text", "badge_hls"),
+    ("badge_dash_text", "badge_dash"),
+    ("badge_mp4_text", "badge_mp4"),
+    ("badge_youtube_text", "badge_youtube"),
+    ("badge_mp3_text", "badge_mp3"),
+]
+
+
+def test_the_letters_of_every_theme_are_readable():
+    """A pair of colors under the ratio 4.0 is not readable (WCAG AA, spec 4.3 p.3)."""
+    for theme, colors in PALETTES.items():
+        for first, second in READABLE_PAIRS:
+            a = QColor(colors[first]) if first in colors else QColor(first)
+            b = QColor(colors[second]) if second in colors else QColor(second)
+            ratio = contrast_ratio(a, b)
+            assert ratio >= 4.0, f"{theme}: {first} on {second} is {ratio:.2f}"
+
+
+@pytest.mark.parametrize("theme", ["dark", "light", "cartoons", "neon", "pink"])
+def test_the_wall_of_the_window_is_the_theme(qtbot, qapp, tmp_path, theme):
+    """The wall behind the cards is the background of the theme, not of Windows."""
+    settings = Settings(download_dir=str(tmp_path), theme=theme)
+    window = MainWindow(settings, default_paths(downloads_dir=tmp_path), None, None)
+    qtbot.addWidget(window)
+    apply_theme(qapp, theme)
+    window.resize(900, 600)
+    window.show()
+    wall = window.card_container.grab().toImage().pixelColor(120, 300)
+    want = QColor(PALETTES[theme]["background"])
+    assert (want.red(), want.green(), want.blue()) == (wall.red(), wall.green(), wall.blue())
+
+
+@pytest.mark.parametrize("theme", ["dark", "light", "cartoons", "neon", "pink"])
+def test_the_console_panel_is_the_wall_of_the_theme(qtbot, qapp, tmp_path, theme):
+    """The log panel gets its own wall in every theme, so it reads as the console (spec 4.3 p.3)."""
+    settings = Settings(download_dir=str(tmp_path), theme=theme, console_open=True)
+    window = MainWindow(settings, default_paths(downloads_dir=tmp_path), None, None)
+    qtbot.addWidget(window)
+    apply_theme(qapp, theme)
+    window.resize(900, 600)
+    window.show()
+    panel = window.console.grab().toImage().pixelColor(60, 30)
+    want = QColor(PALETTES[theme]["console_bg"])
+    assert (want.red(), want.green(), want.blue()) == (panel.red(), panel.green(), panel.blue())
+    text = window.console.palette().color(QPalette.ColorRole.Text)
+    assert text.name().lower() == PALETTES[theme]["console_text"]
+
+
+def test_the_badge_of_a_card_is_the_color_of_the_theme(qtbot):
+    card = SourceCard(entry(), theme="neon")
+    qtbot.addWidget(card)
+    colors = NEON
+    assert colors["badge_hls"] in card.badge.styleSheet()
+    assert colors["badge_hls_text"] in card.badge.styleSheet()
+
+
+@pytest.mark.parametrize("theme", ["dark", "light", "cartoons", "neon", "pink"])
+@pytest.mark.parametrize("kind", ["hls", "dash", "mp4", "youtube", "mp3"])
+def test_every_format_badge_has_a_color_in_every_theme(theme, kind):
+    """The badge of HLS, MP4, MP3 and DASH is painted in every theme (spec 4.3 p.3)."""
+    style = badge_style(theme, kind)
+    colors = PALETTES[theme]
+    assert f"background: {colors[f'badge_{kind}']}" in style
+    assert f"color: {colors[f'badge_{kind}_text']}" in style
+
+
+def test_the_finished_bar_is_the_green_of_the_theme(qtbot):
+    card = SourceCard(entry(), theme="pink")
+    qtbot.addWidget(card)
+    card.set_state("done")
+    assert PINK["done"] in card.bar.styleSheet()
+    assert PINK["done_text"] in card.bar.styleSheet()
+
+
+def test_the_bar_of_a_finished_card_in_the_dark_theme_is_the_green_of_the_dark_theme(qtbot):
+    card = SourceCard(entry())
+    qtbot.addWidget(card)
+    card.set_state("done")
+    assert DONE_COLOR in card.bar.styleSheet()
+
+
+def _icon_is(button, want: str) -> bool:
+    """Whether the painted mark of the button carries the color of the theme."""
+    image = button.icon().pixmap(ICON_SIZE, ICON_SIZE).toImage()
+    target = QColor(want)
+    for x in range(image.width()):
+        for y in range(image.height()):
+            color = image.pixelColor(x, y)
+            if color.alpha() > 200 and color == target:
+                return True
+    return False
+
+
+def test_the_window_repaints_the_buttons_and_the_cards_when_the_theme_changes(qtbot, tmp_path):
+    """A theme chosen in the settings is applied to the window without a restart.
+
+    The marks of the buttons are painted once, when the window is built, and the card
+    is painted once, when it is added: a theme picked in the settings leaves them the
+    colors of the old theme (spec 4.3 p.2).
+    """
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    window.add_source(entry("s1"))
+    card = window.cards["s1"]
+    assert DARK["badge_hls"] in card.badge.styleSheet()
+    assert _icon_is(window.go_button, "#ffffff")
+    assert _icon_is(card.remove_button, DARK["text"])
+    assert _icon_is(window.clear_downloaded_button, DARK["warn_text"])
+    window.settings.theme = "pink"
+    window._recolor_icons("pink")
+    assert PINK["badge_hls"] in card.badge.styleSheet()
+    assert PINK["badge_hls_text"] in card.badge.styleSheet()
+    assert _icon_is(card.remove_button, PINK["text"])
+    assert _icon_is(window.clear_downloaded_button, PINK["warn_text"])
+    assert _icon_is(window.clear_all_button, PINK["danger_text"])
+
+
+def test_the_buttons_of_a_theme_palette_are_the_colors_of_that_theme(qtbot, tmp_path):
+    """The marks of the buttons take the colors of the theme the window was built with.
+
+    A button of the accent is painted with the accent of the theme and the white
+    letters, so its mark is white; the yellow button takes the dark text color of its
+    own row, the red button the white of its row (spec 4.3 p.2).
+    """
+    settings = Settings(download_dir=str(tmp_path), theme="cartoons")
+    window = MainWindow(settings, default_paths(downloads_dir=tmp_path), None, None)
+    qtbot.addWidget(window)
+    assert _icon_is(window.go_button, "#ffffff")
+    assert _icon_is(window.settings_button, "#ffffff")
+    assert _icon_is(window.browser_button, "#ffffff")
+    assert _icon_is(window.clear_downloaded_button, CARTOONS["warn_text"])
+    assert _icon_is(window.clear_all_button, CARTOONS["danger_text"])
+
+
+def test_the_window_repaints_the_tray_menu_when_the_theme_changes(qtbot, tmp_path):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    tray = FakeTray()
+    window.tray = tray
+    assert tray.theme is None
+    window.settings.theme = "neon"
+    window._recolor_icons("neon")
+    assert tray.theme == "neon"
+
+
+def test_the_marks_of_the_tray_menu_take_the_new_theme(qtbot, tmp_path):
+    """The tray menu is painted once, so the theme picked in the settings repaints it.
+
+    The marks of the menu are the marks of the window in the text color of the theme,
+    and the menu is built when the tray is made, so a theme applied to the window has
+    to be applied to the menu as well (spec 4.3 p.4).
+    """
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    tray = TrayController(window, None)
+    menu = tray.contextMenu()
+    assert _icon_is(menu.actions()[0], DARK["text"])
+    window.settings.theme = "neon"
+    tray.set_theme("neon")
+    assert _icon_is(menu.actions()[0], NEON["text"])
+    assert _icon_is(tray.browser_action, NEON["text"])
+    assert _icon_is(tray.quit_action, NEON["text"])
+
+
 def test_log_bridge_forwards_from_another_thread(qtbot, tmp_path):
     window = make_window(tmp_path)
     qtbot.addWidget(window)
@@ -660,6 +891,7 @@ class FakeTray:
         self.running: bool | None = None
         self.active: bool | None = None
         self.lines: list[str] = []
+        self.theme: str | None = None
 
     def notify(self, text: str) -> None:
         self.hints.append(text)
@@ -673,6 +905,10 @@ class FakeTray:
 
     def set_download_active(self, active: bool) -> None:
         self.active = active
+
+    def set_theme(self, theme: str) -> None:
+        """The marks of the tray menu are drawn again with the theme (spec 4.3 p.4)."""
+        self.theme = theme
 
 
 class FakeSniffer:
