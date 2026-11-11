@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+import tempfile
 from dataclasses import replace
 from pathlib import Path
-from types import SimpleNamespace
 
 from pydownloader.browser.launcher import BrowserChoice
-from pydownloader.config.paths import Paths
-from pydownloader.config.settings import Settings
+from pydownloader.config.paths import Paths, download_dir_default
+from pydownloader.config.settings import Settings, load_settings, save_settings
 from pydownloader.ffmpeg.locate import Ffmpeg
 from pydownloader.ui import app as app_mod
 
@@ -47,6 +47,49 @@ def test_unusable_saved_folder_asks_again(tmp_path, monkeypatch):
     assert app_mod.resolve_download_dir(settings) == chosen
 
 
+def test_a_temp_folder_in_the_settings_is_asked_again(tmp_path, monkeypatch):
+    """The temp folder of a test run is not the choice of the user (spec 3.1).
+
+    A window writes the settings of the user, so the suite redirects the app data
+    in ``conftest.py``; the guard is for a settings file that was left pointing at
+    ``%TEMP%`` after such a run. The program does not create that folder and asks
+    for a real one, starting the dialog at the downloads of the user.
+    """
+    temp = Path(tempfile.gettempdir()) / "tmpvideos"
+    settings = Settings(download_dir=str(temp))
+    asked: list[object] = []
+    monkeypatch.setattr(app_mod, "pick_download_dir", lambda start: asked.append(start) or tmp_path)
+
+    assert app_mod.resolve_download_dir(settings) == tmp_path
+    # The temp folder is not created, and the dialog starts at the downloads.
+    assert not temp.exists()
+    assert asked == [download_dir_default()]
+
+
+def test_the_startup_write_keeps_the_settings_of_the_user(tmp_path: Path):
+    """A start writes the settings back: it changes the folder it resolved, nothing else.
+
+    The theme, the language and the state of the console panel are the settings of
+    the user, so the file a start leaves must be the file it read, not the defaults
+    (spec 7.4).
+    """
+    paths = make_paths(tmp_path)
+    saved = tmp_path / "videos"
+    save_settings(
+        Settings(download_dir=str(saved), theme="dark", console_open=False, language="ru"),
+        paths.settings_file,
+    )
+    settings = load_settings(paths.settings_file)
+    settings.download_dir = str(saved)
+    save_settings(settings, paths.settings_file)
+
+    back = load_settings(paths.settings_file)
+    assert back.theme == "dark"
+    assert back.console_open is False
+    assert back.language == "ru"
+    assert back.download_dir == str(saved)
+
+
 def make_paths(tmp_path: Path) -> Paths:
     return Paths(
         settings_file=tmp_path / "settings.json",
@@ -58,19 +101,39 @@ def make_paths(tmp_path: Path) -> Paths:
     )
 
 
-def make_window() -> SimpleNamespace:
-    messages: list[str] = []
-    return SimpleNamespace(
-        messages=messages,
-        log_info=messages.append,
-        log_warning=messages.append,
-        ffmpeg=Ffmpeg(Path("ffmpeg.exe"), "FFmpeg"),
+class FakeWindow:
+    """Stand-in of the window for the browser actions (spec 4.3).
+
+    It keeps the console lines the app writes, the resolved browser, the last page
+    and the state of the browser button, so the toggle can be checked without Qt.
+    """
+
+    def __init__(self) -> None:
+        self.messages: list[str] = []
+        self.ffmpeg = Ffmpeg(Path("ffmpeg.exe"), "FFmpeg")
         # «Open browser» reuses what the first start resolved (spec 4.3).
-        browser_choice=None,
-        extension_dir=None,
-        last_url="",
-        sniffer=None,
-    )
+        self.browser_choice = None
+        self.extension_dir = None
+        self.last_url = ""
+        self.sniffer = None
+        #: The state the button is set to during a launch: True, then False.
+        self.starting: list[bool] = []
+
+    def log_info(self, message: str) -> None:
+        self.messages.append(message)
+
+    def log_warning(self, message: str) -> None:
+        self.messages.append(message)
+
+    def browser_running(self) -> bool:
+        return self.sniffer is not None and self.sniffer.isRunning()
+
+    def set_browser_starting(self, starting: bool) -> None:
+        self.starting.append(starting)
+
+
+def make_window() -> FakeWindow:
+    return FakeWindow()
 
 
 def record_launch(launched: list[object]):
@@ -237,6 +300,38 @@ def test_open_browser_reuses_the_resolved_browser_on_the_last_page(
     assert launched == [(CHROME, tmp_path / "uBlock", "https://example.com/player")]
 
 
+def test_the_address_of_the_field_starts_the_browser_on_that_page(tmp_path: Path, monkeypatch):
+    """«Go» with the browser down launches the thread on the page of the field.
+
+    The address pasted in the window is the page the browser opens on, and it is
+    remembered as the last page, so «Open browser» after a restart opens the same
+    site (spec 4.2 p.4).
+    """
+    window = make_window()
+    launched: list[tuple[object, str]] = []
+
+    def launch(window, settings, paths, browser, ext=None, start_url=""):
+        launched.append((ext, start_url))
+
+    monkeypatch.setattr(app_mod, "extension_dir", lambda app, cache: None)
+    monkeypatch.setattr(
+        app_mod,
+        "resolve_browser",
+        lambda browsers_dir, prefer_chromium=False, legacy_dir=None, name="auto": CHROME,
+    )
+    monkeypatch.setattr(app_mod, "launch_sniffer", launch)
+
+    app_mod.open_url_in_browser(
+        window, Settings(), make_paths(tmp_path), "https://site.example/watch"
+    )
+
+    assert launched == [(None, "https://site.example/watch")]
+    assert window.last_url == "https://site.example/watch"
+    # The browser button is disabled for the launch, and the page is written in the log.
+    assert window.starting == [True, False]
+    assert any("site.example" in message for message in window.messages)
+
+
 def test_open_browser_does_not_start_a_second_thread(tmp_path: Path, monkeypatch):
     window = make_window()
     window.browser_choice = CHROME
@@ -268,6 +363,39 @@ def test_open_browser_without_a_resolved_browser_starts_the_first_one(
     app_mod.open_browser(window, Settings(), make_paths(tmp_path))
 
     assert started == ["launch"]
+
+
+def test_toggle_of_the_browser_button_closes_the_running_window(tmp_path: Path, monkeypatch):
+    window = make_window()
+    sniffer = FakeSniffer(running=True, open_now=True)
+    window.sniffer = sniffer
+    launched: list[object] = []
+    monkeypatch.setattr(app_mod, "launch_sniffer", record_launch(launched))
+
+    app_mod.toggle_browser(window, Settings(), make_paths(tmp_path))
+
+    # «Close browser» stops the thread and does not touch the button of the launch,
+    # so the state of the button stays as fast as the close (spec 4.3).
+    assert sniffer.stops == 1
+    assert launched == []
+    assert window.starting == []
+
+
+def test_toggle_opens_the_browser_and_the_button_waits_for_the_launch(tmp_path: Path, monkeypatch):
+    window = make_window()
+    monkeypatch.setattr(app_mod, "chromium_executable", lambda folder, legacy=None: None)
+    monkeypatch.setattr(app_mod, "extension_dir", lambda app, cache: None)
+    monkeypatch.setattr(app_mod, "resolve_browser", lambda *args, **kwargs: CHROME)
+    launched: list[object] = []
+    monkeypatch.setattr(app_mod, "launch_sniffer", record_launch(launched))
+
+    app_mod.toggle_browser(window, Settings(), make_paths(tmp_path))
+
+    # The button is disabled for the launch: the Chromium download and the offer
+    # dialog are on the same click, so a second press cannot start a second thread
+    # of Playwright (spec 4.3 p.2).
+    assert launched == [None]
+    assert window.starting == [True, False]
 
 
 def test_startup_leaves_the_browser_closed(tmp_path: Path, qapp, qtbot, monkeypatch):

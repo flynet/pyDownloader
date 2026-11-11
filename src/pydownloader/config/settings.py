@@ -1,8 +1,14 @@
-"""User settings stored in ``%APPDATA%/PyDownloader/settings.json``."""
+"""User settings stored in ``%APPDATA%/PyDownloader/settings.json``.
+
+The file is written atomically and the previous file is kept as
+``settings.json.bak``, so a start that cannot read the settings takes the
+settings of the last save, not the defaults (spec 7.4).
+"""
 
 from __future__ import annotations
 
 import json
+import shutil
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
@@ -69,12 +75,34 @@ class Settings:
     window_geometry: str = ""
 
 
-def load_settings(path: Path) -> Settings:
-    """Read settings; a missing or damaged file falls back to the defaults."""
-    settings = Settings()
+def _backup_path(path: Path) -> Path:
+    """The copy of the settings the previous save left next to the file."""
+    return path.parent / (path.name + ".bak")
+
+
+def _read(path: Path) -> dict[str, object] | None:
+    """The keys of a settings file, ``None`` when it is missing or damaged."""
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
+        return None
+    return raw if isinstance(raw, dict) else None
+
+
+def load_settings(path: Path) -> Settings:
+    """Read settings; a missing or damaged file falls back to the backup, then the defaults.
+
+    The settings survive a reinstall (spec 7.4), and every start of the program
+    writes the file, so a start that cannot read it loses the theme, the language,
+    the folder of the videos and the state of the console panel. A damaged
+    ``settings.json`` is read from ``settings.json.bak`` — the file the previous
+    save kept — so one bad write cannot take the settings of the user away.
+    """
+    settings = Settings()
+    raw = _read(path)
+    if raw is None:
+        raw = _read(_backup_path(path))
+    if raw is None:
         return settings
     for key, value in raw.items():
         if not hasattr(settings, key):
@@ -103,9 +131,18 @@ def load_settings(path: Path) -> Settings:
 
 
 def save_settings(settings: Settings, path: Path) -> None:
-    """Write settings, creating the parent folder."""
+    """Write settings atomically and keep the previous file as the backup.
+
+    The file is written to ``settings.json.new`` in the same folder and moved onto
+    ``settings.json`` in one call, so a start that is killed in the middle of the
+    write cannot leave a half-written file; the file that was there is kept as
+    ``settings.json.bak``, which ``load_settings`` reads when the main file cannot
+    be read (spec 7.4).
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(asdict(settings), ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    body = json.dumps(asdict(settings), ensure_ascii=False, indent=2)
+    fresh = path.parent / (path.name + ".new")
+    fresh.write_text(body, encoding="utf-8")
+    if path.is_file():
+        shutil.copy2(path, _backup_path(path))
+    fresh.replace(path)

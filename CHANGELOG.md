@@ -4,6 +4,209 @@ The format is [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versioning is [SemVer](https://semver.org/). A release is a `vX.Y.Z` tag
 on `main`.
 
+## [0.4.6] - 2026-11-11
+
+### Changed
+- **«Open browser» and «Close browser» are one button** (spec 4.1 p.7, 4.3): the
+  button in the header says the action it does, so its text, its tip and its mark
+  follow the browser thread — "Open browser" with the arrow of the window while
+  the browser is down, "Close browser" with the cross in the title bar while it
+  runs. The button is clickable in both states, and it is disabled only while the
+  browser is being resolved and launched (the first launch can download Chromium
+  and ask the question in a dialog box), so a second press cannot start a second
+  thread of Playwright; during the launch the tip says the browser is starting.
+  One item of the tray menu is the same button: its text changes with the state.
+- The old pair of buttons and the pair of tray items are gone: the messages "the
+  browser is already open" and "the browser is not running" stay as the safety net
+  of the actions.
+- **The console section is one block that appears with its row** (spec 4.2 p.5):
+  the row of the buttons and the panel of the log are one widget, so hidden the
+  window shows neither the row nor the panel, the list of cards fills the window
+  and there is no divider between the sections at all — the handle of the splitter
+  is 0 px. "Show console" / "Hide console" is **one button of the top row** with
+  the same rule as the browser button: its text, its tip and its mark follow the
+  state, and the window opens with the button saying "Hide console" when the panel
+  was left on the screen.
+- "Show console" and "Open download folder" move to the header of the window, next
+  to "Settings": the row of the console is on the screen only with the panel, and
+  both commands are needed while the console is hidden. "Open log file" goes to the
+  row of the console, with "Clear": the log and the text of the panel belong to the
+  console, so the two buttons appear with the panel and go away with it. The row of
+  the console has two buttons.
+- **"Clear downloaded" and "Clear all" take the colors of the theme** and stand in the
+  **right corner of the top row** of the window: "Clear downloaded" is **yellow**
+  (`warn`), "Clear all" is **red** (`danger`), so the two commands of the list are told
+  apart by the color in the dark theme, the light theme and the screenshots, and the
+  mark of a button takes the color of its text. The commands of the window — the
+  browser, the console, the folder, the settings — stand in the **left corner** of the
+  same row, where the row of the label "Found videos" used to be; the clears are not
+  the console, so they stay on the screen while the console is hidden.
+- **The main buttons of the settings dialog are in the right lower corner**: "Save"
+  and "Cancel" stand at the right end of the bottom row ("Save" is the button of
+  Enter, "Cancel" is the last button of the row), and the secondary commands "Check
+  updates" and "Restart" stand on the left. Before, "Save" and "Cancel" were on the
+  left, where a person does not look for the buttons that finish a dialog. The four
+  buttons are attributes of the dialog (`save_button`, `cancel_button`,
+  `update_check_button`, `restart_button`), each with its painted mark.
+- **The settings dialog cannot be squeezed under the height its rows need**: every
+  field, select, checkbox and button gets the minimum height of its own `sizeHint`
+  (the height its font and text ask for), the layout gets the minimum height of all
+  the rows, and the smallest dialog shows every row readable. A squeezed row showed
+  15 px of a 26 px field, so the text was visible only in half. `MIN_DIALOG_HEIGHT`
+  (420 px) stays the least height the dialog gets, and the floor of the rows raises
+  it when the rows need more.
+
+### Added
+- **The marks of the buttons are painted** (`ui/button_icons.py`, spec 4.1 p.1,
+  4.3 p.2): every button of the window, of the cards and of the settings dialog
+  carries a 16 px picture drawn with `QPainter` — the browser window with the
+  globe, the list with the cross, the list with the check, the gear of the
+  settings, the chevron of "Hide console", the terminal of "Show console", the
+  folder, the page of the log, the arrow to the disk, the triangle of a player,
+  the arc of "Retry" and the check of "Save". The characters "⚙" and "✕" are not
+  in the UI font of Windows, so the label "⚙ Settings" showed a box; the painted
+  mark is the same picture in the dark theme, the light theme, the system theme,
+  in every language and in the screenshots of the README. The color is the color
+  of the text of the button: white on the accent, white on the red of "Clear all",
+  the dark of the theme on the yellow of "Clear downloaded", the text color of the
+  theme on a button of the panel background and in the tray menu, the text color of
+  the palette when the theme is the system one. The "✕" of a card and the cross of
+  "Cancel" are the same drawing, the cross of the card is moved out of `ui/card.py`
+  to the new module.
+- The buttons of a card keep their text next to the mark (`ToolButtonTextBesideIcon`):
+  a `QToolButton` shows the icon only by default, and the labels of "Cancel",
+  "Open file" and "Retry" would disappear. A button with no text is left as the icon
+  only, and the "✕" on the right of a card is a fixed square of 26 px (the icon of
+  16 px, the padding of 4 px, the border of 1 px), so the box is not stretched into
+  a rectangle with the mark shifted to the left of it.
+- **The window carries the address of the video** (`url_input` and `go_button`, spec
+  4.2 p.4): the link is pasted in the second row of the header, and "Go" — or Enter in
+  the field — opens the browser on that page. With the browser down, the thread is
+  launched on the address of the field (`start_browser` takes the `url` argument, the
+  browser button shows "Close browser" when the window is up); with the browser
+  running, `SnifferThread.go(url)` puts the address in the queue of the pump loop
+  (`NavigateRequest` in `browser/events.py`), which owns the page object and opens the
+  page there, so the response listener reads the manifests of the new site the same way
+  it reads any page. A bare domain gets `https://`, a long link is read in the tooltip
+  of the field, the page is remembered for "Open browser", an empty field answers that
+  the field is empty, and a link equal to the page the browser is on does not reload
+  it. The row has its own painted mark: the arrow going into a frame (`go_icon`).
+
+### Fixed
+- **The test suite no longer rewrites the settings of the user** (spec 7.4): a
+  window saves its settings on every toggle of the console, on the Apply of the
+  dialog and on the close, and the file it writes is
+  `%APPDATA%/PyDownloader/settings.json` — the file of the user. A window of the
+  UI tests is built with `Settings(download_dir=tmp_path)`, so every run of the
+  suite left the downloads folder of the developer as the temp folder of one test,
+  and the installed program started with that temp path after a reinstall. The
+  suite now runs with its own `%APPDATA%`, `%LOCALAPPDATA%` and temp folder (the
+  session fixture of `conftest.py`), so it writes only in the test tree: the
+  settings, the browser profile, the logs and Chromium of the tests never touch
+  the folders of the user. The tool of the screenshots does the same (`isolate_app_data`
+  of `config/paths.py`, the rule of the tests and of the tool is one function), so a
+  run of `tools/make_screenshots.py` cannot rewrite the file of the user either.
+- **The settings are written atomically and a damaged file is read from the
+  backup** (spec 7.4): the program writes `settings.json` on every start, so a
+  start that cannot read the file loses the theme, the language, the state of the
+  console panel and the folder of the videos, and the next start writes the
+  defaults back. `save_settings` now writes `settings.json.new` in the same folder,
+  moves it in one call and keeps the file that was there as `settings.json.bak`;
+  `load_settings` reads the backup when the main file is missing or damaged.
+- **The whole window follows the chosen theme** (spec 4.3): a widget with no rule of
+  its own paints the palette, and the palette Qt reads from Windows is the palette of
+  the system dark mode, not the theme of the program. The wall behind the list of
+  cards stayed dark in the light theme on a machine with the dark mode of Windows.
+  `apply_palette` now sets the palette of the application to the colors of the chosen
+  theme (window, base, button, text, accent), and the container of the cards gets its
+  own rule in the stylesheet (`#cardArea`), so the list of cards, the console panel,
+  the status bar and every widget that paints the palette are light in the light theme
+  and dark in the dark theme. The `system` choice keeps the palette of the style.
+- **The balloon and the sound report the end of a batch of downloads** (spec 4.2
+  p.7): the report is sent once, when the queue is empty and every task of the
+  batch is finished, and a batch is at least two files (`MIN_BATCH`). A single
+  download gives no balloon and no sound, the queue does not report after every
+  file of a batch, and removing a card, cancelling a task, clearing the list and a
+  task that ends with an error are not finished downloads at all — the icon of the
+  tray only goes back to the white arrow. The counter is the counter of one batch:
+  it is reset when the queue was empty before the next download, so a row of single
+  downloads never becomes the report of a finished batch.
+
+### Tests
+- The one browser button is a toggle: it emits the request of the action in both
+  states, the text, the tip and the icon follow the thread, the button is disabled
+  for the time of the launch and gets back its own tip, the state of the window is
+  kept across the launch; `toggle_browser` closes a running thread and opens the
+  browser of the last page, and the launch records the disable of the button.
+- Every button of the window, of a card and of the settings dialog carries a
+  painted mark: the icon is not empty, and the picture covers pixels; the
+  `QToolButton` of a card keeps the text beside the icon. The two states of the
+  browser button are one window: the frame, the title bar and the globe are the
+  same picture, the marks follow the theme (white on the accent, the text color on
+  the panel). A `QToolButton` with no text is left as the icon only, so the "✕" of
+  a card is a square with the mark in the middle, and "Cancel" keeps its text.
+- The catalog has no character the UI font lacks, the tip of the launch is in the
+  six languages, the tray has no pair of browser keys, the menu has six items.
+- The console section is tested as one block: hidden, the row, the panel, "Clear"
+  and "Open log file" are all off the screen, the sizes of the splitter are
+  `[1000, 0]` and the handle is 0 px; shown, the row and the panel come back
+  together and the handle gets its 6 px. "Show console" / "Hide console" and
+  "Open download folder" are children of the header widget, "Open log file" is a
+  child of the console section, and the top button says "Hide console" from the
+  first frame when the settings open the window with the panel.
+- The header has two rows: the top row is the browser, the console, the folder and
+  the settings in the left corner, and "Clear downloaded" on the left and "Clear all"
+  on the right in the right corner of the same row; the row is on the screen while the
+  console is hidden, and the first button of the row starts at the left edge of the
+  window. The object names are `clearDownloaded` and `clearAll`, the yellow and the
+  red are keys of both themes in the stylesheet, the mark of the yellow takes the
+  dark text color of the theme and the mark of the red takes white.
+- The row under the commands is the field of the address and the "Go" button: the
+  field is under the row, the button is at its right end, the placeholder is the text
+  of the locale, and a long link is read in the tooltip. "Go" sends the address to the
+  running browser (`FakeSniffer.go` records the list of navigated pages) and remembers
+  it as the page of the browser; the same link as the page of the browser answers with
+  the message and does not reload; with the browser down the signal carries the
+  address, and a bare domain comes with `https://`; an empty field says the field is
+  empty and the browser is not asked.
+- The pump loop of the sniffer thread opens the page of the queue: `go(url)` puts the
+  address in the queue, and a run of `_drain` with a fake context opens the page of the
+  browser on that address and keeps it as `last_url` (the page object belongs to the
+  event loop of the thread, so the GUI thread never touches it).
+- The launch with the address of the field: `launch_sniffer` gets the address as the
+  start page, the address is written as the last page of the window, the browser button
+  is disabled for the launch (`[True, False]`), and the line of the page goes to the
+  console.
+- The settings a window writes stay in the tree of the tests: the file is inside
+  the redirected app data of the session, and the folder it records is the folder
+  of the test. A settings file with a temp folder asks the dialog again, starting
+  at the downloads of the user, and does not create that temp folder.
+- The settings survive a damaged file: a corrupt `settings.json` is read from
+  `settings.json.bak`, the backup is the file of the previous save, the write leaves
+  no `settings.json.new` behind, and the file a start writes back keeps the theme,
+  the language, the state of the console panel and the folder of the videos.
+- The balloon and the sound follow the batch: two finished downloads give one
+  balloon for the whole batch, the first of the two gives nothing; a single
+  download gives no balloon and no sound, and neither does a row of single
+  downloads; removing the cards of a list, clearing the list and a task that
+  failed give no balloon and no sound. In every one of these cases the arrow of the
+  tray goes back to white.
+- The palette of the application is the palette of the theme: `Window`/`Base`/`Button`
+  are the colors of the theme in the light theme and in the dark theme, and the
+  `system` choice gets the palette of the style. The wall behind an empty list of
+  cards is the background of the theme in both themes, checked by the pixels of the
+  widget.
+- The rule of the isolation is one: `isolate_app_data` puts the settings, the data
+  folders, the Chromium folders and the temp folder of a run inside one temp tree,
+  so the tool of the screenshots and the suite cannot write the folders of the user.
+- The bottom row of the settings dialog is tested by the geometry of its buttons:
+  "Save" and "Cancel" are in the same row and to the right of "Check updates" and
+  "Restart", "Save" is the button of Enter, "Cancel" is the last button of the row.
+- The dialog cannot be squeezed: the minimum height of a field, a select and a button
+  is the height of its `sizeHint`, the minimum height of the dialog is at least the
+  height of its rows, and after a request for a smaller dialog every row keeps the
+  height the font asks for.
+
 ## [0.4.5] - 2026-11-11
 
 ### Added

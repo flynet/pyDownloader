@@ -26,9 +26,43 @@ class FakeResponse:
         return self._text
 
 
+class FakePage:
+    """A page of the browser: the address it is opened on is recorded."""
+
+    def __init__(self) -> None:
+        self.opened: list[str] = []
+
+    def goto(self, url: str) -> None:
+        self.opened.append(url)
+
+    def title(self) -> str:
+        return "Site"
+
+
 class FakeContext:
+    def __init__(self) -> None:
+        self.pages = [FakePage()]
+
     def cookies(self, url: str) -> list:
         return []
+
+
+def test_go_puts_the_address_in_the_queue_of_the_pump_loop(qapp):
+    """The GUI thread hands the address over, the pump loop of the thread opens it.
+
+    The page object belongs to the event loop of the sniffer thread, so «Go» writes
+    the address into the queue and the pump loop opens the page there (spec 4.2 p.4).
+    """
+    registry = SourceRegistry()
+    sniffer = SnifferThread(FakeBrowser(), Path("."), registry, QualityFilter(1080))
+    sniffer.go("https://site.example/watch/42")
+
+    context = FakeContext()
+    sniffer._drain(context)
+
+    assert context.pages[0].opened == ["https://site.example/watch/42"]
+    # The page is remembered, so «Open browser» opens this address again.
+    assert sniffer.last_url == "https://site.example/watch/42"
 
 
 def test_drain_parses_the_intercepted_body_without_a_second_request(qapp, monkeypatch, read):

@@ -16,11 +16,13 @@ How the program works:
 
 1. The user launches the program and picks the downloads folder.
 2. The main window of two sections opens: found videos (top) and console
-   (bottom). **The console is hidden at startup**, so the list of cards takes the
-   whole window, and the row of buttons shows "Show console". **The browser is not
-   launched at startup** — the user opens it with the "Open browser" button.
-   "Hide console" gives the whole window to the list of cards, "Show console"
-   brings the panel back; the state is stored for the next start.
+   (bottom). **The console section is hidden at startup**: its row of buttons and
+   the panel of the log are one section, so hidden the list of cards takes the
+   whole window and there is no divider between the two sections. **The browser is
+   not launched at startup** — the user opens it with the "Open browser" button.
+   "Show console" / "Hide console" is one button of the top row: it brings the
+   section back with the room it had and takes it away, giving the whole window to
+   the list of cards; the state is stored for the next start.
 3. The user visits the site and starts the video.
 4. The application intercepts the browser's network requests and finds HLS
    (`.m3u8`), MPEG-DASH (`.mpd`), direct MP4 and audio-only sources (SoundCloud,
@@ -118,6 +120,9 @@ window size 900×600, size and position are remembered.
     it; a finished card is removed and the file on the disk stays; a found card
     is simply taken away. The entry is reported in the console ("Cancelled and
     removed from the list", "Removed from the list").
+  - The box of the "✕" is a square: a button with no text is left as the icon only
+    (a square box 26 px, the mark in the middle), so the box is not stretched into a
+    rectangle with the mark shifted to the left.
 - Card states:
   - **Found**: active "Download" button.
   - **Queued**: button disabled, caption "Queued".
@@ -130,25 +135,83 @@ window size 900×600, size and position are remembered.
     the text.
   - **Error**: red caption and a "Retry" button, details in the console.
 - Pressing "Download" only queues the task.
-- In the section header there are five buttons:
-  - **"Open browser"** — shows the browser window, maximised, on the page where
-    the user was last (starts the browser if it is not open). The program does
-    not open the browser on its own: the window is opened by this button;
-  - **"Close browser"** — closes the browser window. An active download is not
-    cancelled and continues in the background.
-  - **"Clear all"** — removes all cards;
-  - **"Clear downloaded"** — removes only the cards whose files are already
-    downloaded and lie on disk;
+- In the section header there are **two rows** of buttons: the top row is the
+  commands of the window in the **upper-left corner** and the two commands of the
+  list in its **right corner**; the second row is the field of the address with the
+  "Go" button.
+  - **"Open browser"** / **"Close browser"** — **one button** whose label is the
+    action it does: while the browser window is down the button shows "Open
+    browser" (maximised, on the page where the user was last; starts the browser
+    if it is not open), once the window runs the same button shows "Close
+    browser". The program does not open the browser on its own: the window is
+    opened by this button. Closing does not cancel an active download, it
+    continues in the background. The button is disabled while the browser is
+    being resolved and launched (the first launch can download Chromium and ask
+    the question in a dialog), so a second press cannot start a second thread;
+    the tip of the button says the browser is starting;
+  - **"Show console"** / **"Hide console"** — **one button** with the same rule.
+    The console section (the row of its buttons and the panel of the log) is on
+    the screen only when the user asks for it, so the command of the window stands
+    in the header and the label follows the state. Pressed, the section comes back
+    with the room it had (the row of the console, the panel, and the divider of the
+    splitter), pressed again it goes away and the list of cards fills the window;
+    hidden, there is no divider between the sections at all, the handle of the
+    splitter is 0 px. The state is stored in the settings, so the window opens the
+    way the user left it;
+  - **"Open downloads folder"** — the folder the finished files are written to.
+    The command stands in the header because the row of the console is on the
+    screen only with the panel, and the folder is needed while the console is
+    hidden;
   - **"Settings"** — the settings dialog.
+  - The **right corner of the top row** carries the two commands of the list, each
+    in its own color: **"Clear downloaded"** is **yellow** — removes only the cards
+    whose files are already downloaded and lie on disk; **"Clear all"** is **red** —
+    removes all cards. The colors are keys of the theme, so the yellow and the red
+    are the same in the dark theme, the light theme and the screenshots, and the mark
+    of a button takes the color of its text: the dark of the theme on the yellow,
+    white on the red. The commands of the list are in the header row, so they stay on
+    the screen while the console is hidden.
+  - The second row is the address of the video: the field (the placeholder *"Paste
+    the link to the video"*) and the **"Go"** button at its right. "Go", or Enter in
+    the field, opens the browser on the page of the link: with the browser down, the
+    thread is launched on that address, and the browser button of the window changes
+    to "Close browser" when the browser window is up; with the browser running, the
+    address goes to the queue of the pump loop of the thread and the page is opened
+    in the window that is already up — the response listener finds the manifests of
+    the new site the same way it finds them on any page. A domain pasted without the
+    protocol gets `https://`, a link longer than the field is read in the tooltip, an
+    empty field is answered with the message that the field is empty, a link equal to
+    the page the browser is on does not reload the page, and the page is remembered,
+    so "Open browser" opens the same site after a restart of the browser. The label
+    *"Found videos"* is removed: the row of the commands starts at the left edge of
+    the window.
   An active download is not cancelled when clearing and continues in the
   background.
-- Under the list of cards there is the row of the console panel: **"Show
-  console"** / **"Hide console"** (the label changes with the state), **"Clear"**
-  (the text of the console), **"Open downloads folder"**, **"Open log file"**.
-  The row stays on the screen when the console is hidden, so pressing "Show
-  console" brings the panel back; the same command is in the tray menu.
-  **"Clear"** is shown only while the console is on the screen: there is no text
-  to clear while the panel is hidden.
+- Every button of the window carries a mark drawn by the program (a 16 px picture
+  painted with `QPainter`): the browser window with the globe, the list with the
+  cross, the list with the check, the gear, the chevron and the terminal, the
+  folder, the page of the log. The marks are not typed characters: the UI font of
+  Windows has no gear glyph, so a label with "⚙" shows a box. The color of the mark
+  is the color of the button: white on the accent of the theme, the text color of
+  the theme on a button of the panel background and in the tray menu. The same
+  drawing rule is used for the cross of a card (spec 4.1 p.1) and for the icon of
+  the program (spec 7.3).
+- The theme colors **the whole window**: a plain widget paints the palette of the
+  application, and the palette Qt reads from Windows is the palette of the system
+  dark mode. The palette of the application is set to the colors of the chosen theme
+  (window, base, button, text, accent), and the wall behind the cards has its own
+  rule in the stylesheet, so the list of cards, the console panel, the status bar and
+  every widget that paints the palette are light in the light theme and dark in the
+  dark theme, whatever Windows says. The "system" choice keeps the palette of the
+  style.
+- The console section is one block on the screen: the row of two buttons above the
+  panel, **"Clear"** (the text of the console) and **"Open log file"** (the diary of
+  the run on disk). Both belong to the console, so hidden there is nothing to clear
+  and no room for the log: the row, the panel and the divider of the splitter go
+  away together, and the list of cards fills the window.
+- The commands of the window — "Show console" / "Hide console" and "Open downloads
+  folder" — stand in the header of the top section, so they are reachable while the
+  console is hidden. The same console command is in the tray menu.
 - There is no separate shared progress bar between the sections: progress lives
   inside the card.
 
@@ -163,15 +226,18 @@ window size 900×600, size and position are remembered.
   (live, DRM, no preset of the chosen quality), segments, retries, FFmpeg
   calls, update checks, errors.
 - Line format: `[12:34:56] INFO  Found HLS stream 1080p: https://...`
-- Above the console, small buttons: "Show console" / "Hide console", "Clear",
-  "Open downloads folder", "Open log file". "Clear" is on the screen only while
-  the console is.
-- **"Hide console"** takes the panel away and gives the whole window to the list
-  of cards; **"Show console"** brings it back with the room it had. The console
-  is **hidden at startup**, so the list of cards gets the whole window from the
-  first start. The state is stored in the settings, so the window opens the way
-  the user left it, and the row of buttons is the way to open the panel from the
-  tray menu.
+- Above the console, the row of its section: **"Clear"** and **"Open log file"**.
+  The row is on the screen only while the console is, and the commands of the
+  window ("Show console" / "Hide console", "Open downloads folder") are in the
+  header of the top section.
+- **"Hide console"** takes the console section away and gives the whole window to
+  the list of cards; **"Show console"** brings the section back with the room it
+  had. The console is **hidden at startup**: the row, the panel and the divider of
+  the splitter are not on the screen, so the list of cards gets the whole window
+  from the first start. With the panel shown, the handle of the splitter gets its
+  width back and the divider is the line between the two sections. The state is
+  stored in the settings, so the window opens the way the user left it, and the
+  console is opened from the tray menu as well.
 
 ### 4.3. Extras
 
@@ -188,23 +254,42 @@ window size 900×600, size and position are remembered.
   (enabled by default), theme (system / light / dark). The dialog takes 80% of
   the main window's width and height and can be resized; a long folder path is
   fully visible (and in the tooltip on hover).
+- **The dialog cannot be squeezed under the height its rows need:** every field,
+  select, checkbox and button of the dialog has the minimum height of its own
+  ``sizeHint`` (the height its font and its text ask for), so the layout gets the
+  minimum height of all the rows and the smallest dialog shows every row readable.
+  A field squeezed to half a letter is not readable, so the floor is the height of
+  the rows, with 420 px as the least height the dialog gets.
+- **The row of buttons at the bottom of the dialog:** the two main buttons —
+  **"Save"** and **"Cancel"** — are in the **right lower corner**, where the buttons
+  that finish a dialog are looked for ("Save" is the button of Enter, "Cancel" is
+  the last button of the row). "Check updates" and "Restart" are the secondary
+  commands of the dialog and stand on the **left** of the row. Every button carries
+  its painted mark.
 - **Tray (Windows notification area).** Pressing "X" hides the window to the tray
   and the downloads keep running; "Exit" in the tray menu is the only way to
-  quit (it asks for confirmation when a download is running). The tray menu: show
-  the window, open browser, close browser, show the console, check for updates,
-  open downloads folder, exit. A single click or a double click on the icon shows
-  the window, the browser items of the menu follow the state of the browser
-  window; the first time the window is hidden a balloon hint explains the menu
-  (shown once, the flag is stored).
+  quit (it asks for confirmation when a download is running). The tray menu has
+  six items, each with its painted mark: show the window, the browser, show the
+  console, check for updates, open downloads folder, exit. The item of the
+  browser is the button of the window: one item whose text is "Open browser"
+  while the window is down and "Close browser" while it runs, with the same
+  picture of the browser and its mark. A single click or a double click on the
+  icon shows the window; the first time the window is hidden a balloon hint
+  explains the menu (shown once, the flag is stored).
 - **The icon is the icon of the program** (spec 7.3): the dark square with the
   arrow pointing down and the line of the tray under it, the same picture as on
   the desktop and in the installer. **Only the colour of the arrow marks the
   state:** a **green arrow** with a jumping animation (the frames of a timer)
   while a download is running, the **white arrow** of the program when the queue
-  is empty. When the last download is finished, a Windows balloon appears next to
-  the icon ("All downloads are finished: N saved") and the system notification
-  sound is played — this is the report for the user who works with the window
-  hidden.
+  is empty. The report is the **end of a batch**: when the queue is empty and every
+  task of the batch is finished, a Windows balloon appears next to the icon ("All
+  downloads are finished: N saved") and the system notification sound is played —
+  this is the report for the user who works with the window hidden. The balloon
+  comes **once for the whole batch**, not after every file; a batch is at least two
+  files, so a single download gives no balloon and no sound. Removing a card,
+  cancelling a task, clearing the list and a task that ends with an error are not
+  finished downloads: in these cases the icon only goes back to the white arrow,
+  nothing is announced.
 - **The tooltip of the icon is the queue** (the mouse is over it, no click): the
   files that are downloading with the name, the percent, the speed, the time left,
   and the number of the tasks waiting. The text is rewritten at most once a
@@ -418,6 +503,23 @@ black video file.
   unpacked blocker), `{app}\logs` (logs). Deleting the install folder deletes
   this data too.
 - Settings: `%APPDATA%\PyDownloader\settings.json` — survive a reinstall.
+- The settings are written atomically: the file is written as
+  `settings.json.new` in the same folder and moved in one call, and the file that
+  was there is kept as `settings.json.bak`. A `settings.json` that cannot be read
+  (half-written, damaged by a killed start) is read from the backup, so a start
+  that cannot read the settings does not fall to the defaults and lose the theme,
+  the language, the state of the console panel and the downloads folder.
+- A settings file naming a folder inside the system temp folder is not taken as
+  the choice of the user: the program never writes the videos there, so the
+  downloads folder is asked again (the temp folder is not created).
+- Any script that builds a window of the program writes the settings of the user:
+  a window saves `settings.json` on the console toggle, on the Apply of the dialog
+  and on the close. The test suite and the tool of the screenshots run with their
+  own `%APPDATA%`, `%LOCALAPPDATA%`, data folders and temp folder
+  (`isolate_app_data` of `config/paths.py`), so a run of `pytest` or of
+  `tools/make_screenshots.py` cannot leave the temp folder of a run as the downloads
+  folder of the user, and the browser profile, the logs and Chromium of the run do
+  not go to the real folders of the developer.
 - When the install folder is not writable (`Program Files` without
   administrator rights), all the folders listed above are created in
   `%LOCALAPPDATA%\PyDownloader`.
@@ -584,9 +686,10 @@ pydownloader/
 
 **Application**
 - After startup and the folder picker, the window opens: the top section is
-  empty with a hint and takes the whole window (the console is hidden), the row
-  of buttons shows "Show console", and no browser is launched — the browser
-  appears only after the user presses "Open browser".
+  empty with a hint and takes the whole window (the console section is hidden: no
+  row, no panel, no divider), the top row has "Show console", "Open downloads
+  folder" and "Settings", and no browser is launched — the browser appears only
+  after the user presses "Open browser".
 - On opened test HLS, DASH and direct MP4, the source automatically appears as
   a card with a title, a link, a "Download" button and a "✕" on the right.
 - Downloading starts only after pressing the button. The card shows progress.
@@ -610,14 +713,32 @@ pydownloader/
   only the colour of the arrow changes and the picture is the icon on the desktop.
   Hovering over the icon shows the files that are downloading: name, percent,
   speed, time left. The bar of a card is green when the file is on the disk, and
-  the finished downloads are reported by a Windows balloon and the notification
-  sound.
-- "Show console" / "Hide console" take the console panel away and back; hidden,
-  the list of cards fills the window, the "Clear" button of the console text
-  disappears with the panel, and the state is remembered for the next start.
+  the end of a batch of downloads is reported once by a Windows balloon and the
+  notification sound: a single download, a removed card, a cancelled task and an
+  error give no balloon and no sound, only the white arrow of the tray.
+- "Show console" / "Hide console" is one button of the top row that takes the
+  console section away and back; hidden, the list of cards fills the window, the
+  row of the console with "Clear" and "Open log file" goes with the panel, the
+  divider between the sections is not on the screen, and the state is remembered
+  for the next start.
+- The header has two rows: the top row has "Open browser" / "Close browser", the
+  console toggle, "Open download folder" and "Settings" in the **upper-left corner**,
+  and "Clear downloaded" in yellow with "Clear all" in red in the **right corner** of
+  the same row; the row below is the field of the address and the "Go" button. "Go"
+  (or Enter in the field) opens the browser on the page of the link: it starts the
+  browser when the browser is down, and opens the page in the running browser when it
+  is up, so the manifests of the new site are read by the same listener. The commands
+  of the list are in the header row, so they stay on the screen while the console is
+  hidden, and the label "Found videos" is gone: the row of the commands starts at the
+  left edge of the window.
 - "✕" on a card takes one entry out of the list: a queued or running task is
   cancelled and its card goes, a finished card is removed and the file on the
-  disk stays, a found card is taken away.
+  disk stays, a found card is taken away. The box of the cross is a square with
+  the painted mark in the middle, not a rectangle with the mark to the left.
+- The settings dialog has its two main buttons, "Save" and "Cancel", in the right
+  lower corner, and "Check updates" and "Restart" on the left of the same row. The
+  dialog cannot be shrunk to the point where the fields, the selects and the buttons
+  show half of a letter.
 - An audio source (SoundCloud, an audio-only playlist) is recognized, shown with
   an `MP3` badge, and saved as `.mp3` at the chosen bitrate; audio is never
   muxed into a black video file.
@@ -627,7 +748,9 @@ pydownloader/
   folder).
 - The interface renders correctly in the light and dark themes and at Windows
   scaling 125% and 150%, in English, Russian, Ukrainian, Chinese, French and
-  German.
+  German. The whole window follows the theme: on a machine with the dark mode of
+  Windows the light theme is light everywhere — the wall behind the cards, the
+  console panel and the status bar as much as the cards.
 
 **Installation and updates**
 - `build.ps1` on a clean machine with Python 3.12 and Inno Setup 6 builds
@@ -637,6 +760,9 @@ pydownloader/
   in `{app}\bin`).
 - Running the installer of a newer version again updates the installation in
   place (same `AppId`), settings are preserved.
+- A start that cannot read `settings.json` takes `settings.json.bak`, so the theme,
+  the language, the state of the console panel and the downloads folder are not
+  lost; every write is atomic, so a killed start cannot leave a half-written file.
 - Removal via "Apps & features" removes the application, user data is deleted
   only with consent.
 - Pushing a `vX.Y.Z` tag triggers GitHub Actions and publishes a release with

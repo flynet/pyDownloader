@@ -33,6 +33,15 @@ from pydownloader._version import VERSION
 from pydownloader.config.constants import APP_NAME
 from pydownloader.i18n import tr
 from pydownloader.ui.app_icon import GREEN, WHITE, tray_icon
+from pydownloader.ui.button_icons import (
+    browser_icon,
+    console_icon,
+    exit_icon,
+    folder_icon,
+    icon_color,
+    retry_icon,
+    window_icon,
+)
 
 if TYPE_CHECKING:
     from pydownloader.ui.main_window import MainWindow
@@ -106,17 +115,22 @@ class TrayController(QSystemTrayIcon):
         super().__init__(idle_icon(), window)
         self._window = window
         self.setToolTip(BASE_TOOLTIP)
+        # The marks of the menu are painted in the text color of the theme: the menu
+        # of the tray is drawn by Qt with the QSS of the panel (spec 4.3 p.4).
+        color = icon_color("panel", window.settings.theme)
+        #: The color of the marks of the menu, kept for the browser item of the state.
+        self._color = color
         menu = QMenu()
-        self.show_action = menu.addAction(tr("tray_show"))
-        self.open_action = menu.addAction(tr("tray_open_browser"))
-        self.close_action = menu.addAction(tr("tray_close_browser"))
-        self.console_action = menu.addAction(tr("window_open_console"))
-        self.check_action = menu.addAction(tr("tray_check_updates"))
-        self.folder_action = menu.addAction(tr("tray_open_folder"))
-        self.quit_action = menu.addAction(tr("tray_quit"))
+        self.show_action = menu.addAction(window_icon(color), tr("tray_show"))
+        # One item of the menu for the browser window: the text follows the state, as
+        # the button of the window does (spec 4.3).
+        self.browser_action = menu.addAction(browser_icon(color, True), tr("window_open_browser"))
+        self.console_action = menu.addAction(console_icon(color), tr("window_open_console"))
+        self.check_action = menu.addAction(retry_icon(color), tr("tray_check_updates"))
+        self.folder_action = menu.addAction(folder_icon(color), tr("tray_open_folder"))
+        self.quit_action = menu.addAction(exit_icon(color), tr("tray_quit"))
         self.show_action.triggered.connect(window.show_from_tray)
-        self.open_action.triggered.connect(window.browser_open_request.emit)
-        self.close_action.triggered.connect(window.browser_close_request.emit)
+        self.browser_action.triggered.connect(window.browser_toggle_request.emit)
         self.console_action.triggered.connect(window.toggle_console)
         self.check_action.triggered.connect(window.check_updates_now)
         self.folder_action.triggered.connect(window.open_download_folder)
@@ -172,9 +186,15 @@ class TrayController(QSystemTrayIcon):
         self.showMessage(APP_NAME, text, QSystemTrayIcon.MessageIcon.Information, HINT_MS)
 
     def set_browser_running(self, running: bool) -> None:
-        """The browser items follow the state of the browser window (spec 4.3)."""
-        self.open_action.setEnabled(not running)
-        self.close_action.setEnabled(running)
+        """The one item of the menu follows the browser window: the text, the mark (spec 4.3).
+
+        The tray menu has the same button as the window: the item says what it will
+        do, so the state of the thread is written on the item and nothing is
+        disabled, which a person reading the menu of the tray cannot see at once.
+        """
+        key = "window_close_browser" if running else "window_open_browser"
+        self.browser_action.setText(tr(key))
+        self.browser_action.setIcon(browser_icon(self._color, not running))
 
     def _open_window(self, reason: QSystemTrayIcon.ActivationReason) -> None:
         if reason in OPEN_REASONS:
