@@ -48,11 +48,12 @@ OUT = Path("assets") / "screenshots"
 DOWNLOADS = Path("D:\\Videos")
 #: Version printed in the console lines: the screenshots are for the release page,
 #: so the tag is written out and stays stable between runs.
-DISPLAY_VERSION = "0.4.7"
+DISPLAY_VERSION = "0.4.8"
 WINDOW_SIZE = (1060, 860)
-#: Splitter sizes of the screenshot: the five demo cards, the row of the console
-#: buttons and a dozen console lines.
-CARD_SECTION_HEIGHT = (690, 170)
+#: Splitter sizes of the screenshot: the five demo cards (one of them takes two
+#: lines of its long title), the row of the console buttons and a dozen console
+#: lines.
+CARD_SECTION_HEIGHT = (706, 170)
 UI_FONT = "Segoe UI"
 #: The offscreen platform has no font database: the letters become boxes
 #: until the fonts of Windows are registered in the application.
@@ -73,7 +74,20 @@ def demo_cards() -> list[SourceEntry]:
             kind="hls",
             url="https://cdn.example.com/720p_1080p/master.m3u8",
             normalized="https://cdn.example.com/720p_1080p/master.m3u8",
-            title="Example: HLS 1080p",
+            # A long page title is broken by the width of the card: the screenshot
+            # shows the card of two lines and the sign of elision at the cut.
+            title=(
+                "Example: HLS 1080p, the page title of the video "
+                "on the site is long enough to be broken into two "
+                "lines of the card, and the words that do not fit "
+                "the width of the card are cut off, so the sign of "
+                "elision marks the tail of the name, and the card "
+                "stays as wide as the list of cards, and the list "
+                "stays as wide as the window of the program, and "
+                "the tooltip of the card keeps the whole title "
+                "of the video that works in the tray with the "
+                "window of the program hidden on the desktop"
+            ),
             height=1080,
             duration=1874.0,
             size=412_321_024,
