@@ -6,6 +6,8 @@ on `main`.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-11
+
 ### Added
 - «Open browser» and «Close browser» in the top panel and in the tray menu: the
   browser window is no longer tied to the program. Closing it stops the sniffer

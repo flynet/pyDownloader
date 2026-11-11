@@ -1,4 +1,4 @@
-# Technical Specification (version 5): HLS Grabber in Python with a modern UI, an Inno Setup 6 installer and updates via GitHub Releases
+# Technical Specification (version 5): PyDownloader in Python with a modern UI, an Inno Setup 6 installer and updates via GitHub Releases
 
 This is a revision of version 4 (Java). The application's functionality stays the
 same (sections 5 and 6 are carried over unchanged in meaning); the stack,
@@ -19,11 +19,14 @@ How the program works:
    (top) and console (bottom).
 3. The user visits the site and starts the video.
 4. The application intercepts the browser's network requests and finds HLS
-   (`.m3u8`), MPEG-DASH (`.mpd`) and direct MP4.
+   (`.m3u8`), MPEG-DASH (`.mpd`), direct MP4 and audio-only sources (SoundCloud,
+   radio).
 5. What is found appears as a row in the top section. Downloading starts
    **only after pressing "Download"** on a specific video.
 6. Segments are downloaded into a temporary folder and joined by FFmpeg into
-   one `.mp4`.
+   one `.mp4`. A source that contains sound only is written as `.mp3`.
+7. Closing the window hides the program to the Windows tray; the tray menu is
+   the only way to quit.
 
 The principle: the browser already receives and decrypts (AES-128) the stream, so
 the program does the same with the same URLs and keys. DRM (Widevine / PlayReady /
@@ -38,17 +41,17 @@ FairPlay) is not supported: such videos are skipped.
 | Language | Python 3.12 (64-bit), dependency manager `uv` or `pip` + `requirements.txt`, project config `pyproject.toml` |
 | Interface | **PySide6 (Qt 6)** with a modern dark and light theme (following the system), rounded cards, a single QSS style. Allowed alternative: `PySide6-Fluent-Widgets`, if the agent finds it reliable. No Tkinter |
 | Network interception | **Playwright for Python** (`playwright`), interception at `context` level (`request` / `response`) to see all tabs and popups |
-| Browser | Order of attempts: `channel="chrome"` → `channel="msedge"` → Chromium from Playwright. Headed mode, persistent context with a profile in `<install folder>\profile` or `<downloads folder>\.profile` (choice in settings, the first option by default) |
+| Browser | Order of attempts: `channel="chrome"` → `channel="msedge"` → Chromium from Playwright; the order is a setting (Automatic / Chrome / Edge / Chromium). Headed mode, maximised, real user agent, stealth flags, persistent context with a profile in `<install folder>\profile` (the first option by default) |
 | HTTP | `httpx` (with HTTP/2 support and streaming downloads) |
 | Encryption | `cryptography` (AES-128-CBC for HLS) |
 | HLS | Custom parser (the `m3u8` library is allowed if it covers EXT-X-MAP, BYTERANGE, KEY) |
 | DASH | `xml.etree.ElementTree` or `lxml` |
 | FFmpeg | The `ffmpeg.exe` binary goes **inside the installed application** (`{app}\bin\ffmpeg.exe`). Source: the `imageio-ffmpeg` package (the binary is taken at build time) or a static build (gyan.dev / BtbN), the choice is up to the agent. `NOTICE` states the build license. Launched via `subprocess` with no console window (`CREATE_NO_WINDOW`) |
-| Logs | standard `logging`: file `<install folder>\logs\app.log` (`%LOCALAPPDATA%\HLSGrabber\logs\app.log` if the install folder is not writable; rotation) and a `QtLogHandler` that writes records into the window console |
+| Logs | standard `logging`: file `<install folder>\logs\app.log` (`%LOCALAPPDATA%\PyDownloader\logs\app.log` if the install folder is not writable; rotation) and a `QtLogHandler` that writes records into the window console |
 | Tests | `pytest`, `pytest-qt` for basic GUI checks |
 | Code quality | `ruff`, `mypy` (soft mode), `pre-commit` |
 | Packaging | **PyInstaller** in `--onedir` mode (not `--onefile`: faster startup, fewer antivirus false positives), `--windowed`, `.ico` icon, version metadata |
-| Installer | **Inno Setup 6** (`installer/hlsgrabber.iss`), built via `ISCC.exe` |
+| Installer | **Inno Setup 6** (`installer/pydownloader.iss`), built via `ISCC.exe` |
 | Versioning | SemVer, Git tags like `v1.2.3`, releases on GitHub Releases (section 8) |
 
 ---
@@ -70,10 +73,14 @@ FairPlay) is not supported: such videos are skipped.
 6. After the join, the task's temporary folder is deleted and the card moves to
    the "Done" state. On error, temporary files are kept, the reason is written
    to the log and the console.
-7. Closing the window: if a download is running, ask for confirmation. After
-   consent, cancel the download, close the browser, terminate the program. If
-   the user closed the browser, the console writes a message and the current
-   download continues to the end (or the user can cancel it).
+7. Closing the window with "X" hides it to the tray (the downloads keep running);
+   "Exit" in the tray menu is the way to quit. If a download is running, "Exit"
+   asks for confirmation, cancels the download, closes the browser and
+   terminates the program. If the user closed the browser window, the console
+   writes a message and the current download continues to the end (the program
+   downloads the segments itself, not through the browser).
+8. "Open browser" shows the browser window on the page where the user was last;
+   "Close browser" closes it.
 
 ---
 
@@ -89,12 +96,15 @@ window size 900×600, size and position are remembered.
 - At startup the list is empty. A gray hint in the middle: "No videos found yet.
   Open a site in the browser and start the video".
 - When a suitable source is detected, a card (`SourceCard`) is added. The list is
-  scrollable (`QScrollArea`), new cards are added at the bottom.
+  scrollable (`QScrollArea`), new cards are added at the bottom. The card section
+  has a minimum height, so cards are never squeezed: when the window is small the
+  console shrinks first.
 - Each card contains:
-  - a type badge (HLS / DASH / MP4);
-  - a title (the page title on which the video was found);
+  - a type badge (HLS / DASH / MP4 / YOUTUBE / **MP3** for an audio source);
+  - a title (the page title on which the source was found);
   - a link (truncated by width, full in a tooltip, context menu "Copy link");
-  - resolution and duration, or size, if known;
+  - the quality preset (1080p / 720p / 480p), resolution and duration, or size,
+    if known;
   - a **"Download"** button on the right.
 - Card states:
   - **Found**: active "Download" button.
@@ -106,10 +116,14 @@ window size 900×600, size and position are remembered.
     video in the default player).
   - **Error**: red caption and a "Retry" button, details in the console.
 - Pressing "Download" only queues the task.
-- In the section header there are two list-clearing buttons:
+- In the section header there are four buttons:
   - **"Clear all"** — removes all cards;
   - **"Clear downloaded"** — removes only the cards whose files are already
-    downloaded and lie on disk.
+    downloaded and lie on disk;
+  - **"Open browser"** — shows the browser window, maximised, on the page where
+    the user was last (starts the browser if it is not open);
+  - **"Close browser"** — closes the browser window. An active download is not
+    cancelled and continues in the background.
   An active download is not cancelled when clearing and continues in the
   background.
 - There is no separate shared progress bar between the sections: progress lives
@@ -122,8 +136,9 @@ window size 900×600, size and position are remembered.
 - Autoscroll down (disabled when the user scrolls up, re-enabled when scrolling
   to the end).
 - Buffer limited to ~5000 lines (`setMaximumBlockCount`).
-- The whole log goes here: browser launch, found manifests, skip reasons (live,
-  DRM, no 1080p), segments, retries, FFmpeg calls, update checks, errors.
+- The whole log goes here: browser launch, the stealth settings, found manifests
+  (live, DRM, no preset of the chosen quality), segments, retries, FFmpeg
+  calls, update checks, errors.
 - Line format: `[12:34:56] INFO  Found HLS stream 1080p: https://...`
 - Above the console, small buttons: "Clear", "Open downloads folder", "Open log
   file".
@@ -132,12 +147,25 @@ window size 900×600, size and position are remembered.
 
 - Status bar at the bottom of the window: application version, current downloads
   folder, update icon and status (section 8).
-- Menu or gear button "Settings" (a dialog): downloads folder, number of
-  threads for segments (default 6), automatic update checks (enabled by
-  default), theme (system / light / dark). The dialog takes 80% of the main
-  window's width and height and can be resized; a long folder path is fully
-  visible (and in the tooltip on hover).
-- Window title: "HLS Grabber `<version>` — `<downloads folder>`".
+- Gear button "Settings" (a dialog): downloads folder, number of threads for
+  segments (default 6), **quality (1080p / 720p / 480p)**, **MP3 bitrate
+  (128 / 192 / 320 kbps)**, **Audio only (MP3)** mode, minimum MP4 size,
+  **browser (Automatic / Chrome / Edge / Chromium)**, **anti-bot**, ad blocker,
+  **language** (English, Русский, Українська, 中文, Français, Deutsch; English
+  by default, applied after a restart), tray options, automatic update checks
+  (enabled by default), theme (system / light / dark). The dialog takes 80% of
+  the main window's width and height and can be resized; a long folder path is
+  fully visible (and in the tooltip on hover).
+- **Tray (Windows notification area).** Pressing "X" hides the window to the
+  tray, downloads keep running; "Exit" in the tray menu is the only way to
+  quit. The tray menu: show the window, open browser, close browser, check for
+  updates, open downloads folder, exit. A single click or a double click on the
+  icon shows the window, the browser items of the menu follow the state of the
+  browser window; the first time the window is hidden a balloon hint explains
+  the menu (shown once). If the system has no notification area (Windows
+  Server, RDP, CI), "X" closes the program as before and the tray rows of the
+  settings are unused.
+- Window title: "PyDownloader `<version>` — `<downloads folder>`".
 
 ### 4.4. Threads and responsiveness
 
@@ -172,6 +200,17 @@ the query).
 - Fragments of fMP4 segments (`.m4s`, `.mp4` belonging to an already found
   HLS/DASH manifest) do not get into the list.
 
+**Audio.** Audio-only sources are separated from video: Content-Type
+(`audio/mpeg`, `audio/mp3`, `audio/mp4`, `audio/aac`, `audio/x-m4a`,
+`audio/ogg`, `audio/opus`, `audio/flac`, `audio/wav`, `audio/x-wav`,
+`audio/x-aiff`), the URL extension (`.mp3`, `.ogg`, `.opus`, `.flac`, `.wav`,
+`.aac`), an HLS master whose `CODECS` list is audio only (`mp4a`/`aac`, `ac-3`,
+`ec-3`, `opus`, `mp3`, `flac`, `alac`) with no `RESOLUTION`, a DASH manifest with
+an audio track and no video representation, and the FFmpeg probe of an
+`.m3u8`/`.mpd`/file that has audio and no video. An audio source is shown as a
+card with an `MP3` badge and is saved as `.mp3`; audio is never muxed into a
+black video file.
+
 ### 5.2. Filters (in order of application)
 
 1. **Live.** HLS without `#EXT-X-ENDLIST` and DASH with `type="dynamic"` are
@@ -182,18 +221,24 @@ the query).
    - the MPD has `ContentProtection` with Widevine, PlayReady or FairPlay.
 
    Console message: "Content is DRM-protected, downloading is impossible".
-3. **1080p quality.** We only care about a height of 1080.
+3. **Quality presets: 1080p / 720p / 480p.** The preset is a setting (1080 by
+   default).
    - For a master playlist and an MPD, the source is shown only if there is a
-     variant with `height == 1080`. Among 1080p variants the one with the
-     maximum bandwidth is picked, plus the best audio track.
-   - If there is no 1080p, the source is not shown and the console writes:
-     "Found a stream without 1080p: skipped (available: 720p, 480p)".
-   - A media playlist without variants is shown if its resolution is 1080 or
-     cannot be determined (the card shows "unknown").
+     variant with the preset height, **exactly** (a 1440p source is taken as
+     1080p, a 1080p source is never taken for the 720p preset). Among the
+     variants of the preset height the one with the maximum bandwidth is picked,
+     plus the best audio track.
+   - If there is no variant of the preset, the source is not shown and the
+     console writes: "Found a stream without 1080p: skipped (available: 720p,
+     480p)".
+   - A media playlist without variants is shown if its resolution matches the
+     preset or cannot be determined (the card shows "unknown").
+   - A playlist that is audio only passes without a preset.
    - For direct MP4 the resolution is determined via `ffprobe`/`ffmpeg -i`
      (with headers when possible). On failure the card shows "unknown" and the
      file stays in the list.
-   - The threshold is a setting (`target_height`, default 1080), no UI for it.
+   - "Audio only (MP3)" mode takes only the audio part and writes `.mp3`; it
+     does not require a video preset.
 4. **Duplicates.** By normalized URL (without query tokens when they obviously
    change, otherwise by the full URL).
 
@@ -212,9 +257,10 @@ the query).
   (setting).
 - **Retries:** 3 attempts with exponential backoff. Already downloaded segments
   are skipped on retry (resumable download).
-- **File name:** `<page title>.mp4`. Forbidden Windows characters are replaced,
-  the length is truncated (with the path limit in mind). On a name conflict the
-  suffix ` (1)`, ` (2)` and so on is added.
+- **File name:** `<page title>.mp4` for video, `<page title>.mp3` for an audio
+  source. Forbidden Windows characters are replaced, the length is truncated
+  (with the path limit in mind). On a name conflict the suffix ` (1)`, ` (2)`
+  and so on is added.
 - **Cancellation:** pressing "Cancel" interrupts the download, active HTTP
   requests and the FFmpeg process are stopped, the task's temporary files are
   deleted.
@@ -233,8 +279,9 @@ the query).
 - `SegmentTemplate` (`$Number$`, `$Time$`, `$RepresentationID$`,
   `$Bandwidth$`), `SegmentTimeline`, `SegmentList`, `SegmentBase`, `BaseURL`,
   several Periods.
-- The best Representation is chosen for video and audio (video under the 1080p
-  condition).
+- The best Representation is chosen for video and audio (video under the
+  preset condition). A manifest with audio and no video representation is an
+  audio source and is written as `.mp3`.
 - The init segment + segments are joined in order, then video and audio are
   muxed with FFmpeg.
 
@@ -248,6 +295,9 @@ the query).
 - No re-encoding: `-c copy`.
 - Video and audio as separate tracks via `-map`.
 - `-bsf:a aac_adtstoasc` when needed.
+- **Audio-only task:** `-vn -c:a libmp3lame -b:a <bitrate>k -f mp3` (the
+  bitrate is a setting: 128 / 192 / 320). A direct `.mp3` download is renamed,
+  not re-encoded.
 - The method (concat list of local files or a local m3u8) is up to the agent,
   the main thing is that it works reliably.
 - FFmpeg output is parsed for progress (the "joining" stage) and written to
@@ -266,27 +316,29 @@ the query).
   generation of the version file from the Git tag, call of `ISCC.exe`.
 
 ### 7.2. Playwright browser (fallback)
-- Main path: an installed Chrome or Edge, nothing to download.
+- Main path: an installed Chrome or Edge, nothing to download; the engine is a
+  setting (Automatic / Chrome / Edge / Chromium), Chromium is downloaded when
+  the ad blocker is wanted or Chromium is chosen.
 - If neither exists, on first run the program offers to download Chromium (a
   consent dialog), runs the Playwright driver installation with
   `PLAYWRIGHT_BROWSERS_PATH=<install folder>\browsers`
-  (`%LOCALAPPDATA%\HLSGrabber\browsers` when the install folder is not
+  (`%LOCALAPPDATA%\PyDownloader\browsers` when the install folder is not
   writable) and shows progress in the console. Chromium is not bundled into
   the installer to avoid bloat. Chromium from a previous version lying in
-  `%LOCALAPPDATA%\HLSGrabber\browsers` is reused: it is not downloaded again.
+  `%LOCALAPPDATA%\PyDownloader\browsers` is reused: it is not downloaded again.
 - Warning in the console: Chromium from Playwright may not play H.264/AAC on
   some sites.
 
-### 7.3. Inno Setup 6 installer (`installer/hlsgrabber.iss`)
+### 7.3. Inno Setup 6 installer (`installer/pydownloader.iss`)
 - A constant `AppId` (GUID) is set once and never changes between versions, so
   that the update installs over the existing installation.
 - `AppVersion` and the output file name come from the `/DAppVersion=...`
   parameter that `ISCC` receives from the build script. Output file name:
-  `HLSGrabber-Setup-<version>.exe`.
-- Default install to `{autopf}\HLS Grabber`. Mode
+  `PyDownloader-Setup-<version>.exe`.
+- Default install to `{autopf}\PyDownloader`. Mode
   `PrivilegesRequiredOverridesAllowed=dialog` (the user can choose a
   per-user install without administrator rights, or for all users).
-- Files: contents of the PyInstaller folder `dist\HLSGrabber\*` with
+- Files: contents of the PyInstaller folder `dist\PyDownloader\*` with
   `recursesubdirs`.
 - Shortcuts: Start menu and an optional desktop shortcut (`desktopicon` task).
 - Uninstaller: removes the application cleanly together with the data in the
@@ -299,8 +351,8 @@ the query).
   `RestartApplications=no`, so the installer closes the program correctly on
   update.
 - Silent keys for auto-update: `/SILENT` or `/VERYSILENT`,
-  `/SUPPRESSMSGBOXES`, `/CLOSEAPPLICATIONS`. After installation, the "Run HLS
-  Grabber" option.
+  `/SUPPRESSMSGBOXES`, `/CLOSEAPPLICATIONS`. After installation, the "Run
+  PyDownloader" option.
 - Code signing (`signtool`) is foreseen as an optional step in the build
   script (to reduce SmartScreen warnings); the installer must also build
   without signing.
@@ -310,12 +362,36 @@ the query).
   (browser profile), `{app}\browsers` (Chromium), `{app}\extensions` (the
   unpacked blocker), `{app}\logs` (logs). Deleting the install folder deletes
   this data too.
-- Settings: `%APPDATA%\HLSGrabber\settings.json` — survive a reinstall.
+- Settings: `%APPDATA%\PyDownloader\settings.json` — survive a reinstall.
 - When the install folder is not writable (`Program Files` without
   administrator rights), all the folders listed above are created in
-  `%LOCALAPPDATA%\HLSGrabber`.
+  `%LOCALAPPDATA%\PyDownloader`.
 - Chromium, downloaded by a previous version into
-  `%LOCALAPPDATA%\HLSGrabber\browsers`, is found and reused: no re-download.
+  `%LOCALAPPDATA%\PyDownloader\browsers`, is found and reused: no re-download.
+
+### 7.5. Anti-bot (sites that block automation)
+
+Google, SoundCloud and similar sites answer "JavaScript disabled / cookies
+blocked" when they see an automation tool. The requirements:
+- the browser must look like a normal user's browser: a real user agent taken
+  from the installed browser (`chrome.exe --version`), matching platform and
+  locale hints (`en-US`, `ru-RU`, `uk-UA` from the interface language), no
+  `navigator.webdriver` (the `AutomationControlled` Blink feature is disabled
+  and the Playwright automation switches are dropped), a stealth init script
+  that fixes the usual automation leaks (`navigator.plugins`, the languages,
+  `hardwareConcurrency`, `deviceMemory`, `window.chrome`, the notification
+  permission, the brands of `navigator.userAgentData`), a normal maximised
+  window, autoplay allowed;
+- the browser is a full browser with a **persistent profile** (`{app}\profile`)
+  that stores cookies, local storage, logins, extensions and site settings; the
+  profile is fully saved when the program exits and is used again on the next
+  start, so a Google login stays valid between runs;
+- "Anti-bot" is a setting (on by default); the log records the launch
+  arguments, the user agent, the locale, the stealth script result, the
+  extension state and the profile path.
+- out of scope: a full anti-detection suite (CDP isolation, a patched browser,
+  fingerprint tools); a site that checks the DevTools protocol can still see
+  the automation.
 
 ---
 
@@ -323,7 +399,7 @@ the query).
 
 ### 8.1. Versioning
 - SemVer format (`MAJOR.MINOR.PATCH`), Git tags like `v1.2.3`.
-- The single source of version in the code: `src/hlsgrabber/_version.py`. The
+- The single source of version in the code: `src/pydownloader/_version.py`. The
   file **is generated at build time** from the tag (`git describe --tags`),
   the development default is `0.0.0-dev`.
 - The version is shown in the window title, the status bar, the `.exe`
@@ -338,8 +414,8 @@ the query).
   `pytest` → PyInstaller build → `ISCC.exe` (Inno Setup 6 is available on the
   runner, if absent it is installed via `choco install innosetup`) → compute
   the installer's SHA-256 → publish the release with attached files:
-  - `HLSGrabber-Setup-<version>.exe`;
-  - `HLSGrabber-Setup-<version>.exe.sha256`.
+  - `PyDownloader-Setup-<version>.exe`;
+  - `PyDownloader-Setup-<version>.exe.sha256`.
 - A separate workflow `ci.yml` on every push and pull request: `ruff`, `mypy`,
   `pytest`.
 - Branches: `main` (stable), work via feature branches and pull requests. A
@@ -357,7 +433,7 @@ the query).
   console, plus a dialog: version, release notes from `body`, buttons
   "Update", "Later", "Skip this version".
 - On consent:
-  1. The asset `HLSGrabber-Setup-*.exe` is downloaded into a temporary folder
+  1. The asset `PyDownloader-Setup-*.exe` is downloaded into a temporary folder
      (progress visible in the dialog).
   2. SHA-256 is checked against the `.sha256` file from the same release. On
      a mismatch the install is cancelled with an error message.
@@ -380,46 +456,51 @@ the query).
 ## 9. Project structure
 
 ```
-hls-grabber/
+pydownloader/
  ├─ pyproject.toml
- ├─ requirements.txt
+ ├─ run.bat                     run the current source (no build)
  ├─ README.md
  ├─ CHANGELOG.md
  ├─ NOTICE                      licenses of third-party components (FFmpeg, Qt, Playwright)
  ├─ build.ps1                   build: PyInstaller + ISCC
- ├─ hlsgrabber.spec             PyInstaller config
+ ├─ pydownloader.spec            PyInstaller config
  ├─ installer/
- │   ├─ hlsgrabber.iss
+ │   ├─ pydownloader.iss
  │   └─ assets/                 wizard images, icons
- ├─ assets/                     app.ico, interface icons, QSS styles
+ ├─ assets/                     app.ico, tray icon, screenshots
+ ├─ tools/                      make_icon.py, make_screenshots.py, list_strings.py,
+ │                              make_locales.py
+ ├─ docs/                       TZ_HLS_Grabber_Python.md
  ├─ .github/workflows/
  │   ├─ ci.yml
  │   └─ release.yml
- ├─ src/hlsgrabber/
+ ├─ src/pydownloader/
  │   ├─ __main__.py             entry point
  │   ├─ _version.py             generated at build time
- │   ├─ app.py                  Qt initialization, folder picker
- │   ├─ ui/                     main_window.py, source_card.py, source_list.py,
- │   │                          console_panel.py, settings_dialog.py,
- │   │                          update_dialog.py, theme.py
- │   ├─ browser/                launcher.py, sniffer.py, chromium_installer.py
- │   ├─ manifest/               detector.py, drm.py, quality.py, registry.py
+ │   ├─ i18n.py                 language literal, SUPPORTED_LANGUAGES, tr()
+ │   ├─ locales/                per-language catalogs (en, ru, uk, zh, fr, de)
+ │   ├─ ui/                     app.py, main_window.py, card.py, console.py,
+ │   │                          settings_panel.py, theme.py, tray.py
+ │   ├─ browser/                launcher.py, sniffer.py, stealth.py, extensions.py,
+ │   │                          events.py, chromium_installer.py
+ │   ├─ manifest/               detector.py, drm.py, quality.py, pipeline.py,
+ │   │                          registry.py
  │   ├─ hls/                    parser.py, models.py
  │   ├─ dash/                   parser.py, models.py, segments.py
- │   ├─ download/               queue.py, segments.py, direct.py, decrypt.py, retry.py
- │   ├─ ffmpeg/                 runner.py, locate.py
- │   ├─ update/                 checker.py, installer_runner.py, semver.py
- │   ├─ config/                 settings.py, paths.py
- │   └─ util/                   urls.py, filenames.py, logging_setup.py
+ │   ├─ youtube/                api.py, player.py, downloader.py
+ │   ├─ download/               plan.py, engine.py, http.py, runner.py, worker.py,
+ │   │                          aes.py
+ │   ├─ ffmpeg/                 mux.py, probe.py, locate.py
+ │   ├─ update/                 checker.py, ui.py
+ │   ├─ config/                 settings.py, paths.py, constants.py
+ │   └─ util/                   urls.py, filenames.py, ranges.py, logging_setup.py
  └─ tests/
-     ├─ test_hls_parser.py
-     ├─ test_dash_parser.py
-     ├─ test_drm.py
-     ├─ test_quality.py
-     ├─ test_mp4_ranges.py
-     ├─ test_filenames.py
-     ├─ test_update_checker.py
-     └─ data/                   sample playlists and MPDs
+     ├─ test_hls_parser.py, test_dash_parser.py, test_drm.py, test_quality.py,
+     ├─ test_pipeline.py, test_mp4_ranges.py, test_filenames.py, test_ffmpeg.py,
+     ├─ test_stealth.py, test_i18n.py, test_settings.py, test_runner.py,
+     ├─ test_worker.py, test_ui.py, test_tray.py, test_main_window.py,
+     ├─ test_update_checker.py, test_updater.py, test_chromium_installer.py
+     └─ data/                   sample playlists, MPDs, ffprobe output
 ```
 
 ---
@@ -447,17 +528,30 @@ hls-grabber/
   a card with a title, a link and a "Download" button.
 - Downloading starts only after pressing the button. The card shows progress.
   The result is a playable `.mp4`.
-- Live, DRM and streams without 1080p are skipped with a clear entry in the
-  console.
+- Live, DRM and streams without a preset of the chosen quality (1080p / 720p /
+  480p) are skipped with a clear entry in the console.
 - Several pressed "Download"s run strictly one after another. "Cancel"
   correctly stops the download and cleans up temporary files.
-- The window does not freeze during a download.
+- "Open browser" shows the browser on the page where the user was last,
+  "Close browser" closes it; an active download is not interrupted by closing
+  the browser window.
+- "X" hides the window to the tray and the download keeps running; the program
+  exits only through the tray menu ("Exit"), where the window, the browser, the
+  update check and the downloads folder are also available.
+- An audio source (SoundCloud, an audio-only playlist) is recognized, shown with
+  an `MP3` badge, and saved as `.mp3` at the chosen bitrate; audio is never
+  muxed into a black video file.
+- Google and SoundCloud open the browser as a normal user's browser: no
+  "JavaScript disabled / cookies blocked" message, and a Google login stays
+  logged in after the program restarts (the profile is kept in the program's
+  folder).
 - The interface renders correctly in the light and dark themes and at Windows
-  scaling 125% and 150%.
+  scaling 125% and 150%, in English, Russian, Ukrainian, Chinese, French and
+  German.
 
 **Installation and updates**
 - `build.ps1` on a clean machine with Python 3.12 and Inno Setup 6 builds
-  `HLSGrabber-Setup-<version>.exe`.
+  `PyDownloader-Setup-<version>.exe`.
 - The installer installs the application onto a clean Windows 10/11 without
   Python, creates shortcuts, the program launches and works (FFmpeg is found
   in `{app}\bin`).
@@ -494,7 +588,7 @@ hls-grabber/
 5. `FfmpegRunner` and locating `ffmpeg.exe` (in development and as installed).
 6. PySide6 interface: window, cards, console, theme, settings.
 7. Update module (`update/`) and the update dialog.
-8. PyInstaller build and the `installer/hlsgrabber.iss` script, `build.ps1`.
+8. PyInstaller build and the `installer/pydownloader.iss` script, `build.ps1`.
 9. Workflow `release.yml`, `CHANGELOG.md`, `README.md`, `NOTICE`.
 10. Verification on a clean Windows (install, update from an old version,
     removal).
@@ -509,9 +603,19 @@ hls-grabber/
 - The repository is **public**, updates are taken from `releases/latest`
   without a token.
 - FFmpeg is included in the installer, Chromium from Playwright is downloaded
-  on demand, only when Chrome and Edge are absent.
-- Streams without a 1080p variant are hidden from the list (written only to
-  the console).
+  on demand: when Chrome and Edge are absent, when Chromium is chosen in the
+  settings, and because the ad blocker works only with Chromium (Chrome and
+  Edge 157 ignore extensions passed from the command line).
+- Streams without a variant of the chosen preset (1080p / 720p / 480p) are
+  hidden from the list (written only to the console); audio-only sources are
+  shown without a preset.
+- Closing the window hides it to the tray; exit is only from the tray menu. On
+  a system without a notification area, "X" closes the program.
+- Anti-bot is on by default (stealth flags, real user agent, persistent
+  profile). A full anti-detection suite (a CDP leak, a patched browser,
+  fingerprint tools) is not covered.
+- MP3 is made by re-encoding with `libmp3lame`; a direct `.mp3` download is
+  renamed without re-encoding.
 - Download progress is shown inside the video card, the downloading card has a
   "Cancel" button.
 - The update is applied by running the installer with `/SILENT`, not by
