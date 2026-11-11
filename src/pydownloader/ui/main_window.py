@@ -220,14 +220,16 @@ class MainWindow(QMainWindow):
         self.console_button = QPushButton(tr("console_hide"))
         self.console_button.setToolTip(tr("console_hide_tip"))
         self.console_button.clicked.connect(self.toggle_console)
-        clear = QPushButton(tr("window_clear"))
-        clear.clicked.connect(console.clear_panel)
+        # «Clear» clears the text of the console, so it is shown only while the
+        # panel is on the screen: hidden, the button has nothing to clear (spec 4.2 p.5).
+        self.console_clear = QPushButton(tr("window_clear"))
+        self.console_clear.clicked.connect(console.clear_panel)
         folder = QPushButton(tr("window_open_download_folder"))
         folder.clicked.connect(self.open_download_folder)
         log = QPushButton(tr("window_open_log"))
         log.clicked.connect(self._open_log_file)
         row.addWidget(self.console_button)
-        row.addWidget(clear)
+        row.addWidget(self.console_clear)
         row.addWidget(folder)
         row.addWidget(log)
         row.addStretch(1)
@@ -309,6 +311,7 @@ class MainWindow(QMainWindow):
         """The console panel comes back with the room it had before (spec 4.2 p.5)."""
         self._console_hidden = False
         self.console.setVisible(True)
+        self.console_clear.setVisible(True)
         self.splitter.setSizes([SPLIT_TOP, SPLIT_BOTTOM])
         self.console_button.setText(tr("console_hide"))
         self.console_button.setToolTip(tr("console_hide_tip"))
@@ -325,6 +328,9 @@ class MainWindow(QMainWindow):
         """
         self._console_hidden = True
         self.console.setVisible(False)
+        # The row of buttons stays, and the button of clearing the console goes with
+        # the panel: there is no text to clear while the panel is hidden.
+        self.console_clear.setVisible(False)
         self.splitter.setSizes([SPLIT_CARDS_ONLY, SPLIT_CONSOLE_MIN])
         self.console_button.setText(tr("console_show"))
         self.console_button.setToolTip(tr("console_show_tip"))
@@ -374,8 +380,13 @@ class MainWindow(QMainWindow):
         card.download_clicked.connect(self._start_download)
         card.cancel_clicked.connect(self._cancel_download)
         card.open_file_clicked.connect(self._open_result_file)
+        card.remove_clicked.connect(self._remove_entry)
         self.cards[entry.id] = card
         self.cards_layout.insertWidget(self.cards_layout.count() - 1, card)
+        # The card is created after the window is shown, so it has to be shown by
+        # hand: a widget added to a layout of a visible window stays hidden until
+        # the event loop activates the layout (spec 4.1 p.1).
+        card.show()
         self.hint_label.hide()
         self._sync_card_heights()
         self.log_info(tr("window_shown", url=entry.url))
@@ -454,6 +465,27 @@ class MainWindow(QMainWindow):
         card.setParent(None)
         card.deleteLater()
         self._update_hint()
+
+    def _remove_entry(self, entry_id: str) -> None:
+        """«✕» on a card: take this one entry out of the list (spec 4.1 p.1).
+
+        A queued or running task is cancelled first: the person asked for this
+        card to disappear, so its download stops and the card goes with it. A
+        finished file stays on the disk, only the card is taken out of the list.
+        """
+        card = self.cards.get(entry_id)
+        if card is None:
+            return
+        name = card.entry.title or card.entry.url
+        if self.worker is not None and card.state in {"queued", "downloading"}:
+            self.worker.cancel(entry_id)
+            self.log_info(tr("window_card_removed_cancelled", title=name))
+        else:
+            self.log_info(tr("window_card_removed", title=name))
+        self.out_paths.pop(entry_id, None)
+        self._remove_card(card)
+        if self._queue_drained():
+            self._report_queue_done()
 
     def _update_hint(self) -> None:
         self.hint_label.setVisible(not self.cards)

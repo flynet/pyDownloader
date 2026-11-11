@@ -63,8 +63,9 @@ class Settings:
     skipped_version: str = ""
     #: Timestamp of the last successful API check, cached for ``update_check_hours``.
     last_update_check: str = ""
-    #: The console panel is visible (spec 4.2 p.5): «Show console» / «Hide console».
-    console_open: bool = True
+    #: The console panel starts hidden: the list of found videos gets the whole
+    #: window (spec 4.2 p.5), «Show console» in the row of buttons opens it back.
+    console_open: bool = False
     window_geometry: str = ""
 
 

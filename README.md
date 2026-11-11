@@ -7,14 +7,16 @@ direct MP4, YouTube streams and audio sources, and joins the downloaded segments
 with FFmpeg into one `.mp4` (a source of sound only is written as `.mp3`). The
 interface is dark by default; light and system themes are available in the
 settings, the program lives in the Windows tray, and the browser window can be
-opened and closed by the user. The console panel can be hidden, so the list of
-found videos takes the whole window.
+opened and closed by the user. The console panel starts hidden, so the list of
+found videos takes the whole window, and "Show console" opens it back.
 
 ## Screenshots
 
-![Main window: cards of found videos and the console](assets/screenshots/window.png)
+![Main window: the cards of found videos with the cross on the right, the console
+row is closed](assets/screenshots/window.png)
 
-![Settings dialog](assets/screenshots/settings.png)
+![Settings dialog: quality, browser, language, theme, the tray rows and the console
+panel](assets/screenshots/settings.png)
 
 The screenshots are rendered by the `tools/make_screenshots.py` script (`uv run python
 tools/make_screenshots.py`): it fills the cards and the console with demo data, and
@@ -25,10 +27,12 @@ on the offscreen Qt platform.
 ## How it works
 
 1. Launch → pick the downloads folder (first run only). The main window opens with
-   two sections: found videos (top) and console (bottom). **The browser is not
-   started automatically** — press "Open browser" when you want to look for a video.
-   "Hide console" in the row under the list takes the console away and gives the
-   whole window to the cards; "Show console" brings the panel back.
+   the **console hidden**: the list of found videos takes the whole window, and the
+   row under it shows **"Show console"**. Press it to see the log of the program,
+   "Hide console" takes the panel away again and gives the room back to the cards.
+   The state is stored, so the window opens the way the user left it. **The browser
+   is not started automatically** — press "Open browser" when you want to look for
+   a video.
 2. The browser window opens maximised on the last page you visited, with the uBlock
    ad blocker enabled (see below). It carries no banners of a driver: neither
    "this build is for automated testing" nor the "unsupported command-line flag"
@@ -67,6 +71,12 @@ when it is known, or `MP3`. A card with a source is never cut off: the list of
 cards has its own scrollbar, and when the window is made small the card section
 keeps its minimum height and the console shrinks.
 
+On the right of every card there is a **"✕"**: it takes this one entry out of the
+list. A queued or running task is **cancelled** first (the card goes with it), a
+finished card is removed and the file on the disk stays, a found card is simply
+taken away. "Clear all" and "Clear downloaded" work on the whole list, the cross
+works on one card.
+
 Above the list of found videos there are five buttons:
 - **"Open browser"** — show the browser window, on the page where the user was last.
 - **"Close browser"** — close the browser window. Downloads keep running.
@@ -75,10 +85,11 @@ Above the list of found videos there are five buttons:
 - **"Settings"** — the settings dialog.
 
 Under the list of cards there is the row of the console panel: **"Show console"** /
-**"Hide console"** (hidden, the list takes the whole window and the row stays on
-the screen as the way to open the panel back), **"Clear"** (the text of the
-console), **"Open download folder"**, **"Open log file"**. The console command is
-in the tray menu as well.
+**"Hide console"** (the console starts hidden, so the list of cards gets the whole
+window; the row stays on the screen as the way to open the panel back), **"Clear"**
+(the text of the console — the button is shown only while the console is open,
+there is nothing to clear while the panel is hidden), **"Open download folder"**,
+**"Open log file"**. The console command is in the tray menu as well.
 
 ## Tray
 
@@ -158,8 +169,8 @@ string of the version launched), "Hide the flags a bot driver leaves (anti-bot)"
 switches stealth on and off, "Load the bundled ad blocker" is on by default,
 "Show the icon in the notification area" and "Hide the window to the tray when
 closing" are the tray rows, "Show the console panel below the list" is the panel
-of the window: hidden, the list of cards takes the whole window. The state of the
-panel is stored, so the window opens the way the user left it.
+of the window (off by default, so the list of cards gets the whole window). The
+state of the panel is stored, so the window opens the way the user left it.
 
 ## Languages
 

@@ -282,6 +282,9 @@ def test_card_list_scrolls_when_cards_do_not_fit(qtbot, tmp_path):
 def test_window_splitter_ratio(qtbot, tmp_path):
     window = make_window(tmp_path)
     qtbot.addWidget(window)
+    # The program starts with the console hidden, so the ratio of the two sections
+    # is measured with the panel shown (spec 4.2 p.5).
+    window.show_console()
     sizes = window.splitter.sizes()
     assert len(sizes) == 2
     total = sum(sizes)
@@ -532,6 +535,9 @@ class FakeWorker:
     def stop(self) -> None:
         pass
 
+    def wait(self, milliseconds: int) -> bool:
+        return True
+
 
 def test_browser_buttons_are_wired_to_the_top_panel(qtbot, tmp_path):
     window = make_window(tmp_path)
@@ -675,34 +681,96 @@ def tray_pixels(tray: TrayController) -> list[int]:
 def test_the_console_panel_is_hidden_and_shown(qtbot, tmp_path):
     window = make_window(tmp_path)
     qtbot.addWidget(window)
-    # The console takes half the window: hiding it gives all the room to the list
-    # of cards, which is what a person picking a video needs (spec 4.2 p.5).
-    window.toggle_console()
+    # The program starts with the console hidden: the list of found videos gets the
+    # whole window, which is what a person picking a video needs (spec 4.2 p.5), and
+    # the row of buttons stays on the screen as the way to show the panel back.
     assert not window.console.isVisible()
+    assert not window.console_clear.isVisible()
+    assert window.console_button.text() == tr("console_show")
     hidden = window.splitter.sizes()
     assert hidden[1] <= SPLIT_CONSOLE_MIN + 40
-    assert hidden[0] > hidden[1]
-    # The row of buttons stays on the screen: it is the way to show the panel back.
-    assert window.console_button.text() == tr("console_show")
 
     window.toggle_console()
+    # «Clear» belongs to the text of the console, so it appears with the panel.
     assert window.console.isVisible()
+    assert window.console_clear.isVisible()
     shown = window.splitter.sizes()
     assert shown[1] > SPLIT_CONSOLE_MIN + 40
     assert window.settings.console_open
     assert window.console_button.text() == tr("console_hide")
 
+    window.toggle_console()
+    assert not window.console.isVisible()
+    assert not window.console_clear.isVisible()
+    assert window.settings.console_open is False
 
-def test_the_window_opens_with_the_console_hidden(qtbot, tmp_path):
-    settings = Settings(download_dir=str(tmp_path), console_open=False)
+
+def test_the_window_opens_with_the_console_the_user_left(qtbot, tmp_path):
+    settings = Settings(download_dir=str(tmp_path), console_open=True)
     paths = default_paths(downloads_dir=tmp_path)
     window = MainWindow(settings, paths, None, None)
     qtbot.addWidget(window)
     window.show()
     # The state of the panel is stored in the settings, so the window opens the way
-    # the user left it (spec 4.2 p.1), and the button says how to show the console.
-    assert not window.console.isVisible()
-    assert window.console_button.text() == tr("console_show")
+    # the user left it (spec 4.2 p.1), and the button says how to hide the console.
+    assert window.console.isVisible()
+    assert window.console_clear.isVisible()
+    assert window.console_button.text() == tr("console_hide")
+
+
+def test_the_card_cross_takes_a_found_entry_out_of_the_list(qtbot, tmp_path, caplog):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    window.add_source(entry("s1"))
+    assert "s1" in window.cards
+    # The cross is on the right of the title, in every state of the card (spec 4.1 p.1).
+    # `isVisibleTo` is used: a card is shown by the layout, which happens in the event
+    # loop, so the plain `isVisible` of the test window is not the state to check.
+    card = window.cards["s1"]
+    assert card.remove_button.isVisibleTo(window)
+    # The cross is an icon painted by hand: the text glyph «✕» is not in the UI
+    # font of Windows, so a label with the character shows a box.
+    assert not card.remove_button.icon().isNull()
+    card.remove_button.click()
+    assert "s1" not in window.cards
+    assert tr("window_card_removed", title=entry("s1").title) in caplog.messages
+    # The empty list shows the hint again (spec 4.1 p.3).
+    assert window.hint_label.isVisibleTo(window)
+
+
+def test_the_card_cross_cancels_a_task_of_the_queue(qtbot, tmp_path, caplog):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    worker = FakeWorker()
+    window.worker = worker
+    window.add_source(entry("s1"))
+    window._start_download("s1")
+    window._task_started("s1", "Clip")
+    assert worker.queued == ["s1"]
+
+    window.cards["s1"].remove_button.click()
+    # Removing a running card cancels its download, the card disappears with it.
+    assert worker.queued == []
+    assert "s1" not in window.cards
+    assert tr("window_card_removed_cancelled", title=entry("s1").title) in caplog.messages
+
+
+def test_the_card_cross_of_a_finished_card_keeps_the_file(qtbot, tmp_path):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    worker = FakeWorker()
+    window.worker = worker
+    video = tmp_path / "a.mp4"
+    video.write_bytes(b"data")
+    window.add_source(entry("s1"))
+    window._start_download("s1")
+    worker.queued.clear()
+    window._task_finished("s1", str(video))
+
+    window.cards["s1"].remove_button.click()
+    # The card is taken out of the list, the file on the disk is not touched.
+    assert "s1" not in window.cards
+    assert video.is_file()
 
 
 def test_the_tray_marks_the_running_download_and_reports_the_end(qtbot, tmp_path):

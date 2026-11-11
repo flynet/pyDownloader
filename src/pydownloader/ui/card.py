@@ -2,8 +2,9 @@
 
 A card carries: the type badge (HLS / DASH / MP4), the page title, the URL
 (elided, full text in the tooltip, «Копировать ссылку» in the context menu),
-resolution / duration / size when they are known, the «Скачать» button and the
-progress of the download inside the card (spec 4.1 p.5).
+resolution / duration / size when they are known, the «Скачать» button, the
+progress of the download inside the card (spec 4.1 p.5), and the «✕» on the right
+of the title: it takes this one entry out of the list (spec 4.1 p.1).
 
 State machine: ``new → queued → downloading → done | error``; a cancelled
 download returns to ``error`` with the message «отменено».
@@ -14,7 +15,7 @@ from __future__ import annotations
 from typing import Literal
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtGui import QColor, QGuiApplication, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -31,6 +32,31 @@ from pydownloader.i18n import tr
 from pydownloader.manifest.registry import SourceEntry
 
 CardState = Literal["new", "queued", "downloading", "done", "error"]
+
+#: The side of the cross of a card, in pixels.
+CROSS_SIZE = 16
+
+
+def cross_icon(size: int = CROSS_SIZE, color: str = "#9ea2b0") -> QIcon:
+    """The «remove» cross of a card, drawn by hand (spec 4.1 p.1).
+
+    The text glyph «✕» (U+2715) is not in the UI font of the Windows buttons, so
+    a label with the character shows a box. Two painted lines give the same
+    cross in every theme, in every language, and in the screenshots of the
+    README, which is what the row of a card needs.
+    """
+    pixmap = QPixmap(size, size)
+    pixmap.fill(QColor(0, 0, 0, 0))
+    pen = QPen(QColor(color))
+    pen.setWidth(max(1, size // 8))
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    painter = QPainter(pixmap)
+    painter.setPen(pen)
+    margin = size // 4
+    painter.drawLine(margin, margin, size - margin, size - margin)
+    painter.drawLine(size - margin, margin, margin, size - margin)
+    painter.end()
+    return QIcon(pixmap)
 
 #: State -> the key of its text in the meta line (spec 4.1 p.2); ``new`` shows none.
 STATE_KEYS: dict[CardState, str] = {
@@ -109,6 +135,8 @@ class SourceCard(QFrame):
     download_clicked = Signal(str)
     cancel_clicked = Signal(str)
     open_file_clicked = Signal(str)
+    #: «✕» on the right of the card: take this one entry out of the list (spec 4.1 p.1).
+    remove_clicked = Signal(str)
 
     def __init__(self, entry: SourceEntry, parent=None) -> None:
         super().__init__(parent)
@@ -141,6 +169,16 @@ class SourceCard(QFrame):
         self.title_label = QLabel(entry.title or entry.page_url or entry.url)
         self.title_label.setObjectName("cardTitle")
         top.addWidget(self.title_label, 1)
+        # The cross on the right is the way to take one card out of the list, so it
+        # is visible in every state: the user removes a found video, a queued task,
+        # a finished card, an error card (spec 4.1 p.1).
+        self.remove_button = QToolButton()
+        self.remove_button.setObjectName("cardRemove")
+        self.remove_button.setIcon(cross_icon())
+        self.remove_button.setAutoRaise(True)
+        self.remove_button.setToolTip(tr("card_remove_tip"))
+        self.remove_button.clicked.connect(lambda: self.remove_clicked.emit(self.entry.id))
+        top.addWidget(self.remove_button)
         layout.addLayout(top)
 
         self.url_label = QLabel(elide(entry.url, 90))
