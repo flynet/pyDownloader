@@ -6,6 +6,14 @@ resolution / duration / size when they are known, the «Скачать» button,
 progress of the download inside the card (spec 4.1 p.5), and the «✕» on the right
 of the title: it takes this one entry out of the list (spec 4.1 p.1).
 
+A card is as wide as the list of cards: every label of the card shows the line of
+its text that fits the width the card has, the title is broken into the lines of
+its words (at most ``TITLE_LINES`` of them), the rest is marked by the sign of
+elision, and the whole text is read in the tooltip. A label asks for the width of
+the text it shows, so the text is fitted when the card is resized: a long title
+makes the card taller, never wider, and the list of cards gets no horizontal
+scrollbar (spec 4.1 p.1).
+
 State machine: ``new → queued → downloading → done | error``; a cancelled
 download returns to ``error`` with the message «отменено».
 """
@@ -15,7 +23,7 @@ from __future__ import annotations
 from typing import Literal
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtGui import QFontMetrics, QGuiApplication, QResizeEvent
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -77,6 +85,21 @@ def bar_style(state: CardState, theme: ThemeName = "dark") -> str:
 #: button the height of the label, which is 16 px, so the size is fixed.
 CROSS_BUTTON = 26
 
+#: The title of a card takes at most two lines: a long page title is broken by the
+#: width of the card, the letters that do not fit are marked by the sign of elision,
+#: so the card stays as wide as the list of cards and the list never scrolls
+#: sideways (spec 4.1 p.1). The full title is read in the tooltip of the card.
+TITLE_LINES = 2
+
+#: The URL and the path of a card are one word each: a line of 90 characters is the
+#: floor of the width the label asks for, so a very long link cannot push the card
+#: wider than the list; the full text is in the tooltip (spec 4.1 p.1).
+URL_CHARS = 90
+
+#: The sign of elision: the cut letters of a title are marked, so a person sees that
+#: the name goes on, and the tooltip is read for the whole of it.
+ELLIPSIS = "…"
+
 #: State -> the key of its text in the meta line (spec 4.1 p.2); ``new`` shows none.
 STATE_KEYS: dict[CardState, str] = {
     "new": "",
@@ -136,7 +159,60 @@ def elide(url: str, width: int) -> str:
     """Shorten a URL for one line, with the full text in the tooltip."""
     if len(url) <= width:
         return url
-    return url[: width - 1] + "…"
+    return url[: width - 1] + ELLIPSIS
+
+
+def take_line(words: list[str], width: int, fm: QFontMetrics) -> tuple[str, list[str]]:
+    """The first words that fit one line, and the words that are left over.
+
+    A word wider than the line is taken whole: Qt breaks it inside the label, so
+    the loop never stops on the first word of a line.
+    """
+    line = words[0]
+    index = 1
+    while index < len(words) and fm.horizontalAdvance(line + " " + words[index]) <= width:
+        line += " " + words[index]
+        index += 1
+    return line, words[index:]
+
+
+def fit_title(text: str, width: int, fm: QFontMetrics, lines: int = TITLE_LINES) -> str:
+    """The title as it fits the card: the lines of the words, the rest elided (spec 4.1 p.1).
+
+    The card is as wide as the list of cards, so the width the title gets is known
+    when the card is resized: the words that fit each line are written out, the
+    words of the last line that do not fit are shortened by the font metrics with
+    the sign of elision, so the title never asks for more width than the card has
+    and the card grows by height, not by width.
+    """
+    if width <= 0:
+        return text
+    words = text.split()
+    lines_out: list[str] = []
+    left = words
+    for _ in range(lines):
+        if not left:
+            break
+        line, left = take_line(left, width, fm)
+        lines_out.append(line)
+    if left:
+        # The words of the tail are the part that is cut: the sign of elision stands
+        # at the end of the last line, so the letters of the tail are not shown.
+        rest = " ".join([lines_out[-1], *left])
+        lines_out[-1] = fm.elidedText(rest, Qt.TextElideMode.ElideRight, width)
+    return "\n".join(lines_out)
+
+
+def fit_line(text: str, width: int, fm: QFontMetrics, middle: bool = False) -> str:
+    """One line of text as it fits the width of the card, the cut marked.
+
+    A path and a URL are one word: the middle of the line is kept for them, so the
+    end of the file name stays on the card; the full text is in the tooltip.
+    """
+    if width <= 0:
+        return text
+    mode = Qt.TextElideMode.ElideMiddle if middle else Qt.TextElideMode.ElideRight
+    return fm.elidedText(text, mode, width)
 
 
 class SourceCard(QFrame):
@@ -177,15 +253,35 @@ class SourceCard(QFrame):
         layout.setContentsMargins(10, 8, 10, 8)
         layout.setSpacing(4)
 
+        #: The full texts of the labels of the card before they are fitted to its
+        #: width: a label shows the line that fits, the whole text is read in its
+        #: tooltip. The flag marks the labels whose middle is worth keeping (a URL,
+        #: the path of a saved file), so the end of the name stays on the card.
+        self._full: dict[QLabel, tuple[str, bool]] = {}
+
         top = QHBoxLayout()
+        self._top = top
         # An audio source gets the MP3 badge: the file on disk is an MP3, not a video.
         badge_text = "MP3" if entry.is_audio else entry.kind.upper()
         self.badge = QLabel(badge_text)
         self.badge.setObjectName("badge")
         self.badge.setStyleSheet(badge_style(theme, self.badge_kind))
         top.addWidget(self.badge)
-        self.title_label = QLabel(entry.title or entry.page_url or entry.url)
+        #: The whole title of the card, as it arrived from the page.
+        self._full_title = entry.title or entry.page_url or entry.url
+        self.title_label = QLabel(self._full_title)
         self.title_label.setObjectName("cardTitle")
+        # A long title is broken by the width of the card, not by the width the label
+        # asks for: the label takes the width of the row and the words of the title
+        # are written into its lines, so the card is as wide as the list of cards and
+        # the list gets no horizontal scrollbar (spec 4.1 p.1).
+        self.title_label.setWordWrap(True)
+        self.title_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        # The alignment is written without the flag of a mnemonic: the ampersand of a
+        # title ("Rock & Roll") is a letter of the name, not the sign of a key.
+        self.title_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        self.title_label.setTextFormat(Qt.TextFormat.PlainText)
+        self.title_label.setToolTip(self._full_title)
         top.addWidget(self.title_label, 1)
         # The cross on the right is the way to take one card out of the list, so it
         # is visible in every state: the user removes a found video, a queued task,
@@ -200,7 +296,8 @@ class SourceCard(QFrame):
         top.addWidget(self.remove_button)
         layout.addLayout(top)
 
-        self.url_label = QLabel(elide(entry.url, 90))
+        self.url_label = QLabel(elide(entry.url, URL_CHARS))
+        self._full[self.url_label] = (entry.url, True)
         self.url_label.setObjectName("cardMeta")
         self.url_label.setToolTip(entry.url)
         self.url_label.setTextFormat(Qt.TextFormat.PlainText)
@@ -213,10 +310,11 @@ class SourceCard(QFrame):
             parts.append(format_duration(entry.duration))
         if entry.size:
             parts.append(format_size(entry.size))
-        self.meta_label = QLabel(SEPARATOR.join(parts))
+        self.meta_label = QLabel()
         self.meta_label.setObjectName("cardMeta")
         layout.addWidget(self.meta_label)
         self._meta_base = parts
+        self._write(self.meta_label, SEPARATOR.join(parts))
 
         self.bar = QProgressBar()
         self.bar.setRange(0, 100)
@@ -285,6 +383,55 @@ class SourceCard(QFrame):
         if self.minimumHeight() != hint.height():
             self.setMinimumSize(0, hint.height())
 
+    def _meta_width(self) -> int:
+        """The width a label of the card has: the card minus its margins."""
+        margins = self._layout.contentsMargins()
+        return self.width() - margins.left() - margins.right()
+
+    def _title_width(self) -> int:
+        """The width of the title: the row is the badge, the title, the cross."""
+        margins = self._layout.contentsMargins()
+        return (
+            self.width()
+            - margins.left()
+            - margins.right()
+            - self.badge.sizeHint().width()
+            - self.remove_button.width()
+            - self._top.spacing() * 2
+        )
+
+    def _write(self, label: QLabel, text: str, middle: bool = False) -> None:
+        """The full text of a label, and the line of it that fits the card.
+
+        A label asks for the width of the whole text it shows, so the long path of a
+        saved file pushed the card wider than the list of cards: the whole text is
+        kept in the tooltip and for the rewriting on resize, and the label shows the
+        line the card can hold (spec 4.1 p.1).
+        """
+        self._full[label] = (text, middle)
+        label.setText(fit_line(text, self._meta_width(), label.fontMetrics(), middle))
+
+    def _refit(self) -> None:
+        """Every label of the card is written again for the width the card has.
+
+        The card is as wide as the list of cards, and the list is as wide as the
+        window: a title that took two lines in a wide window takes three in a narrow
+        one, so the lines are built from the width the card has now, and the card
+        grows by height, never by width (spec 4.1 p.1).
+        """
+        title = fit_title(self._full_title, self._title_width(), self.title_label.fontMetrics())
+        if title != self.title_label.text():
+            self.title_label.setText(title)
+        for label, (text, middle) in self._full.items():
+            fitted = fit_line(text, self._meta_width(), label.fontMetrics(), middle)
+            if fitted != label.text():
+                label.setText(fitted)
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        self._refit()
+        self._update_floor()
+
     def _copy_menu(self, position) -> None:
         menu = QMenu(self)
         action = menu.addAction(tr("card_copy_link"))
@@ -333,7 +480,7 @@ class SourceCard(QFrame):
         text = stage_label(self.stage)
         if speed_mb is not None:
             text += SEPARATOR + tr("card_speed_mb", speed=speed_mb)
-        self.stage_label.setText(text)
+        self._write(self.stage_label, text)
 
     def set_theme(self, theme: ThemeName) -> None:
         """Repaint the card with the theme chosen in the settings (spec 4.3 p.2).
@@ -357,17 +504,21 @@ class SourceCard(QFrame):
     def set_stage(self, stage: str) -> None:
         """Change the stage text: downloading / decrypting / muxing."""
         self.stage = stage
-        self.stage_label.setText(stage_label(stage))
+        self._write(self.stage_label, stage_label(stage))
 
     def set_error(self, message: str) -> None:
         self.set_state("error")
-        self.meta_label.setText(f"{message}")
+        self._write(self.meta_label, message, middle=True)
         self.meta_label.setObjectName("cardError")
         self.meta_label.style().polish(self.meta_label)
 
     def set_result(self, path: str) -> None:
         self.set_state("done")
-        self.meta_label.setText(f"{self._meta_base[0]}{SEPARATOR}{path}")
+        self._write(self.meta_label, f"{self._meta_base[0]}{SEPARATOR}{path}", middle=True)
+        # The line of the card is as wide as the card, so the long path of the file
+        # is cut in the middle: the quality and the end of the name stay, the whole
+        # path is read in the tooltip (spec 4.1 p.1).
+        self.meta_label.setToolTip(path)
 
     def _refresh_meta(self) -> None:
         if self.state == "error":
@@ -377,17 +528,24 @@ class SourceCard(QFrame):
         if label:
             parts.append(label)
         self.meta_label.setObjectName("cardMeta")
-        self.meta_label.setText(SEPARATOR.join(parts))
+        self._write(self.meta_label, SEPARATOR.join(parts))
         self.meta_label.style().polish(self.meta_label)
 
 
 __all__ = [
+    "ELLIPSIS",
+    "TITLE_LINES",
+    "URL_CHARS",
     "CardState",
     "SourceCard",
     "bar_style",
+    "elide",
+    "fit_line",
+    "fit_title",
     "format_duration",
     "format_quality",
     "format_size",
     "stage_label",
     "state_text",
+    "take_line",
 ]

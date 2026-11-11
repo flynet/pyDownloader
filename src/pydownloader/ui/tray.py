@@ -16,8 +16,11 @@ reads as the arrow jumping up and down.
 The tooltip of the icon is the list of the files that are downloading, with the
 percent, the speed and the time left (spec 4.2 p.7): the window writes it on the
 progress of the queue, so a person who works with the window hidden sees the
-queue without opening the program. The balloon of the finished downloads uses the
-same ``showMessage`` as the hint of the tray.
+queue without opening the program. Windows keeps the tooltip in a buffer of 128
+characters, so the name of a task is shortened by the same budget: the percent,
+the speed and the time left of a line are spent first and the names take the rest,
+so the readiness of every task in the queue is on the screen. The balloon of the
+finished downloads uses the same ``showMessage`` as the hint of the tray.
 """
 
 from __future__ import annotations
@@ -63,6 +66,15 @@ OPEN_DOUBLE = QSystemTrayIcon.ActivationReason.DoubleClick
 OPEN_REASONS = (OPEN_TRIGGER, OPEN_DOUBLE)
 #: The tooltip the tray shows when no download runs.
 BASE_TOOLTIP = f"{APP_NAME} {VERSION}"
+#: Windows keeps the tooltip of the tray icon in a buffer of 128 characters, so the
+#: whole text of the queue has to fit 127 of them: a long name of a task is
+#: shortened, the percent and the speed of the line stay in the text (spec 4.2 p.7).
+TOOLTIP_LIMIT = 127
+#: The shortest name a tooltip line keeps: the letters of a task name a person can
+#: tell apart, the sign of elision included.
+MIN_NAME = 12
+#: The sign of elision in the tooltip: the letters that were cut off are marked.
+TRAIL = "…"
 
 
 def idle_icon() -> QIcon:
@@ -73,6 +85,45 @@ def idle_icon() -> QIcon:
 def frame_icon(shift: int) -> QIcon:
     """The icon of a running download: the green arrow drawn in the shifted frame."""
     return tray_icon(GREEN, shift)
+
+
+def elide_name(name: str, budget: int) -> str:
+    """The name of a task within the budget of characters, the cut marked."""
+    if len(name) <= budget:
+        return name
+    if budget <= 1:
+        return TRAIL
+    return name[: budget - 1] + TRAIL
+
+
+def tooltip_text(lines: list[tuple[str, str]], limit: int = TOOLTIP_LIMIT) -> str:
+    """The tooltip of the icon within the length Windows keeps (spec 4.2 p.7).
+
+    A line is the name of the task and the report after it: the percent, the speed,
+    the time left. The name is the part a person can afford to lose, so the budget
+    of characters is spent on the report first and the names take the rest by the
+    same share. The lines that still do not fit go from the end, so the tooltip of
+    a long queue ends with the percent of a task, not with the tail of a name.
+    """
+    header = BASE_TOOLTIP
+    if lines:
+        header = "\n".join([BASE_TOOLTIP, tr("tray_tooltip_download")])
+    kept = list(lines)
+    while kept:
+        # The report of a line is the text after its name: the percent, the speed,
+        # the time left. It is spent from the budget first.
+        tails = [line[len(name) :] for name, line in kept]
+        budget = limit - len(header) - len(kept) - sum(len(tail) for tail in tails)
+        share = max(MIN_NAME, budget // len(kept))
+        parts = [header]
+        for (name, line), tail in zip(kept, tails, strict=True):
+            parts.append((elide_name(name, share) if name else line) + tail)
+        text = "\n".join(parts)
+        if len(text) <= limit:
+            return text
+        # The names are at the floor of their length already: the last line goes.
+        kept.pop()
+    return header
 
 
 class Bounce(QObject):
@@ -168,18 +219,17 @@ class TrayController(QSystemTrayIcon):
         """Whether the tray shows the green arrow."""
         return self._active
 
-    def set_progress_lines(self, lines: list[str]) -> None:
+    def set_progress_lines(self, lines: list[tuple[str, str]]) -> None:
         """The tooltip of the icon: the files that are downloading (spec 4.2 p.7).
 
-        The window writes the lines on the progress of the queue: the name of the
-        file, the percent, the speed, the time left. The tooltip is the only
-        report a person gets when the window is hidden and the mouse is over the
-        icon, so the text is written with no balloon.
+        The window writes the lines on the progress of the queue: each line is the
+        name of the file and the text built from it — the percent, the speed, the
+        time left. The tooltip is the only report a person gets when the window is
+        hidden and the mouse is over the icon, so the text is written with no
+        balloon, and a long name is shortened so that the percent of every task is
+        on the screen: Windows keeps the tooltip in a buffer of 128 characters.
         """
-        text = BASE_TOOLTIP
-        if lines:
-            text = "\n".join([BASE_TOOLTIP, tr("tray_tooltip_download"), *lines])
-        self.setToolTip(text)
+        self.setToolTip(tooltip_text(lines))
 
     def notify(self, text: str) -> None:
         """A balloon next to the tray icon: the hint of the first minimize."""
@@ -245,12 +295,17 @@ __all__ = [
     "BOUNCE_SHIFTS",
     "HINT_MS",
     "IDLE_COLOR",
+    "MIN_NAME",
     "OPEN_DOUBLE",
     "OPEN_REASONS",
     "OPEN_TRIGGER",
+    "TOOLTIP_LIMIT",
+    "TRAIL",
     "Bounce",
     "TrayController",
+    "elide_name",
     "frame_icon",
     "idle_icon",
     "make_tray",
+    "tooltip_text",
 ]

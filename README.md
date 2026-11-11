@@ -96,6 +96,16 @@ when it is known, or `MP3`. A card with a source is never cut off: the list of
 cards has its own scrollbar, and when the window is made small the card section
 keeps its minimum height and the console shrinks.
 
+A card is **as wide as the list of cards**, and the list is as wide as the window.
+A long page title is not allowed to push the list sideways: the words of the title
+are written into the lines the card can hold (two lines at most), the words that
+do not fit are marked by the sign of elision, and the whole title is read in the
+tooltip of the card. The same rule works for the link, the quality line and the
+path of the saved file — a link and a path are one word, so the middle of the line
+is kept for them and the end of the file name stays on the card. When the window is
+made narrow, the lines of every card are built again for the new width, so the card
+grows by height and the list gets no horizontal scrollbar.
+
 On the right of every card there is a **"✕"** — a square box of 26 px with the mark
 in the middle: the button has no text, so nothing is asked for next to the icon and
 the box is not stretched into a rectangle with the mark to the left. It takes this
@@ -219,6 +229,14 @@ Putting the mouse over the icon (without clicking) shows the list of the files
 that are downloading: the name, the percent, the speed, the time left, and the
 number of the tasks waiting in the queue. The text is rewritten at most once a
 second, and the start and the end of a task are written at once.
+
+Windows keeps the tooltip of the icon in a buffer of 128 characters, so a long
+name of a task is shortened: the budget of the tooltip is spent on the report —
+the percent, the speed, the time left — first, and the names take the rest by the
+same share, the cut marked by the sign of elision. The lines of a long queue that
+still do not fit go from the end, so the tooltip always ends with the percent of a
+task, never with the tail of a name: the readiness of the queue is visible even
+when the window is hidden.
 
 The tray settings are "Show the icon in the notification area" and "Hide the
 window to the tray when closing" (both on by default). If the system has no
