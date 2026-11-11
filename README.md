@@ -2,9 +2,11 @@
 
 A Windows application for downloading video from the browser: it opens a controlled
 browser, intercepts network requests, finds HLS (`.m3u8`), MPEG-DASH (`.mpd`),
-direct MP4 and YouTube streams, and joins the downloaded segments with FFmpeg into
-one `.mp4`. The interface is dark by default; light and system themes are available
-in the settings.
+direct MP4, YouTube streams and audio sources, and joins the downloaded segments
+with FFmpeg into one `.mp4` (a source of sound only is written as `.mp3`). The
+interface is dark by default; light and system themes are available in the
+settings, the program lives in the Windows tray, and the browser window can be
+opened and closed by the user.
 
 ## Screenshots
 
@@ -32,24 +34,66 @@ on the offscreen Qt platform.
    sequentially, segments use up to 6 threads.
 5. Segments (decrypted with AES-128 when required) are joined by FFmpeg
    (`-c copy`) into the finished `.mp4`, and the task's temporary folder is deleted.
+   A source that is audio only (SoundCloud, a radio stream, an audio-only HLS
+   playlist) is decoded with `libmp3lame` and written as `.mp3` at the bitrate
+   chosen in the settings; audio is never muxed into a black video file.
 6. YouTube: the page itself requests the inner-tube player API (VISIONOS client),
    so the classic signed URLs are available. Video and audio are downloaded in 8 MB
    range blocks and muxed without re-encoding.
 
 Live streams, DRM-protected content (Widevine / PlayReady / FairPlay) and streams
-without a 1080p variant are skipped; the reason is written to the console. DRM
-bypass (including Widevine) is not supported.
+without a variant of one of the presets **1080p, 720p, 480p** are skipped; the
+reason is written to the console. An exact match is taken (a 1440p source is
+downloaded as 1080p), an HLS playlist of sound only is accepted without a
+preset. DRM bypass (including Widevine) is not supported.
 
 ## Card states
 
 `Found` → `Queued` → `Downloading` (progress, speed, segments X of Y, stage,
-"Cancel") → `Done` ("Open file" — plays the downloaded video in the default player)
+"Cancel") → `Done` ("Open file" — plays the downloaded file in the default player)
 / `Error` ("Retry").
 
-Above the list of found videos there are two buttons: **"Clear all"** removes the
-whole list, **"Clear downloaded"** — only the cards whose files are already
-downloaded and lie on disk. An active download is not cancelled when clearing and
-continues in the background.
+Each card shows the source type badge: HLS, DASH, MP4, YOUTUBE, and **MP3** for
+an audio source, plus the quality line: `1080p`, `720p`, `480p`, the resolution
+when it is known, or `MP3`. A card with a source is never cut off: the list of
+cards has its own scrollbar, and when the window is made small the card section
+keeps its minimum height and the console shrinks.
+
+Above the list of found videos there are four buttons:
+- **"Clear all"** — remove every card.
+- **"Clear downloaded"** — remove only the cards whose files are on disk.
+- **"Open browser"** — show the browser window, on the page where the user was last.
+- **"Close browser"** — close the browser window. Downloads keep running.
+
+## Tray
+
+The program lives in the Windows notification area. Pressing **X** in the window
+title bar hides the window to the tray, the downloads keep running, and the
+browser stays open; closing the program from the tray menu is the only way to
+quit. The tray menu offers: show the window, open and close the browser, check
+for updates, open the downloads folder, exit. A single click or a double click
+on the tray icon shows the window; the menu items of the browser follow the
+state of the browser window. The first time the window is hidden, the tray icon
+shows a balloon explaining the menu (the hint is shown once).
+
+The tray settings are "Show the icon in the notification area" and "Hide the
+window to the tray when closing" (both on by default). If the system has no
+notification area (Windows Server, a remote desktop session, the offscreen CI of
+the tests), the tray icon is not created and "X" works as before: it closes the
+program.
+
+## Browser controls
+
+"Open browser" shows the browser window on the last page the user visited,
+maximised; "Close browser" closes it. Closing the browser window does not stop
+an active download: the segments are downloaded by the program itself, not by
+the browser, so the task finishes after the window is closed. When the browser
+is closed, its thread is replaced by a new one (the Playwright objects of a
+closed browser belong to the event loop of the old thread), and the user's
+profile is read from disk again, so cookies, logins and site settings are the
+same as before the closing. If the browser is not open, "Open browser" starts
+it with the program's profile on the last page; when it is already open, the
+button does nothing and "Close browser" is enabled.
 
 ## Logging
 
@@ -68,13 +112,22 @@ log shows which URLs the player requested and what the server answered.
 ## Settings
 
 Settings are stored in `%APPDATA%\PyDownloader\settings.json`: downloads folder,
-number of threads, theme, resolution, minimum MP4 size, update check, window size
-and position. The downloads folder is asked only on the first run; on later runs
-the program takes it from the settings and creates it if it was deleted. The
-folder can be changed in "Settings" → "Downloads folder" — the value is saved
-right after pressing "Save". The settings dialog takes 80% of the main window's
-width and height, can be resized manually, and a long path is fully visible (and
-in the tooltip on hover).
+number of threads, theme, quality preset, MP3 bitrate, audio-only mode,
+minimum MP4 size, browser, anti-bot, ad blocker, language, tray options, update
+check, window size and position. The downloads folder is asked only on the first
+run; on later runs the program takes it from the settings and creates it if it
+was deleted. The folder can be changed in "Settings" → "Downloads folder" — the
+value is saved right after pressing "Save". The settings dialog takes 80% of the
+main window's width and height, can be resized manually, and a long path is
+fully visible (and in the tooltip on hover).
+
+"Resolution (p)" is a combo with three presets: **1080p, 720p, 480p** (an
+out-of-list height saved in an edited `settings.json` gets its own entry). "MP3
+bitrate" is 128 / 192 / 320 kbps, "Audio only (MP3)" downloads only the sound
+part, "User agent" imitates another device (an empty field takes the Chrome
+string of the version launched), "Hide the flags a bot driver leaves (anti-bot)"
+switches stealth on and off, "Load the bundled ad blocker" is on by default,
+and the tray rows are described above.
 
 ## Languages
 
@@ -85,16 +138,53 @@ Settings → Language; the native names shown in the combo are English, Русс
 `%APPDATA%\PyDownloader\settings.json` as `"language"` and is applied after the
 program restarts — the Settings dialog shows a hint and a Restart button.
 
-## Ad blocker and browser profile
+## Anti-bot
+
+Google and SoundCloud check the browser the page runs in and report "JavaScript
+disabled / cookies blocked" when an automation tool opens it. The program makes
+the browser look like an ordinary user's browser:
+- the automation flags are removed: the "AutomationControlled" feature is
+  disabled, so `navigator.webdriver` is undefined, a stealth script fixes the
+  properties that bots usually leak (plugins, languages, `hardwareConcurrency`,
+  `deviceMemory`, `window.chrome`, the notification permission, the brands of
+  `navigator.userAgentData`), the sandbox switch is dropped;
+- the user agent is taken from the real installed browser, not from
+  Playwright's default one, with matching platform and locale hints
+  (`en-US` / `ru-RU` / `uk-UA` from the language chosen in the settings);
+- the browser runs with a **persistent profile** in the program's folder, so
+  cookies, local storage, logins, extensions and site settings are kept between
+  runs — after signing in to Google once the program is not asked to sign in
+  again, and the same profile is sent to Google on every start;
+- autoplay is allowed, the browser starts maximised, and the window looks like
+  a normal browser window, not the stripped Playwright window.
+
+"Anti-bot" is a setting (on by default); turning it off returns the plain
+Playwright launch, which is useful to compare. The log records the launch
+arguments, the user agent, the locale, the stealth script result and the profile
+path, so a login problem can be diagnosed from `app.log`.
+
+A site that checks the DevTools protocol (a CDP leak) can still tell that the
+browser is driven by a program: a full anti-detection suite (a patched browser,
+CDP isolation, fingerprint tools) is out of scope. The program is made for
+sites that play video for a user who logs in himself, not for evading a
+detection service.
+
+## Ad blocker and browser choice
 
 Next to the program lies `uBlock.crx` (uBlock Origin Lite). At startup it is
 unpacked into `<install folder>\extensions` and attached to Chromium from
-Playwright. Modern Chrome and Edge ignore extensions passed from the command
+Playwright. Chrome 157 and Edge 157 ignore extensions passed from the command
 line, so for the blocker the program offers to download Chromium once (it lands
 in `<install folder>\browsers`); without it the browser opens with no blocker.
 Chromium downloaded by a previous version into
 `%LOCALAPPDATA%\PyDownloader\browsers` is found and reused — it is not
 downloaded again.
+
+Settings → "Browser" chooses the engine: **Automatic** (installed Chrome, then
+Edge, then Chromium), **Google Chrome**, **Microsoft Edge**, **Chromium**. The
+chosen engine is remembered; when it is not installed, the program falls back to
+an installed one and Chromium, and asks to download Chromium when Chromium is
+wanted.
 
 The browser profile lives in the program folder — `<install folder>\profile` —
 and contains cookies, account logins and site settings. It persists between
@@ -125,7 +215,10 @@ writable, these folders are created in `%LOCALAPPDATA%\PyDownloader`.
 
 - Windows 10/11 x64; Chrome or Edge, or Chromium from Playwright (the
   application offers to download it on first run). The ad blocker requires
-  Chromium specifically.
+  Chromium specifically. The browser to launch is chosen in the settings.
+- The tray icon needs the Windows notification area. On a system without it
+  (Windows Server, a remote desktop session) the program works with the tray
+  switched off.
 - Python 3.12 only for building; the installed application runs without Python.
 
 ## Running from source
@@ -173,19 +266,21 @@ settings.
 ```
 src/pydownloader/
   i18n.py   language of the interface and of the log lines, ``tr`` lookup
-  locales/  catalog of texts: English, Russian, Chinese, French, German
+  locales/  catalog of texts: English, Russian, Ukrainian, Chinese, French, German
   hls/      .m3u8 parser and model
   dash/     .mpd parser and model
-  manifest/ candidate detection, DRM, 1080p quality, source registry
+  manifest/ candidate detection (audio/video), DRM, quality presets
+            (1080p / 720p / 480p), source registry, probe pipeline
   util/     URLs, file names, ranges, logging
   config/   settings, paths, repository constants
-  browser/  browser launch and network interception
-  download/ queue, segments, AES-128, direct MP4
+  browser/  browser launch, stealth flags and user agent, ad blocker,
+            network interception, Chromium download
+  download/ queue, segments, AES-128, direct MP4, MP3 output
   youtube/  inner-tube player API, format parsing, range plan
-  ffmpeg/   locating ffmpeg.exe and running the join
+  ffmpeg/   locating ffmpeg.exe, ffprobe media info, the join, MP3 encode
   update/   release checks and installer launch
-  ui/       window, cards, console, settings, themes
-tests/      pytest + sample playlists and MPDs
+  ui/       window, cards, console, settings, themes, tray
+tests/      pytest + sample playlists, MPDs, ffprobe output
 ```
 
 ## Tests
