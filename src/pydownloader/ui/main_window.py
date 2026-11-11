@@ -39,7 +39,7 @@ from pydownloader._version import VERSION
 from pydownloader.browser.launcher import BrowserChoice
 from pydownloader.browser.sniffer import SnifferThread
 from pydownloader.config.paths import Paths, icon_path
-from pydownloader.config.settings import Settings, save_settings
+from pydownloader.config.settings import Settings, ThemeName, save_settings
 from pydownloader.download.worker import QueueWorker
 from pydownloader.ffmpeg.locate import Ffmpeg
 from pydownloader.i18n import tr
@@ -852,6 +852,33 @@ class MainWindow(QMainWindow):
 
     # --- settings --------------------------------------------------------
 
+    def _recolor_icons(self, theme: ThemeName) -> None:
+        """The colors of the painted marks follow the theme, without a restart.
+
+        The marks are painted once, when the button is built, so a theme chosen in the
+        settings leaves the buttons and the cards the colors of the old theme: every
+        mark is drawn again with the colors of the theme the user picked, the badge of
+        every card is repainted, and the bar of a card takes the bar of the new theme
+        (spec 4.3 p.2, p.3).
+        """
+        self._accent = icon_color("accent", theme)
+        self._panel = icon_color("panel", theme)
+        self._warn = icon_color("warn", theme)
+        self._danger = icon_color("danger", theme)
+        attach(self.browser_button, browser_icon(self._accent, not self.browser_running()))
+        attach(self.console_button, console_icon(self._accent))
+        attach(self.folder_button, folder_icon(self._accent))
+        attach(self.settings_button, gear_icon(self._accent))
+        attach(self.clear_downloaded_button, clear_downloaded_icon(self._warn))
+        attach(self.clear_all_button, clear_all_icon(self._danger))
+        attach(self.go_button, go_icon(self._accent))
+        attach(self.console_clear, cross_icon(self._accent))
+        attach(self.log_button, log_icon(self._accent))
+        for card in self.cards.values():
+            card.set_theme(theme)
+        if self.tray is not None:
+            self.tray.set_theme(theme)
+
     def open_settings(self) -> None:
         dialog = SettingsDialog(self.settings, self)
         if self.updater is not None:
@@ -868,6 +895,9 @@ class MainWindow(QMainWindow):
             if app is not None:
                 apply_theme(cast(QApplication, app), self.settings.theme)
                 self._apply_tray_state(cast(QApplication, app))
+            # The theme is applied without a restart: the marks that are painted once
+            # are drawn again with the colors of the new theme (spec 4.3 p.2).
+            self._recolor_icons(self.settings.theme)
             # The console row of the settings decides what the window shows (spec 4.2 p.5),
             # so the panel is brought to the state the user chose.
             if self.settings.console_open == self._console_hidden:

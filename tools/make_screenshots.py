@@ -9,6 +9,11 @@
 берутся из каталога переводов, поэтому снимок совпадает с тем, что видит
 пользователь.
 
+Главное окно рисуется в четырёх темах: тёмной (снимок по умолчанию) и трёх
+тематических схемах — «Cartoons», «Neon», «Pink», — чтобы читатель увидел характер
+каждой из них. Окно строится заново для каждой темы: карточка красится один раз
+при добавлении, поэтому бейдж и полоса карточки берут цвета своей темы.
+
 Окно снимков сохраняет настройки, поэтому рисование запускается со своими
 ``%APPDATA%``, ``%LOCALAPPDATA%`` и временной папкой: файл настроек
 пользователя от запуска снимков не меняется (spec 7.4).
@@ -23,6 +28,7 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
+from typing import cast
 
 # Заводится до импорта Qt: снимки рисуются без окна на рабочем столе.
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -30,8 +36,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtGui import QFont, QFontDatabase
 from PySide6.QtWidgets import QApplication
 
-from pydownloader.config.paths import Paths, default_paths, isolate_app_data
-from pydownloader.config.settings import Settings
+from pydownloader.config.paths import default_paths, isolate_app_data
+from pydownloader.config.settings import Settings, ThemeName
 from pydownloader.i18n import DEFAULT_LANGUAGE, set_language, tr
 from pydownloader.manifest.registry import SourceEntry
 from pydownloader.ui.main_window import MainWindow
@@ -42,7 +48,7 @@ OUT = Path("assets") / "screenshots"
 DOWNLOADS = Path("D:\\Videos")
 #: Version printed in the console lines: the screenshots are for the release page,
 #: so the tag is written out and stays stable between runs.
-DISPLAY_VERSION = "0.4.6"
+DISPLAY_VERSION = "0.4.7"
 WINDOW_SIZE = (1060, 860)
 #: Splitter sizes of the screenshot: the five demo cards, the row of the console
 #: buttons and a dozen console lines.
@@ -168,18 +174,15 @@ def register_fonts() -> None:
             QFontDatabase.addApplicationFont(path)
 
 
-def main() -> int:
-    # Настройки пишутся в дерево снимков, файл пользователя не трогается (spec 7.4).
-    isolate_app_data()
-    OUT.mkdir(parents=True, exist_ok=True)
-    app = QApplication(sys.argv)
-    register_fonts()
-    app.setFont(QFont(UI_FONT, UI_FONT_SIZE))
-    # the screenshots show the language the program starts with (spec 8.1)
-    set_language(DEFAULT_LANGUAGE)
+def render_window(app: QApplication, theme: ThemeName) -> MainWindow:
+    """Одно окно в одной теме: карточки, консоль, статус — готово к снимку.
+
+    Окно строится заново для каждой темы: карточка красится один раз при добавлении,
+    так что бейдж и полоса карточки берут цвета той темы, в которой окно построено.
+    """
     settings = Settings(
         download_dir=str(DOWNLOADS),
-        theme="dark",
+        theme=theme,
         language=DEFAULT_LANGUAGE,
         threads=6,
         target_height=1080,
@@ -187,9 +190,8 @@ def main() -> int:
         # screen only with the panel, so the panel has to be open for the picture.
         console_open=True,
     )
-    apply_theme(app, settings.theme)
-    paths: Paths = default_paths()
-    window = MainWindow(settings, paths, None, None)
+    apply_theme(app, theme)
+    window = MainWindow(settings, default_paths(), None, None)
     window.console.setFont(QFont(MONOSPACE_FONT, UI_FONT_SIZE))
     window.resize(*WINDOW_SIZE)
     window.set_update_status(tr("update_none", time="08:12"))
@@ -200,8 +202,35 @@ def main() -> int:
     fill_console(window)
     # All four cards fit the upper section, and the console keeps its twelve lines.
     window.splitter.setSizes(list(CARD_SECTION_HEIGHT))
-    shot(window, "window.png")
+    return window
 
+
+def main() -> int:
+    # Настройки пишутся в дерево снимков, файл пользователя не трогается (spec 7.4).
+    isolate_app_data()
+    OUT.mkdir(parents=True, exist_ok=True)
+    app = QApplication(sys.argv)
+    register_fonts()
+    app.setFont(QFont(UI_FONT, UI_FONT_SIZE))
+    # the screenshots show the language the program starts with (spec 8.1)
+    set_language(DEFAULT_LANGUAGE)
+    # The main window in the default theme, then the same window in the three theme
+    # palettes of the settings, so the reader sees the character of each of them.
+    window = render_window(app, "dark")
+    shot(window, "window.png")
+    for theme in ("cartoons", "neon", "pink"):
+        shot(render_window(app, cast(ThemeName, theme)), f"window_{theme}.png")
+    settings = Settings(
+        download_dir=str(DOWNLOADS),
+        theme="dark",
+        language=DEFAULT_LANGUAGE,
+        threads=6,
+        target_height=1080,
+        console_open=True,
+    )
+    # The dialog of the settings is drawn in the default theme of the program, not in
+    # the last theme of the loop above.
+    apply_theme(app, settings.theme)
     dialog = SettingsDialog(settings, window)
     shot(dialog, "settings.png")
     return 0

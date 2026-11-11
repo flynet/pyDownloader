@@ -39,19 +39,31 @@ from pydownloader.ui.button_icons import (
     play_icon,
     retry_icon,
 )
+from pydownloader.ui.theme import DARK, PALETTES, badge_style
 
 CardState = Literal["new", "queued", "downloading", "done", "error"]
 
 #: The bar of a finished download is green: the colour says the file is on the
 #: disk, so a person sees the end of the queue without reading the text (spec 4.1 p.3).
 DONE_COLOR = "#2ea64f"
-#: The rule of the bar for the finished state, the theme gives the rest.
-DONE_BAR = f"QProgressBar::chunk {{ background: {DONE_COLOR}; }}"
 
 
-def bar_style(state: CardState) -> str:
-    """The chunk colour of the progress bar of a state (spec 4.1 p.3)."""
-    return DONE_BAR if state == "done" else ""
+def bar_style(state: CardState, theme: ThemeName = "dark") -> str:
+    """The bar of a card: the colors of the theme for the state (spec 4.1 p.3).
+
+    A running file keeps the accent (the gradient of a theme that has a gradient), a
+    finished file gets the green of the theme, and the «100%» of a finished bar is
+    readable on it, so the same role of success is the same color in the bar, the
+    badge and the console of the theme.
+    """
+    if state != "done":
+        return ""
+    colors = PALETTES.get(theme, DARK)
+    return (
+        f"QProgressBar {{ color: {colors['done_text']}; }} "
+        f"QProgressBar::chunk {{ background: {colors['done']}; }}"
+    )
+
 
 
 # The «✕» of a card and the marks of its buttons are painted, not typed: the text
@@ -83,15 +95,6 @@ STAGE_KEYS: dict[str, str] = {
 
 #: The parts of a card line are joined by a plain separator, never by a text.
 SEPARATOR = " · "
-
-BADGE_COLORS = {
-    "hls": "#3b7fd7",
-    "dash": "#7b5cc7",
-    "mp4": "#2e7d32",
-    "youtube": "#c4302b",
-    # An audio source is shown with its own badge, the file is written as MP3.
-    "mp3": "#a86a2d",
-}
 
 
 def state_text(state: CardState) -> str:
@@ -150,6 +153,11 @@ class SourceCard(QFrame):
         self.entry = entry
         self.state: CardState = "new"
         self.stage = "download"
+        #: The theme the card is painted with: the colors of a theme change without a
+        #: restart, so the card keeps what it was painted with (spec 4.3 p.2).
+        self.theme = theme
+        #: The kind the badge is painted for: an audio source is the MP3 badge.
+        self.badge_kind = "mp3" if entry.is_audio else entry.kind
         #: The color of the marks of the card: the buttons of the card are of the panel
         #: background, so the icon takes the text color of the theme (spec 4.3 p.2).
         self._panel = icon_color("panel", theme)
@@ -172,10 +180,9 @@ class SourceCard(QFrame):
         top = QHBoxLayout()
         # An audio source gets the MP3 badge: the file on disk is an MP3, not a video.
         badge_text = "MP3" if entry.is_audio else entry.kind.upper()
-        badge_color = BADGE_COLORS["mp3"] if entry.is_audio else BADGE_COLORS[entry.kind]
         self.badge = QLabel(badge_text)
         self.badge.setObjectName("badge")
-        self.badge.setStyleSheet(f"color: #ffffff; background: {badge_color};")
+        self.badge.setStyleSheet(badge_style(theme, self.badge_kind))
         top.addWidget(self.badge)
         self.title_label = QLabel(entry.title or entry.page_url or entry.url)
         self.title_label.setObjectName("cardTitle")
@@ -301,7 +308,7 @@ class SourceCard(QFrame):
         self.bar.setVisible(state in {"downloading", "done"})
         # The bar of a finished file is green, the bar of a running one is the
         # accent of the theme (spec 4.1 p.3).
-        self.bar.setStyleSheet(bar_style(state))
+        self.bar.setStyleSheet(bar_style(state, self.theme))
         self.stage_label.setVisible(state == "downloading")
         if state == "done":
             self.bar.setRange(0, 100)
@@ -317,7 +324,7 @@ class SourceCard(QFrame):
         """Segments downloaded, percentage and speed inside the card (spec 4.1 p.3)."""
         self.state = "downloading"
         self.bar.setVisible(True)
-        self.bar.setStyleSheet(bar_style("downloading"))
+        self.bar.setStyleSheet(bar_style("downloading", self.theme))
         self.stage_label.setVisible(True)
         percent = done * 100 // total if total else 0
         self.bar.setRange(0, total)
@@ -327,6 +334,25 @@ class SourceCard(QFrame):
         if speed_mb is not None:
             text += SEPARATOR + tr("card_speed_mb", speed=speed_mb)
         self.stage_label.setText(text)
+
+    def set_theme(self, theme: ThemeName) -> None:
+        """Repaint the card with the theme chosen in the settings (spec 4.3 p.2).
+
+        The theme is applied without a restart, and the card is painted once: the
+        marks of its buttons, the badge of its format and the bar of its state keep
+        the colors of the theme of the last build, so every color of the card is
+        written again from the keys of the new theme.
+        """
+        self.theme = theme
+        self._panel = icon_color("panel", theme)
+        self._accent = icon_color("accent", theme)
+        attach(self.remove_button, cross_icon(self._panel))
+        attach(self.download_button, download_icon(self._accent))
+        attach(self.cancel_button, cross_icon(self._panel))
+        attach(self.open_button, play_icon(self._panel))
+        attach(self.retry_button, retry_icon(self._panel))
+        self.badge.setStyleSheet(badge_style(theme, self.badge_kind))
+        self.bar.setStyleSheet(bar_style(self.state, theme))
 
     def set_stage(self, stage: str) -> None:
         """Change the stage text: downloading / decrypting / muxing."""

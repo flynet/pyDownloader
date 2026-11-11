@@ -3,6 +3,11 @@
 A read-only monospace text area showing every log line, including the reasons
 why a source was skipped. The buffer is limited, so a long session does not
 grow the memory.
+
+The wall of the panel and the color of its text are the keys of the theme, so the log
+is readable in every theme, and the level word of every line says which role the line
+carries: the same roles as the yellow button and the red button of the top row
+(spec 4.3 p.3).
 """
 
 from __future__ import annotations

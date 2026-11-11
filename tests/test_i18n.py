@@ -199,6 +199,24 @@ def test_settings_keep_the_audio_mode(tmp_path: Path):
     assert load_settings(path).mp3_bitrate == DEFAULT_MP3_BITRATE
 
 
+def test_the_theme_palettes_are_saved_and_read_back(tmp_path: Path):
+    """A theme picked in the settings survives the restart of the program (spec 7.4).
+
+    The three new palettes are values of the theme: the file one start writes is read
+    by the next start, and a theme the program does not know falls back to the dark
+    theme, the default of the window.
+    """
+    path = tmp_path / "settings.json"
+    for theme in ("cartoons", "neon", "pink"):
+        save_settings(Settings(theme=theme), path)
+        assert load_settings(path).theme == theme
+    # an edited file names a theme that does not exist: the window is dark
+    body = json.loads(path.read_text(encoding="utf-8"))
+    body["theme"] = "neon-light"
+    path.write_text(json.dumps(body), encoding="utf-8")
+    assert load_settings(path).theme == "dark"
+
+
 def test_settings_dialog_shows_the_languages(qtbot):
     dialog = SettingsDialog(Settings())
     qtbot.addWidget(dialog)

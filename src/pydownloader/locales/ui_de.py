@@ -123,6 +123,9 @@ TEXTS: dict[str, str] = {
     "settings_close_tray": 'Fenster beim Schließen ins Tablett verstecken',
     "theme_dark": "Dunkel",
     "theme_light": "Hell",
+    "theme_cartoons": "Trickfilm",
+    "theme_neon": "Neon",
+    "theme_pink": "Rosa",
     "theme_system": "System",
     # --- startup (spec 4.4, 7.1) -------------------------------------------
     "app_started": "PyDownloader {version}, Downloadordner: {dir}",
