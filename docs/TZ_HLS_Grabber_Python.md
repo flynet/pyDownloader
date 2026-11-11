@@ -16,9 +16,11 @@ How the program works:
 
 1. The user launches the program and picks the downloads folder.
 2. The main window of two sections opens: found videos (top) and console
-   (bottom). **The browser is not launched at startup** — the user opens it with
-   the "Open browser" button. "Hide console" gives the whole window to the list
-   of cards, "Show console" brings the panel back.
+   (bottom). **The console is hidden at startup**, so the list of cards takes the
+   whole window, and the row of buttons shows "Show console". **The browser is not
+   launched at startup** — the user opens it with the "Open browser" button.
+   "Hide console" gives the whole window to the list of cards, "Show console"
+   brings the panel back; the state is stored for the next start.
 3. The user visits the site and starts the video.
 4. The application intercepts the browser's network requests and finds HLS
    (`.m3u8`), MPEG-DASH (`.mpd`), direct MP4 and audio-only sources (SoundCloud,
@@ -110,7 +112,12 @@ window size 900×600, size and position are remembered.
   - a link (truncated by width, full in a tooltip, context menu "Copy link");
   - the quality preset (1080p / 720p / 480p), resolution and duration, or size,
     if known;
-  - a **"Download"** button on the right.
+  - a **"Download"** button on the right;
+  - a **"✕"** at the far right, in every state: it takes this one entry out of
+    the list. A queued or running task is cancelled first and its card goes with
+    it; a finished card is removed and the file on the disk stays; a found card
+    is simply taken away. The entry is reported in the console ("Cancelled and
+    removed from the list", "Removed from the list").
 - Card states:
   - **Found**: active "Download" button.
   - **Queued**: button disabled, caption "Queued".
@@ -138,6 +145,8 @@ window size 900×600, size and position are remembered.
   (the text of the console), **"Open downloads folder"**, **"Open log file"**.
   The row stays on the screen when the console is hidden, so pressing "Show
   console" brings the panel back; the same command is in the tray menu.
+  **"Clear"** is shown only while the console is on the screen: there is no text
+  to clear while the panel is hidden.
 - There is no separate shared progress bar between the sections: progress lives
   inside the card.
 
@@ -153,11 +162,14 @@ window size 900×600, size and position are remembered.
   calls, update checks, errors.
 - Line format: `[12:34:56] INFO  Found HLS stream 1080p: https://...`
 - Above the console, small buttons: "Show console" / "Hide console", "Clear",
-  "Open downloads folder", "Open log file".
+  "Open downloads folder", "Open log file". "Clear" is on the screen only while
+  the console is.
 - **"Hide console"** takes the panel away and gives the whole window to the list
-  of cards; **"Show console"** brings it back with the room it had. The state is
-  stored in the settings, so the window opens the way the user left it, and the
-  row of buttons is the way to open the panel from the tray menu.
+  of cards; **"Show console"** brings it back with the room it had. The console
+  is **hidden at startup**, so the list of cards gets the whole window from the
+  first start. The state is stored in the settings, so the window opens the way
+  the user left it, and the row of buttons is the way to open the panel from the
+  tray menu.
 
 ### 4.3. Extras
 
@@ -556,10 +568,11 @@ pydownloader/
 
 **Application**
 - After startup and the folder picker, the window opens: the top section is
-  empty with a hint, the bottom section shows the console, and no browser is
-  launched — the browser appears only after the user presses "Open browser".
+  empty with a hint and takes the whole window (the console is hidden), the row
+  of buttons shows "Show console", and no browser is launched — the browser
+  appears only after the user presses "Open browser".
 - On opened test HLS, DASH and direct MP4, the source automatically appears as
-  a card with a title, a link and a "Download" button.
+  a card with a title, a link, a "Download" button and a "✕" on the right.
 - Downloading starts only after pressing the button. The card shows progress.
   The result is a playable `.mp4`.
 - Live, DRM and streams without a preset of the chosen quality (1080p / 720p /
@@ -580,8 +593,11 @@ pydownloader/
   animation; when the queue is empty it is a blue arrow, and the finished
   downloads are reported by a Windows balloon and the notification sound.
 - "Show console" / "Hide console" take the console panel away and back; hidden,
-  the list of cards fills the window, and the state is remembered for the next
-  start.
+  the list of cards fills the window, the "Clear" button of the console text
+  disappears with the panel, and the state is remembered for the next start.
+- "✕" on a card takes one entry out of the list: a queued or running task is
+  cancelled and its card goes, a finished card is removed and the file on the
+  disk stays, a found card is taken away.
 - An audio source (SoundCloud, an audio-only playlist) is recognized, shown with
   an `MP3` badge, and saved as `.mp3` at the chosen bitrate; audio is never
   muxed into a black video file.
@@ -662,6 +678,10 @@ pydownloader/
   renamed without re-encoding.
 - Download progress is shown inside the video card, the downloading card has a
   "Cancel" button.
+- The console panel is hidden at startup (the list of cards gets the whole
+  window), and "Clear" of the console text is on the screen only while the panel
+  is. "✕" on a card cancels a running task of that card, and a finished file on
+  the disk is never deleted by it.
 - The update is applied by running the installer with `/SILENT`, not by
   replacing files on the fly.
 - Before starting, the agent must be given the repository's `OWNER/REPO` and

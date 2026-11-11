@@ -17,6 +17,13 @@ on `main`.
   (the menu has the item «Show console» as well). The state is stored in the settings
   and there is a row in the settings dialog, so the window opens the way the user
   left it.
+- Every card has a **«✕»** on the right, in every state: it takes this one entry out
+  of the list. A queued or running task is cancelled first and its card goes with it,
+  a finished card is removed and the file on the disk stays, a found card is simply
+  taken away. The line is written to the console ("Cancelled and removed from the
+  list: {title}", "Removed from the list: {title}"), so the tray menu and the console
+  report what happened while the window was hidden. The cross works on one card, "Clear
+  all" and "Clear downloaded" work on the whole list.
 - The tray icon shows the state of the queue: a **green arrow** with a jumping
   animation (the frames of a `QTimer`: the arrow flips between the down and the up
   drawing, which reads as the icon moving up and down in the notification area) while
@@ -27,22 +34,19 @@ on `main`.
   nothing).
 
 ### Changed
-- The balloon that explains the tray is shown at startup (the first run with the
-  tray on), not only when the window is hidden: the tray is where the window is
-  brought back and where the program is quit. "X" in the title bar still hides the
-  window to the tray, the downloads keep running, and "Exit" in the tray menu is
-  the only way to quit.
-
-### Tests
-- The console panel (hidden state, splitter sizes, settings round-trip, the text of
-  the button), the tray menu with the console item, the colour of the tray icon and
-  the frames of the animation, and the balloon + sound of the finished downloads are
-  covered.
-
-### Changed
 - The browser is not launched when the program starts: the program opens its own
   window only, and the browser window appears when the user presses «Open
   browser». The console says it at startup, in the language of the interface.
+- The console panel is **hidden at startup**: from the first start the list of
+  found videos gets the whole window, and the row of buttons shows «Show
+  console».
+- The «Clear» button of the console text is shown only while the console panel
+  is on the screen: there is nothing to clear while the panel is hidden.
+- The balloon that explains the tray is shown at startup (the first run with the
+  tray on), not only when the window is hidden: the tray is where the window is
+  brought back and where the program is quit. "X" in the title bar still hides
+  the window to the tray, the downloads keep running, and "Exit" in the tray
+  menu is the only way to quit.
 
 ### Fixed
 - The banners a driver provokes are hidden in the browser window. Chrome for
@@ -55,8 +59,13 @@ on `main`.
   (the switch the installed Chrome and Edge read), so neither strip is shown.
 
 ### Tests
-- The flags that hide the banners are checked, and the startup path is checked
-  to leave the browser closed.
+- The console panel (hidden state at startup, splitter sizes, settings
+  round-trip, the text of the button, the «Clear» button with the panel), the
+  card cross (a found entry, a running task cancelled, a finished file kept),
+  the tray menu with the console item, the colour of the tray icon and the
+  frames of the animation, and the balloon + sound of the finished downloads are
+  covered. The flags that hide the banners are checked, and the startup path is
+  checked to leave the browser closed.
 
 ## [0.4.1] - 2026-11-11
 
