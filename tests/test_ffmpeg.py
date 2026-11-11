@@ -13,7 +13,15 @@ from pydownloader.ffmpeg.locate import (
     candidate_paths,
     locate_ffmpeg,
 )
-from pydownloader.ffmpeg.mux import merge_streams, mp3_command, remux_command, to_mp3
+from pydownloader.ffmpeg.mux import (
+    assemble,
+    is_ts,
+    merge_streams,
+    mp3_command,
+    remux_command,
+    stream_format,
+    to_mp3,
+)
 from pydownloader.ffmpeg.probe import headers_option, parse_height, parse_media
 from pydownloader.i18n import tr
 
@@ -23,6 +31,21 @@ Input #0, mov,mp4, from 'file.mp4':
   Stream #0:0(eng): Video: h264 (High) (avc1 / 0x0000001a), yuv420p, 1920x1080 [sqa], 3999 kb/s
   Stream #0:1(eng): Audio: aac (LC) (mp4a / 0x00000020), 48000 Hz, stereo, fltp, 128 kb/s
 """
+
+
+def test_ffmpeg_console_window_is_hidden():
+    """``CREATE_NO_WINDOW`` is the Windows flag 0x08000000, not zero.
+
+    A zero flag runs FFmpeg in a console window, so the program flashes a
+    terminal for every probe of a stream (spec 6.4).
+    """
+    from pydownloader.browser.chromium_installer import CREATE_NO_WINDOW as installer_flag
+    from pydownloader.ffmpeg.mux import CREATE_NO_WINDOW as mux_flag
+    from pydownloader.ffmpeg.probe import CREATE_NO_WINDOW as probe_flag
+
+    assert mux_flag == 0x08000000
+    assert probe_flag == 0x08000000
+    assert installer_flag == 0x08000000
 
 
 def test_bundled_bin_is_first(tmp_path: Path):
@@ -102,15 +125,64 @@ def test_mp3_command_re_encodes_with_the_chosen_bitrate():
     assert cmd[-3:] == ["-f", "mp3", "out.mp3"]
 
 
-def test_mp3_of_ts_segments_needs_the_aac_filter():
+def test_mp3_command_names_the_input_format_of_the_stream():
+    """A merged stream of fragments is told to FFmpeg: the file has no header.
+
+    The AAC bitstream filter is not used for MP3: the audio is decoded, not
+    copied, and a filter that does not fit the stream fails the task with
+    "Invalid argument" and an empty output file.
+    """
     cmd = mp3_command(
         Ffmpeg(path=Path("ffmpeg.exe"), label="bundled"),
         Path("audio.stream"),
         Path("out.mp3"),
         128,
-        ts=True,
+        "mpegts",
     )
-    assert cmd[cmd.index("-bsf:a") + 1] == "aac_adtstoasc"
+    fmt = cmd.index("-f")
+    assert cmd[fmt + 1] == "mpegts"
+    assert fmt < cmd.index("-i")
+    assert cmd[cmd.index("-i") + 1] == "audio.stream"
+    assert "-bsf:a" not in cmd
+
+
+def test_mp3_command_of_fmp4_fragments_is_told_as_mp4():
+    cmd = mp3_command(
+        Ffmpeg(path=Path("ffmpeg.exe"), label="bundled"),
+        Path("audio.stream"),
+        Path("out.mp3"),
+        192,
+        "mp4",
+    )
+    fmt = cmd.index("-f")
+    assert cmd[fmt + 1] == "mp4"
+    assert fmt < cmd.index("-i")
+    assert "-bsf:a" not in cmd
+
+
+def test_stream_format_of_the_segment_kind(tmp_path: Path):
+    assert stream_format([tmp_path / "a.m4s", tmp_path / "b.m4s"]) == "mp4"
+    assert stream_format([tmp_path / "a.ts", tmp_path / "b.ts"]) == "mpegts"
+    assert stream_format([tmp_path / "a.aac"]) == "aac"
+    assert stream_format([tmp_path / "a.mp3", tmp_path / "b.mp3"]) == "mp3"
+
+
+def test_stream_format_of_mixed_and_empty_kinds(tmp_path: Path):
+    """Mixed segments are left to the FFmpeg probe, an empty list is no format."""
+    assert stream_format([tmp_path / "a.ts", tmp_path / "b.m4s"]) is None
+    assert stream_format([tmp_path / "a.bin"]) is None
+    assert stream_format([]) is None
+
+
+def test_empty_list_is_not_ts(tmp_path: Path):
+    """An audio source has no video files: ``all()`` of an empty list is true.
+
+    The empty video list used to mean TS, so the AAC filter was applied to the
+    audio stream and FFmpeg exited with -22 and an empty MP3 file.
+    """
+    assert not is_ts([])
+    assert is_ts([tmp_path / "a.ts"])
+    assert not is_ts([tmp_path / "a.m4s"])
 
 
 def test_an_mp3_file_is_copied_without_re_encode(tmp_path: Path):
@@ -122,6 +194,69 @@ def test_an_mp3_file_is_copied_without_re_encode(tmp_path: Path):
     assert out.read_bytes() == b"ID3audio"
     assert result.out_path == out
     assert result.log == tr("ffmpeg_direct_mp3")
+
+
+def test_assemble_of_audio_only_segments_writes_mp3(tmp_path: Path, monkeypatch):
+    """A source of fMP4 audio fragments is merged and encoded to MP3.
+
+    The command gets the format of the merged stream, no AAC bitstream filter
+    (the audio is decoded, not copied), and the bitrate of the settings.
+    """
+    init = tmp_path / "audio-init.m4s"
+    first = tmp_path / "audio-00000.m4s"
+    init.write_bytes(b"init")
+    first.write_bytes(b"seg")
+    commands: list[list[str]] = []
+
+    def fake_run(command, on_line=None):
+        commands.append(list(command))
+        Path(command[-1]).write_bytes(b"mp3data")
+        return "encoded"
+
+    monkeypatch.setattr("pydownloader.ffmpeg.mux.run_ffmpeg", fake_run)
+    result = assemble(
+        [],
+        tmp_path / "out.mp3",
+        Ffmpeg(path=Path("ffmpeg.exe"), label="bundled"),
+        tmp_path,
+        [init, first],
+        192,
+    )
+    merged = (tmp_path / "audio.stream").read_bytes()
+    assert merged == b"initseg"
+    command = commands[0]
+    fmt = command.index("-f")
+    assert command[fmt + 1] == "mp4"
+    assert fmt < command.index("-i")
+    assert "-bsf:a" not in command
+    assert command[command.index("-b:a") + 1] == "192k"
+    assert command[-3:] == ["-f", "mp3", str(tmp_path / "out.mp3")]
+    assert result.out_path == tmp_path / "out.mp3"
+
+
+def test_assemble_audio_of_ts_segments_is_told_as_mpegts(tmp_path: Path, monkeypatch):
+    init = tmp_path / "audio-init.ts"
+    init.write_bytes(b"init")
+    commands: list[list[str]] = []
+
+    def fake_run(command, on_line=None):
+        commands.append(list(command))
+        Path(command[-1]).write_bytes(b"mp3data")
+        return "encoded"
+
+    monkeypatch.setattr("pydownloader.ffmpeg.mux.run_ffmpeg", fake_run)
+    assemble(
+        [],
+        tmp_path / "out.mp3",
+        Ffmpeg(path=Path("ffmpeg.exe"), label="bundled"),
+        tmp_path,
+        [init],
+        128,
+    )
+    command = commands[0]
+    fmt = command.index("-f")
+    assert command[fmt + 1] == "mpegts"
+    assert fmt < command.index("-i")
 
 
 def test_merge_streams_concatenates_in_order(tmp_path: Path):

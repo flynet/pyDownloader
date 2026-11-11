@@ -82,7 +82,8 @@ def test_install_runs_playwright_driver(tmp_path, fake_popen):
     command = captured["command"]
     assert command[-2:] == ["install", "chromium"]
     assert captured["kwargs"]["env"]["PLAYWRIGHT_BROWSERS_PATH"] == str(tmp_path / "browsers")
-    assert captured["kwargs"]["creationflags"] == 0
+    # 0x08000000 is CREATE_NO_WINDOW: zero shows the console of the driver.
+    assert captured["kwargs"]["creationflags"] == 0x08000000
     assert collected == [LINES[0], LINES[1]]
     assert result.ok
     assert result.message == "Chromium установлен"
