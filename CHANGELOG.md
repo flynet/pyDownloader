@@ -4,6 +4,32 @@ The format is [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versioning is [SemVer](https://semver.org/). A release is a `vX.Y.Z` tag
 on `main`.
 
+## [0.4.8] - 2026-11-11
+
+### Added
+- **A long title of a card is broken into lines** (spec 4.1 p.1): the card is as wide
+  as the list of cards, and the list is as wide as the window, so a long page title
+  takes the lines of its words the card can hold (two of them), the letters that do
+  not fit are marked by the sign of elision, the whole title is read in the tooltip,
+  and the card grows by height, never by width. The same rule keeps the link, the
+  quality line and the path of a saved file inside the card: a link and a path are
+  one word, so the middle of the line is kept for them and the end of the file name
+  stays on the card. Making the window narrow builds the lines of every card again
+  for the new width, so the list of cards never gets a horizontal scrollbar.
+- **The tooltip of the tray icon keeps the percent of every task** (spec 4.2 p.7):
+  Windows keeps the tooltip of the icon in a buffer of 128 characters, so a long name
+  of a downloading file is shortened — the budget of the text is spent on the report
+  of a line (the percent, the speed, the time left) first, the names take the rest by
+  the same share, the cut is marked by the sign of elision, and the lines of a long
+  queue that still do not fit go from the end, so the tooltip of the icon ends with
+  the percent of a task, not with the tail of a name.
+- The ampersand of a title is a letter of the name: the label of the title of a card
+  is written with no flag of a mnemonic, so "Rock & Roll" keeps its `&` and the
+  letter after it is not underlined.
+
+### Changed
+- The whole path of a saved file is read in the tooltip of its card.
+
 ## [0.4.7] - 2026-11-11
 
 ### Added

@@ -683,11 +683,11 @@ class MainWindow(QMainWindow):
         if not force and now < self._tooltip_due:
             return
         self._tooltip_due = now + TOOLTIP_MS / 1000
-        lines = [tray_speed_line(info, now) for info in self._runs.values()]
+        lines = [(info.name, tray_speed_line(info, now)) for info in self._runs.values()]
         pending = self.worker.pending() if self.worker is not None else []
         queued = max(len(pending) - len(self._runs), 0)
         if queued:
-            lines.append(tr("tray_tooltip_queued", n=queued))
+            lines.append(("", tr("tray_tooltip_queued", n=queued)))
         self.tray.set_progress_lines(lines)
 
     def clear_all_cards(self) -> None:

@@ -110,8 +110,14 @@ window size 900×600, size and position are remembered.
   console shrinks first.
 - Each card contains:
   - a type badge (HLS / DASH / MP4 / YOUTUBE / **MP3** for an audio source);
-  - a title (the page title on which the source was found);
-  - a link (truncated by width, full in a tooltip, context menu "Copy link");
+  - a title (the page title on which the source was found): the card is as wide as
+    the list of cards, so a long title is broken into the lines of its words the card
+    can hold (two at most), the letters that do not fit are marked by the sign of
+    elision, and the whole title is read in the tooltip. The card grows by height,
+    never by width, and the list of cards gets no horizontal scrollbar;
+  - a link (truncated by width, full in a tooltip, context menu "Copy link"); the
+    link and the path of a saved file are one word, so the middle of the line is
+    kept for them and the end of the file name stays on the card;
   - the quality preset (1080p / 720p / 480p), resolution and duration, or size,
     if known;
   - a **"Download"** button on the right;
@@ -319,7 +325,12 @@ window size 900×600, size and position are remembered.
   files that are downloading with the name, the percent, the speed, the time left,
   and the number of the tasks waiting. The text is rewritten at most once a
   second, because the tooltip of Windows is a heavy call; the start and the end of
-  a task are written at once. A source of unknown size shows the percent only.
+  a task are written at once. A source of unknown size shows the percent only. The
+  tooltip is kept by Windows in a buffer of 128 characters, so a long name of a
+  task is shortened: the budget of the text goes to the report of a line (percent,
+  speed, time left) first, the names take the rest by the same share, the cut is
+  marked by the sign of elision, and the lines that still do not fit go from the
+  end, so the tooltip ends with the percent of a task, not with the tail of a name.
 - If the system has no notification area (Windows Server, RDP, the offscreen CI
   of the tests), the tray icon is not created: "X" closes the program as before,
   the sound is not played, and the finished downloads are reported in the window

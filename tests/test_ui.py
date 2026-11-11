@@ -21,6 +21,8 @@ from pydownloader.ui.app_icon import ACCENT, BACKGROUND, TRAY_SIZE, WHITE, draw
 from pydownloader.ui.button_icons import ICON_SIZE, browser_icon, icon_color
 from pydownloader.ui.card import (
     DONE_COLOR,
+    ELLIPSIS,
+    TITLE_LINES,
     SourceCard,
     format_duration,
     format_quality,
@@ -58,7 +60,15 @@ from pydownloader.ui.theme import (
     contrast_ratio,
     qss_for,
 )
-from pydownloader.ui.tray import ACTIVE_COLOR, IDLE_COLOR, TrayController, make_tray
+from pydownloader.ui.tray import (
+    ACTIVE_COLOR,
+    BASE_TOOLTIP,
+    IDLE_COLOR,
+    TOOLTIP_LIMIT,
+    TrayController,
+    make_tray,
+    tooltip_text,
+)
 
 
 def entry(id: str = "s1", kind: str = "hls", height: int | None = 1080) -> SourceEntry:
@@ -128,6 +138,87 @@ def test_card_url_is_elided_with_tooltip(qtbot):
     qtbot.addWidget(card)
     assert len(card.url_label.text()) <= 91
     assert card.url_label.toolTip() == long
+
+
+def test_a_long_title_makes_the_card_taller_not_wider(qtbot, tmp_path):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    window.resize(1000, 800)
+    long = "Очень длинный клип с именем, которое не входит в одну линию " * 6
+    item = entry()
+    item.title = long
+    window.add_source(item)
+    QApplication.processEvents()
+    card = window.cards["s1"]
+    viewport = window.scroll_area.viewport().width()
+    # The card is as wide as the list of cards, and the list is as wide as the
+    # window: a long title takes the lines of the card, so the list of cards gets
+    # no horizontal scrollbar (spec 4.1 p.1).
+    assert card.width() <= viewport
+    assert window.scroll_area.horizontalScrollBar().maximum() == 0
+    lines = card.title_label.text().split("\n")
+    assert len(lines) <= TITLE_LINES
+    fm = card.title_label.fontMetrics()
+    for line in lines:
+        assert fm.horizontalAdvance(line) <= card.title_label.width()
+    # A label asks for the width of its text, so the height of the title is the
+    # room the card took: the title is read in the tooltip.
+    assert card.title_label.height() > fm.height()
+    assert card.title_label.toolTip() == long
+
+
+def test_a_narrow_window_rewrites_the_lines_of_the_card(qtbot, tmp_path):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    long = "Очень длинный клип " * 30
+    item = entry()
+    item.title = long
+    window.add_source(item)
+    window.resize(1000, 800)
+    QApplication.processEvents()
+    card = window.cards["s1"]
+    window.resize(520, 800)
+    QApplication.processEvents()
+    # The width the title has changed, so its lines are built again: the letters that
+    # do not fit are marked by the sign of elision, the whole title stays in the
+    # tooltip (spec 4.1 p.1).
+    lines = card.title_label.text().split("\n")
+    assert len(lines) == TITLE_LINES
+    assert ELLIPSIS in lines[-1]
+    assert card.title_label.toolTip() == long
+    assert card.width() <= window.scroll_area.viewport().width()
+    assert window.scroll_area.horizontalScrollBar().maximum() == 0
+
+
+def test_a_long_path_of_a_saved_file_does_not_widen_the_card(qtbot, tmp_path):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    window.resize(1000, 800)
+    window.add_source(entry())
+    QApplication.processEvents()
+    card = window.cards["s1"]
+    name = ("клип_с_очень_длинным_именем_файла" * 3) + ".mp4"
+    path = str(tmp_path / "файлы" / name)
+    card.set_result(path)
+    # A path is one word: the middle of the line is kept, so the quality and the end
+    # of the name stay on the card, and the whole path is read in the tooltip.
+    assert card.meta_label.toolTip() == path
+    assert ELLIPSIS in card.meta_label.text()
+    assert card.meta_label.text().startswith("1080p")
+    assert card.width() <= window.scroll_area.viewport().width()
+    assert window.scroll_area.horizontalScrollBar().maximum() == 0
+
+
+def test_the_ampersand_of_a_title_is_a_letter_of_the_name(qtbot):
+    item = entry()
+    item.title = "Rock & Roll"
+    card = SourceCard(item)
+    qtbot.addWidget(card)
+    card.show()
+    # The label of the title has no flag of a mnemonic: the ampersand of a name is
+    # a letter, not the underline of a key.
+    assert card.title_label.text() == "Rock & Roll"
+    assert int(card.title_label.alignment()) & int(Qt.TextFlag.TextShowMnemonic) == 0
 
 
 def test_card_state_machine(qtbot):
@@ -890,15 +981,19 @@ class FakeTray:
         self.hints: list[str] = []
         self.running: bool | None = None
         self.active: bool | None = None
-        self.lines: list[str] = []
+        #: The queue the window wrote: the name of a task and the line built from it.
+        self.lines: list[tuple[str, str]] = []
+        #: The text of the tooltip Windows would show: the queue within 128 characters.
+        self.tooltip: str = BASE_TOOLTIP
         self.theme: str | None = None
 
     def notify(self, text: str) -> None:
         self.hints.append(text)
 
-    def set_progress_lines(self, lines: list[str]) -> None:
+    def set_progress_lines(self, lines: list[tuple[str, str]]) -> None:
         """The tooltip text the window wrote for the notification area (spec 4.2 p.7)."""
         self.lines = lines
+        self.tooltip = tooltip_text(lines)
 
     def set_browser_running(self, running: bool) -> None:
         self.running = running
@@ -1630,19 +1725,91 @@ def test_the_tray_tooltip_lists_the_files_that_download(qtbot, tmp_path):
     window._task_started("s1", "Мой клип")
     # The window is in the tray and the mouse is over the icon: the tooltip is the
     # queue of the program, not a balloon (spec 4.2 p.7).
-    text = "\n".join(tray.lines)
-    assert "Мой клип" in text
-    assert tr("tray_tooltip_queued", n=1) in text
+    assert "Мой клип" in tray.tooltip
+    assert tr("tray_tooltip_queued", n=1) in tray.tooltip
 
     # The throttle of the tooltip is over, so the next progress is written.
     window._tooltip_due = 0.0
     window._task_progress("s1", 2, 4)
-    assert "50%" in "\n".join(tray.lines)
+    assert "50%" in tray.tooltip
 
     worker.queued.clear()
     window._task_finished("s1", str(tmp_path / "a.mp4"))
     # Nothing is downloading: the tooltip has no queue lines left.
     assert tray.lines == []
+
+
+def test_the_tooltip_of_a_long_task_name_keeps_the_percent(qtbot, tmp_path):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    tray = FakeTray()
+    window.tray = tray
+    worker = FakeWorker()
+    window.worker = worker
+
+    long = "Очень длинный клип, имя которого не входит в подсказку " * 4
+    window.add_source(entry("s1"))
+    window._start_download("s1")
+    window._task_started("s1", long)
+
+    # Windows keeps the tooltip of the icon in 128 characters, and the point of the
+    # tooltip is the percent of the task: the name is cut, the percent stays on the
+    # screen (spec 4.2 p.7).
+    text = tray.tooltip
+    assert len(text) <= TOOLTIP_LIMIT
+    assert "0%" in text
+    assert ELLIPSIS in text
+    assert long not in text
+    assert BASE_TOOLTIP in text
+
+
+def test_a_long_queue_shows_the_percent_of_every_line_of_the_tooltip(qtbot, tmp_path):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    tray = FakeTray()
+    window.tray = tray
+    worker = FakeWorker()
+    window.worker = worker
+
+    for i in range(4):
+        name = f"клип номер {i} " * 20
+        window.add_source(entry(f"s{i}"))
+        window._start_download(f"s{i}")
+        window._task_started(f"s{i}", name)
+
+    # The budget of characters is spent on the report of the queue first: every task
+    # that stays in the tooltip shows its percent, none is a line of pure name.
+    text = tray.tooltip
+    assert len(text) <= TOOLTIP_LIMIT
+    tasks = text.split("\n")[2:]
+    assert len(tasks) == 4
+    for line in tasks:
+        assert "%" in line
+        assert ELLIPSIS in line
+
+
+def test_the_tooltip_of_a_long_queue_never_grows_past_the_length_windows_keeps():
+    names = [("имя " * 40, "имя " * 40 + " — 42% · 3.1 MB/s · осталось 0:20") for _ in range(6)]
+    text = tooltip_text(names)
+    # The last lines are the ones that do not fit: the tooltip ends with the percent
+    # of a task, not with the tail of a name (spec 4.2 p.7).
+    assert len(text) <= TOOLTIP_LIMIT
+    lines = text.split("\n")
+    assert all("%" in line for line in lines[2:])
+    assert lines[0] == BASE_TOOLTIP
+
+
+def test_the_real_tray_icon_shows_the_percent_of_a_long_name(qtbot, tmp_path):
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    tray = TrayController(window, None)
+    long = "Очень длинный клип " * 30
+    info = RunInfo(long, 100 * 1024 * 1024, 42, 0.0)
+    tray.set_progress_lines([(long, tray_speed_line(info, 10.0))])
+    text = tray.toolTip()
+    assert len(text) <= TOOLTIP_LIMIT
+    assert "42%" in text
+    assert ELLIPSIS in text
 
 
 def test_the_card_cross_takes_a_running_file_out_of_the_tooltip(qtbot, tmp_path):
@@ -1656,7 +1823,7 @@ def test_the_card_cross_takes_a_running_file_out_of_the_tooltip(qtbot, tmp_path)
     window.add_source(entry("s1"))
     window._start_download("s1")
     window._task_started("s1", "Мой клип")
-    assert "Мой клип" in "\n".join(tray.lines)
+    assert "Мой клип" in tray.tooltip
 
     window._remove_entry("s1")
     # The task is cancelled and the file is out of the tooltip with the card.
