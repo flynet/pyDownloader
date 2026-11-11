@@ -6,6 +6,27 @@ on `main`.
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-11-11
+
+### Changed
+- The browser is not launched when the program starts: the program opens its own
+  window only, and the browser window appears when the user presses «Open
+  browser». The console says it at startup, in the language of the interface.
+
+### Fixed
+- The banners a driver provokes are hidden in the browser window. Chrome for
+  Testing (the Chromium Playwright ships) wrote "this build is for automated
+  testing" with a proposal to install a regular Chrome, and Chrome and Edge
+  wrote "you are using an unsupported command-line flag:
+  --disable-blink-features=AutomationControlled" under the address bar.
+  `--disable-infobars` stays in the Playwright defaults (the Chrome of Testing
+  is the only one that reads it) and `--test-type` is added to the launch
+  (the switch the installed Chrome and Edge read), so neither strip is shown.
+
+### Tests
+- The flags that hide the banners are checked, and the startup path is checked
+  to leave the browser closed.
+
 ## [0.4.1] - 2026-11-11
 
 ### Fixed

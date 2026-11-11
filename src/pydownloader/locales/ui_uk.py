@@ -99,6 +99,9 @@ TEXTS: dict[str, str] = {
     "app_log_file": "Файл журналу: {path}",
     "app_data_dir": "Дані програми: {path}",
     "app_profile_dir": "Профіль браузера: {path}",
+    "app_browser_hint": (
+        "Браузер не відкрито: натисніть «Відкрити браузер», коли захочете шукати відео."
+    ),
     "app_blocker_state": "Блодувач реклами: {state}",
     "app_blocker_disabled": "Блодувач реклами вимкнено у налаштуваннях",
     "app_chromium_offer": (

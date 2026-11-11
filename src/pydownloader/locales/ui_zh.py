@@ -105,6 +105,7 @@ TEXTS: dict[str, str] = {
     "app_log_file": "日志文件: {path}",
     "app_data_dir": "程序数据: {path}",
     "app_profile_dir": "浏览器配置: {path}",
+    "app_browser_hint": "浏览器未打开: 想查找视频时点击“打开浏览器”。",
     "app_blocker_state": "广告拦截器: {state}",
     "app_blocker_disabled": "设置中已关闭广告拦截器",
     "app_chromium_offer": (

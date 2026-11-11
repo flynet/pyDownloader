@@ -1,7 +1,8 @@
 # PyDownloader
 
-A Windows application for downloading video from the browser: it opens a controlled
-browser, intercepts network requests, finds HLS (`.m3u8`), MPEG-DASH (`.mpd`),
+A Windows application for downloading video from the browser: the user opens a
+controlled browser with the "Open browser" button, the program intercepts the
+network requests of that browser, finds HLS (`.m3u8`), MPEG-DASH (`.mpd`),
 direct MP4, YouTube streams and audio sources, and joins the downloaded segments
 with FFmpeg into one `.mp4` (a source of sound only is written as `.mp3`). The
 interface is dark by default; light and system themes are available in the
@@ -22,9 +23,13 @@ on the offscreen Qt platform.
 
 ## How it works
 
-1. Launch → pick the downloads folder (first run only).
-2. A browser and a window of two sections open: found videos (top) and console
-   (bottom). The browser already has the uBlock ad blocker enabled (see below).
+1. Launch → pick the downloads folder (first run only). The main window opens with
+   two sections: found videos (top) and console (bottom). **The browser is not
+   started automatically** — press "Open browser" when you want to look for a video.
+2. The browser window opens maximised on the last page you visited, with the uBlock
+   ad blocker enabled (see below). It carries no banners of a driver: neither
+   "this build is for automated testing" nor the "unsupported command-line flag"
+   strip under the address bar.
 3. The user visits the site and starts the video himself — the application intercepts
    manifests and shows what it found as cards. If the site signs every URL separately
    (e.g. phncdn), the download uses the exact signed URLs from the browser traffic.
@@ -85,7 +90,10 @@ program.
 ## Browser controls
 
 "Open browser" shows the browser window on the last page the user visited,
-maximised; "Close browser" closes it. Closing the browser window does not stop
+maximised; "Close browser" closes it. The program does not open the browser by
+itself: the first window of the run is the window of the program, and the
+browser appears only after the user presses the button, so nothing is launched
+in the background. Closing the browser window does not stop
 an active download: the segments are downloaded by the program itself, not by
 the browser, so the task finishes after the window is closed. When the browser
 is closed, its thread is replaced by a new one (the Playwright objects of a
@@ -156,7 +164,14 @@ the browser look like an ordinary user's browser:
   runs — after signing in to Google once the program is not asked to sign in
   again, and the same profile is sent to Google on every start;
 - autoplay is allowed, the browser starts maximised, and the window looks like
-  a normal browser window, not the stripped Playwright window.
+  a normal browser window, not the stripped Playwright window;
+- the banners a driver provokes are hidden: the Chrome for Testing that
+  Playwright ships writes "this build is for automated testing" with a proposal
+  to install a regular Chrome, and Chrome, Edge and that same build write "you
+  are using an unsupported command-line flag" under the address bar. The launch
+  keeps `--disable-infobars` in the defaults (the build of Testing answers to
+  it) and adds `--test-type` (the switch the installed Chrome and Edge answer
+  to), so none of these strips is shown.
 
 "Anti-bot" is a setting (on by default); turning it off returns the plain
 Playwright launch, which is useful to compare. The log records the launch

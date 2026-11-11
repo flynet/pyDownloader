@@ -60,12 +60,14 @@ FairPlay) is not supported: such videos are skipped.
 
 1. Program startup. The downloads-folder picker dialog (native Qt `QFileDialog`,
    the last used folder by default). Cancelling terminates the program.
-2. The main window opens and the browser opens in parallel. `.tmp\<task id>\` is
-   created in the chosen folder for segments. Finished files lie in the root of
-   the chosen folder.
-3. The user visits the site and starts the video. `NetworkSniffer` analyzes the
-   traffic. Sources that pass the filters (section 5) appear as cards in the top
-   section.
+2. The main window opens. **The browser is not launched by the program**: the
+   user opens it with the "Open browser" button when he wants to look for a
+   video. `.tmp\<task id>\` is created in the chosen folder for segments.
+   Finished files lie in the root of the chosen folder.
+3. The user opens the browser, visits the site and starts the video.
+   `NetworkSniffer` analyzes the traffic (it runs in the browser thread, so it
+   sees the requests only while the browser is open). Sources that pass the
+   filters (section 5) appear as cards in the top section.
 4. The user presses "Download" on the needed card. The task is queued, progress
    is shown inside that card.
 5. Downloads are **strictly sequential** (one worker). If "Download" was pressed
@@ -121,7 +123,8 @@ window size 900×600, size and position are remembered.
   - **"Clear downloaded"** — removes only the cards whose files are already
     downloaded and lie on disk;
   - **"Open browser"** — shows the browser window, maximised, on the page where
-    the user was last (starts the browser if it is not open);
+    the user was last (starts the browser if it is not open). The program does
+    not open the browser on its own: the window is opened by this button;
   - **"Close browser"** — closes the browser window. An active download is not
     cancelled and continues in the background.
   An active download is not cancelled when clearing and continues in the
@@ -382,6 +385,13 @@ blocked" when they see an automation tool. The requirements:
   `hardwareConcurrency`, `deviceMemory`, `window.chrome`, the notification
   permission, the brands of `navigator.userAgentData`), a normal maximised
   window, autoplay allowed;
+- the banners a driver provokes are hidden: Chrome for Testing (the Chromium
+  Playwright ships) prints "this build is for automated testing" with a proposal
+  to install a regular Chrome, and Chrome, Edge and that same build print "you
+  are using an unsupported command-line flag" under the address bar. The launch
+  keeps `--disable-infobars` in the defaults (only the build of Testing answers
+  to it) and adds `--test-type` (the switch the installed Chrome and Edge
+  answer to), so the browser window shows no strip a person never sees;
 - the browser is a full browser with a **persistent profile** (`{app}\profile`)
   that stores cookies, local storage, logins, extensions and site settings; the
   profile is fully saved when the program exits and is used again on the next
@@ -522,8 +532,8 @@ pydownloader/
 
 **Application**
 - After startup and the folder picker, the window opens: the top section is
-  empty with a hint, the bottom section shows the console, and the browser
-  opens in parallel.
+  empty with a hint, the bottom section shows the console, and no browser is
+  launched — the browser appears only after the user presses "Open browser".
 - On opened test HLS, DASH and direct MP4, the source automatically appears as
   a card with a title, a link and a "Download" button.
 - Downloading starts only after pressing the button. The card shows progress.
@@ -535,6 +545,10 @@ pydownloader/
 - "Open browser" shows the browser on the page where the user was last,
   "Close browser" closes it; an active download is not interrupted by closing
   the browser window.
+- The browser window has no strip a person never sees: no "this build is for
+  automated testing" with a proposal to install a regular Chrome, no "you are
+  using an unsupported command-line flag", and no console window flashes on the
+  desktop while a page is sniffed.
 - "X" hides the window to the tray and the download keeps running; the program
   exits only through the tray menu ("Exit"), where the window, the browser, the
   update check and the downloads folder are also available.

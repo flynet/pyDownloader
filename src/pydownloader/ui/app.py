@@ -159,6 +159,8 @@ def create_window(app: QApplication, settings: Settings, paths: Paths) -> MainWi
     window.logger.info(tr("app_data_dir", path=paths.data_dir))
     window.logger.info(tr("app_profile_dir", path=paths.profile_dir))
     window.logger.info(f"FFmpeg: {ffmpeg.path}")
+    # The browser is opened by the button, so say where to look for it (spec 4.3).
+    window.logger.info(tr("app_browser_hint"))
     return window
 
 
@@ -349,7 +351,8 @@ def main(argv: list[str] | None = None) -> int:
     tray = make_tray(window, icon) if settings.tray_enabled else None
     if tray is not None:
         app.setQuitOnLastWindowClosed(False)
-    start_browser(window, settings, paths)
+    # The browser is not launched here: the user opens it with the "Open browser"
+    # button when he wants it (spec 4.3), and the sniffer runs only with it.
     window.show()
     if window.updater is not None:
         window.updater.check_on_startup()

@@ -20,11 +20,13 @@ from pydownloader.i18n import Language
 #: Flags Playwright adds for its own automation: they tell a site that a script
 #: drives the browser, and the first of them is why Chrome ignores
 #: ``--load-extension`` of the ad blocker. They are taken out of the defaults.
+#: ``--disable-infobars`` stays in the defaults: the browser of Playwright is a
+#: Chrome for Testing build, and this flag is the only way to hide its banners
+#: ("this build is for automated testing", "an unsupported command-line flag").
 IGNORED_DEFAULT_ARGS = [
     "--disable-extensions",
     "--disable-field-trial-config",
     "--disable-dev-shm-usage",
-    "--disable-infobars",
     "--disable-stack-profiler",
     "--disable-sync",
     "--force-color-profile=srgb",
@@ -40,11 +42,15 @@ IGNORED_DEFAULT_ARGS = [
 ]
 #: Flags of a browser a person opened: the automation marker is off, the page is
 #: allowed to start playing without a click (the sniffer needs the first frame),
-#: and no infobar about the automation is drawn.
+#: and no infobar about the automation is drawn. ``--test-type`` is the switch
+#: Chrome and Edge answer to: they ignore ``--disable-infobars``, and without it
+#: they draw "you are using an unsupported command-line flag" under the address
+#: bar, exactly the banner a person never sees.
 STEALTH_ARGS = [
     "--disable-blink-features=AutomationControlled",
     "--autoplay-policy=no-user-gesture-required",
     "--disable-features=AutomationControlled",
+    "--test-type",
 ]
 #: Language code of ``Accept-Language`` and of ``navigator.languages`` for each
 #: language of the interface, in the BCP 47 form Chrome writes.

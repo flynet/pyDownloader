@@ -29,6 +29,16 @@ def test_the_flags_a_driver_leaves_are_dropped_from_the_defaults():
     assert "--metrics-recording-only" in IGNORED_DEFAULT_ARGS
 
 
+def test_the_banners_a_person_never_sees_are_hidden():
+    # Chrome for Testing writes "this build is for automated testing" under the
+    # address bar, Chrome and Edge write "you are using an unsupported
+    # command-line flag". --disable-infobars stays in the defaults (only the
+    # Chrome of Testing answers to it), --test-type is the flag Chrome honours.
+    args = launch_args([], None, True)
+    assert "--test-type" in args
+    assert "--disable-infobars" not in IGNORED_DEFAULT_ARGS
+
+
 def test_stealth_off_keeps_the_flags_of_playwright():
     assert launch_args(["--no-first-run"], None, False) == ["--no-first-run"]
 
