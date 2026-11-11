@@ -268,3 +268,21 @@ def test_open_browser_without_a_resolved_browser_starts_the_first_one(
     app_mod.open_browser(window, Settings(), make_paths(tmp_path))
 
     assert started == ["launch"]
+
+
+def test_startup_leaves_the_browser_closed(tmp_path: Path, qapp, qtbot, monkeypatch):
+    """The program starts without a browser: the user opens it with the button (spec 4.3).
+
+    The startup path is the window itself, so the test runs :func:`create_window`
+    and looks at what the window owns: no thread, no resolved browser, and the
+    console telling where to start the browser.
+    """
+    monkeypatch.setattr(app_mod, "locate_ffmpeg", lambda root: Ffmpeg(Path("ffmpeg.exe"), "FFmpeg"))
+    settings = Settings(download_dir=str(tmp_path))
+    window = app_mod.create_window(qapp, settings, make_paths(tmp_path))
+    qtbot.addWidget(window)
+
+    assert window.sniffer is None
+    assert window.browser_choice is None
+    # The console names the button, so an empty window is not a mystery.
+    assert "Открыть браузер" in window.console.toPlainText()

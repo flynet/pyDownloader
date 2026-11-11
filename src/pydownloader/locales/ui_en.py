@@ -104,6 +104,9 @@ TEXTS: dict[str, str] = {
     "app_log_file": "Log file: {path}",
     "app_data_dir": "Program data: {path}",
     "app_profile_dir": "Browser profile: {path}",
+    "app_browser_hint": (
+        "The browser is not open: press \"Open browser\" when you want to look for a video."
+    ),
     "app_blocker_state": "Ad blocker: {state}",
     "app_blocker_disabled": "Ad blocker is switched off in the settings",
     "app_chromium_offer": (
