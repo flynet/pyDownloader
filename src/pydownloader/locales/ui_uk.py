@@ -29,6 +29,12 @@ TEXTS: dict[str, str] = {
     "window_open_download_folder": "Відкрити теку завантажень",
     "window_open_log": "Відкрити файл журналу",
     "window_settings": "⚙ Налаштування",
+    "window_open_console": "Показати консоль",
+    "console_show": "Показати консоль",
+    "console_show_tip": "Консоль знову під списком відео",
+    "console_hide": "Сховати консоль",
+    "console_hide_tip": "Список відео займе все вікно",
+    "console_shown": "Консоль показана",
     "window_quit_question": "Завантаження триває. Скасувати його та вийти?",
     "window_download_folder_title": "Тека завантажень",
     "window_found_videos": "Знайдено відео",
@@ -54,7 +60,9 @@ TEXTS: dict[str, str] = {
     "window_browser_open_already": "Браузер уже відкрито",
     "window_browser_not_running": "Браузер не працює",
     "window_browser_stopping": "Закриваю браузер...",
-    "window_hidden_to_tray": "Вікно приховано в треї",
+    "window_in_tray": "Програма в треї",
+    "window_all_done": "Усі завантаження завершено: збережено {n}",
+    "window_hidden_to_tray": 'Вікно приховано в треї',
     "tray_show": "Показати вікно",
     "tray_open_browser": "Відкрити браузер",
     "tray_close_browser": "Закрити браузер",
@@ -62,6 +70,7 @@ TEXTS: dict[str, str] = {
     "tray_open_folder": "Відкрити теку завантажень",
     "tray_quit": "Вихід",
     "tray_hint": "PyDownloader у треї: дворічний клік по іконці відкриває вікно.",
+    "tray_download": "Усі завантаження завершено: збережено {n}",
     # --- діалог налаштувань (spec 4.3, 8.1) ------------------------------
     "settings_title": "Налаштування PyDownloader",
     "settings_download_folder": "Тека качаних відео",
@@ -90,7 +99,9 @@ TEXTS: dict[str, str] = {
     "settings_restart_hint": "Мова застосовується після перезапуску програми.",
     "settings_restart": "Перезапустити",
     "settings_tray": "Показувати іконку в области сповіщень",
-    "settings_close_tray": "Ховати вікно в трей при закритті",
+    "settings_console": "Показувати консоль під списком",
+    "settings_console_tip": "Прихована консоль віддає все вікно списку знайдених відео",
+    "settings_close_tray": 'Ховати вікно в трей при закритті',
     "theme_dark": "Темна",
     "theme_light": "Світла",
     "theme_system": "Системна",
@@ -102,11 +113,11 @@ TEXTS: dict[str, str] = {
     "app_browser_hint": (
         "Браузер не відкрито: натисніть «Відкрити браузер», коли захочете шукати відео."
     ),
+    "app_console_hint": "Консоль: кнопки під списком показують її і приховують",
     "app_blocker_state": "Блодувач реклами: {state}",
     "app_blocker_disabled": "Блодувач реклами вимкнено у налаштуваннях",
     "app_chromium_offer": (
-        "Chrome і Edge не знайдено. Завантажити Chromium від Playwright "
-        "(близько 170 МБ, один раз)?"
+        "Chrome і Edge не знайдено. Завантажити Chromium від Playwright (близько 170 МБ, один раз)?"
     ),
     "app_chromium_offer_blocker": (
         "Блодувачу реклами потрібен Chromium від Playwright (близько 170 МБ, "

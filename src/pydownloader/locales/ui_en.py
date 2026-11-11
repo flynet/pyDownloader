@@ -34,6 +34,12 @@ TEXTS: dict[str, str] = {
     "window_open_download_folder": "Open download folder",
     "window_open_log": "Open log file",
     "window_settings": "⚙ Settings",
+    "window_open_console": "Show console",
+    "console_show": "Show console",
+    "console_show_tip": "The console panel comes back below the list",
+    "console_hide": "Hide console",
+    "console_hide_tip": "The list of videos takes the whole window",
+    "console_shown": "Console panel is shown",
     "window_quit_question": "A download is running. Cancel it and exit?",
     "window_download_folder_title": "Download folder",
     "window_found_videos": "Found videos",
@@ -59,7 +65,9 @@ TEXTS: dict[str, str] = {
     "window_browser_open_already": "The browser is already open",
     "window_browser_not_running": "The browser is not running",
     "window_browser_stopping": "Closing the browser...",
-    "window_hidden_to_tray": "The window is hidden in the tray",
+    "window_in_tray": "The program is in the tray",
+    "window_all_done": "All downloads are finished: {n} saved",
+    "window_hidden_to_tray": 'The window is hidden in the tray',
     "tray_show": "Show the window",
     "tray_open_browser": "Open browser",
     "tray_close_browser": "Close browser",
@@ -67,6 +75,7 @@ TEXTS: dict[str, str] = {
     "tray_open_folder": "Open download folder",
     "tray_quit": "Exit",
     "tray_hint": "PyDownloader is in the tray: double-click the icon to open the window.",
+    "tray_download": "All downloads are finished: {n} saved",
     # --- settings dialog (spec 4.3, 8.1) -----------------------------------
     "settings_title": "PyDownloader settings",
     "settings_download_folder": "Folder of the downloaded videos",
@@ -95,7 +104,9 @@ TEXTS: dict[str, str] = {
     "settings_restart_hint": "The language is applied after the program restarts.",
     "settings_restart": "Restart",
     "settings_tray": "Show the icon in the notification area",
-    "settings_close_tray": "Hide the window to the tray when closing",
+    "settings_console": "Show the console panel below the list",
+    "settings_console_tip": "Hidden, the list of found videos takes the whole window",
+    "settings_close_tray": 'Hide the window to the tray when closing',
     "theme_dark": "Dark",
     "theme_light": "Light",
     "theme_system": "System",
@@ -105,13 +116,13 @@ TEXTS: dict[str, str] = {
     "app_data_dir": "Program data: {path}",
     "app_profile_dir": "Browser profile: {path}",
     "app_browser_hint": (
-        "The browser is not open: press \"Open browser\" when you want to look for a video."
+        'The browser is not open: press "Open browser" when you want to look for a video.'
     ),
+    "app_console_hint": "Console panel: the row of buttons under the list shows it and hides it",
     "app_blocker_state": "Ad blocker: {state}",
     "app_blocker_disabled": "Ad blocker is switched off in the settings",
     "app_chromium_offer": (
-        "Chrome and Edge are not found. Download Chromium from Playwright "
-        "(about 170 MB, once)?"
+        "Chrome and Edge are not found. Download Chromium from Playwright (about 170 MB, once)?"
     ),
     "app_chromium_offer_blocker": (
         "The ad blocker needs Chromium from Playwright (about 170 MB, once).\n\n"

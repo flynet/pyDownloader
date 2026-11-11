@@ -167,13 +167,18 @@ class SettingsDialog(QDialog):
         self.theme_box.setCurrentIndex(max(0, self.theme_box.findData(settings.theme)))
         self._form.addRow(tr("settings_theme_row"), self.theme_box)
 
-        # The tray keeps the program running when the window is hidden (spec 4.3).
+        # The tray keeps the program reachable when the window is hidden (spec 4.3).
         self.tray_check = QCheckBox(tr("settings_tray"))
         self.tray_check.setChecked(settings.tray_enabled)
         self._form.addRow("", self.tray_check)
         self.close_tray_check = QCheckBox(tr("settings_close_tray"))
         self.close_tray_check.setChecked(settings.close_to_tray)
         self._form.addRow("", self.close_tray_check)
+        # The console panel: hidden, the list of videos takes the whole window (spec 4.2 p.5).
+        self.console_check = QCheckBox(tr("settings_console"))
+        self.console_check.setToolTip(tr("settings_console_tip"))
+        self.console_check.setChecked(settings.console_open)
+        self._form.addRow("", self.console_check)
 
         self.update_check = QCheckBox(tr("settings_check_updates"))
         self.update_check.setChecked(settings.auto_update)
@@ -251,6 +256,7 @@ class SettingsDialog(QDialog):
         target.auto_update = self.update_check.isChecked()
         target.tray_enabled = self.tray_check.isChecked()
         target.close_to_tray = self.close_tray_check.isChecked()
+        target.console_open = self.console_check.isChecked()
         target.browser_name = cast(BrowserName, self.browser_box.currentData())
         target.user_agent = self.agent_edit.text().strip()
         target.anti_bot = self.anti_bot_check.isChecked()

@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import logging
 import subprocess
+import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import cast
 
@@ -52,6 +54,10 @@ MIN_HEIGHT = 600
 #: Split sizes of the two sections: about 40% for the cards, 60% for the console.
 SPLIT_TOP = 400
 SPLIT_BOTTOM = 600
+#: Split sizes with the console hidden: the list of cards takes the whole window,
+#: the console panel is not shown (spec 4.2 p.5), the handle keeps its 6 px.
+SPLIT_CARDS_ONLY = 1000
+SPLIT_CONSOLE_MIN = 12
 
 
 class LogBridge(QObject):
@@ -123,6 +129,13 @@ class MainWindow(QMainWindow):
         splitter.setCollapsible(1, False)
         splitter.setHandleWidth(6)
         self.splitter = splitter
+        #: The console panel is hidden: the list of cards fills the window (spec 4.2 p.5).
+        self._console_hidden = not settings.console_open
+        self._count_done = 0
+        #: The sound of the finished downloads (spec 4.2 p.7); a test replaces it.
+        self.play_sound: Callable[[], None] = play_notification
+        if self._console_hidden:
+            self._hide_console()
 
         central = QWidget()
         layout = QVBoxLayout(central)
@@ -136,6 +149,13 @@ class MainWindow(QMainWindow):
         self.statusBar().addPermanentWidget(self.update_label)
 
         self._connect()
+
+        # The program starts with the browser closed, so the console has nothing to
+        # show: the window says what to press (spec 4.3), and the hidden panel says
+        # which button opens it back (spec 4.2 p.5).
+        self.log_info(tr("app_browser_hint"))
+        if self._console_hidden:
+            self.log_info(tr("app_console_hint"))
 
     # --- widgets ---------------------------------------------------------
 
@@ -195,12 +215,18 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
 
         row = QHBoxLayout()
+        # «Скрыть консоль» gives the whole window back to the list of cards, so the
+        # row of buttons stays on the screen: it is the way to show the panel again.
+        self.console_button = QPushButton(tr("console_hide"))
+        self.console_button.setToolTip(tr("console_hide_tip"))
+        self.console_button.clicked.connect(self.toggle_console)
         clear = QPushButton(tr("window_clear"))
         clear.clicked.connect(console.clear_panel)
         folder = QPushButton(tr("window_open_download_folder"))
         folder.clicked.connect(self.open_download_folder)
         log = QPushButton(tr("window_open_log"))
         log.clicked.connect(self._open_log_file)
+        row.addWidget(self.console_button)
         row.addWidget(clear)
         row.addWidget(folder)
         row.addWidget(log)
@@ -272,6 +298,39 @@ class MainWindow(QMainWindow):
 
     # --- console ---------------------------------------------------------
 
+    def toggle_console(self) -> None:
+        """«Show console» / «Hide console»: the list of cards gets the whole window."""
+        if self._console_hidden:
+            self.show_console()
+        else:
+            self._hide_console()
+
+    def show_console(self) -> None:
+        """The console panel comes back with the room it had before (spec 4.2 p.5)."""
+        self._console_hidden = False
+        self.console.setVisible(True)
+        self.splitter.setSizes([SPLIT_TOP, SPLIT_BOTTOM])
+        self.console_button.setText(tr("console_hide"))
+        self.console_button.setToolTip(tr("console_hide_tip"))
+        self.settings.console_open = True
+        self._save_settings()
+        self.log_info(tr("console_shown"))
+
+    def _hide_console(self) -> None:
+        """Only the text of the console is hidden, the row of buttons stays visible.
+
+        The panel is half the window, which is what the list of cards has to have
+        for a person who is picking a video, so the panel is taken away and the
+        state is stored: the window opens the next time the way the user left it.
+        """
+        self._console_hidden = True
+        self.console.setVisible(False)
+        self.splitter.setSizes([SPLIT_CARDS_ONLY, SPLIT_CONSOLE_MIN])
+        self.console_button.setText(tr("console_show"))
+        self.console_button.setToolTip(tr("console_show_tip"))
+        self.settings.console_open = False
+        self._save_settings()
+
     def log_info(self, message: str) -> None:
         self.logger.info(message)
 
@@ -329,6 +388,10 @@ class MainWindow(QMainWindow):
         self.worker.enqueue(card.entry)
         card.set_state("queued")
         self.log_info(tr("window_queued", title=card.entry.title or card.entry.url))
+        if self.tray is not None:
+            # The tray is the place the user looks at when the window is minimized:
+            # the green arrow says that the program is downloading (spec 4.2 p.7).
+            self.tray.set_download_active(True)
 
     def _cancel_download(self, entry_id: str) -> None:
         if self.worker is not None:
@@ -337,6 +400,22 @@ class MainWindow(QMainWindow):
         if card is not None:
             card.set_error(tr("card_cancelled"))
             self._sync_card_heights()
+        if self._queue_drained():
+            self._report_queue_done()
+
+    def _queue_drained(self) -> bool:
+        """Whether the queue is empty now: the last task of the worker is done."""
+        return self.worker is None or not self.worker.pending()
+
+    def _report_queue_done(self) -> None:
+        """Every download is over: the tray goes back to blue, a balloon and a sound
+        tell it to the user, who may have the window minimized in the tray (spec 4.2 p.7).
+        """
+        if self.tray is not None:
+            self.tray.set_download_active(False)
+            self.tray.notify(tr("tray_download", n=self._count_done))
+        self.play_sound()
+        self.log_info(tr("window_all_done", n=self._count_done))
 
     def clear_all_cards(self) -> None:
         """«Очистить все»: remove every found video from the list.
@@ -421,7 +500,10 @@ class MainWindow(QMainWindow):
             self.out_paths[entry_id] = Path(path)
             card.set_result(path)
             self._sync_card_heights()
+        self._count_done += 1
         self.log_info(tr("window_finished", path=path))
+        if self._queue_drained():
+            self._report_queue_done()
 
     def _task_failed(self, entry_id: str, message: str) -> None:
         card = self.cards.get(entry_id)
@@ -429,6 +511,8 @@ class MainWindow(QMainWindow):
             card.set_error(message)
             self._sync_card_heights()
         self.log_error(tr("window_task_failed", title=message))
+        if self._queue_drained():
+            self._report_queue_done()
 
     def _open_result_file(self, entry_id: str) -> None:
         """«Открыть файл»: play the downloaded video with the default player."""
@@ -472,18 +556,24 @@ class MainWindow(QMainWindow):
             if app is not None:
                 apply_theme(cast(QApplication, app), self.settings.theme)
                 self._apply_tray_state(cast(QApplication, app))
+            # The console row of the settings decides what the window shows (spec 4.2 p.5),
+            # so the panel is brought to the state the user chose.
+            if self.settings.console_open == self._console_hidden:
+                self.toggle_console()
             self._save_settings()
 
     def _apply_tray_state(self, app: QApplication) -> None:
         """The tray is created the first time the setting is turned on (spec 4.3).
 
         Turning it off removes the icon: the window becomes a normal window, so
-        Qt quits when it is closed, and «X» is no longer a way to hide.
+        Qt quits when it is closed. «X» is a normal close, and the tray menu is
+        the place the program is quit from.
         """
         if self.settings.tray_enabled:
             if self.tray is None:
                 make_tray(self, icon_path())
                 app.setQuitOnLastWindowClosed(False)
+                self.hint_tray()
         elif self.tray is not None:
             self.tray.hide()
             self.tray = None
@@ -515,9 +605,13 @@ class MainWindow(QMainWindow):
     # --- closing ---------------------------------------------------------
 
     def closeEvent(self, event) -> None:  # Qt naming
+        # «X» hides the window to the tray, the downloads and the browser stay alive
+        # (spec 4.3 p.4). A real exit (tray «Exit», restart, update install) is
+        # marked by ``_quitting``, so the teardown below runs for it.
         if self._hide_to_tray():
             event.ignore()
             return
+        self._quitting = True
         worker = self.worker
         if worker is not None:
             pending = worker.pending()
@@ -541,10 +635,24 @@ class MainWindow(QMainWindow):
             self.sniffer.wait(5000)
         self._save_settings()
 
+    def hint_tray(self) -> None:
+        """The balloon of the first start: the program lives in the tray (spec 4.3).
+
+        Shown once, the flag is stored, so the hint is not repeated on the next
+        run. The tray is where the window is brought back and where the program
+        is quit, so the first start has to point at it.
+        """
+        if self.tray is None or self.settings.tray_hint_seen:
+            return
+        self.tray.notify(tr("tray_hint"))
+        self.log_info(tr("window_in_tray"))
+        self.settings.tray_hint_seen = True
+        self._save_settings()
+
     def _hide_to_tray(self) -> bool:
         """«X» keeps the program in the tray: the threads stay alive (spec 4.3).
 
-        A real exit (tray «Выход», restart, update install) is marked by
+        A real exit (tray «Exit», restart, update install) is marked by
         ``_quitting``, so it runs the teardown of ``closeEvent``.
         """
         if self._quitting or self.tray is None:
@@ -553,12 +661,16 @@ class MainWindow(QMainWindow):
             return False
         self.hide()
         self.log_info(tr("window_hidden_to_tray"))
-        if not self.settings.tray_hint_seen:
-            # The first time the user has to learn that the program is still running.
-            self.tray.notify(tr("tray_hint"))
-            self.settings.tray_hint_seen = True
-            self._save_settings()
+        self._hint_tray_once()
         return True
+
+    def _hint_tray_once(self) -> None:
+        """The balloon of the first hide, shown once (spec 4.3)."""
+        if self.tray is None or self.settings.tray_hint_seen:
+            return
+        self.tray.notify(tr("tray_hint"))
+        self.settings.tray_hint_seen = True
+        self._save_settings()
 
 
 def geometry_hex(data: QByteArray) -> str:
@@ -569,6 +681,20 @@ def geometry_hex(data: QByteArray) -> str:
 def geometry_from_hex(text: str) -> QByteArray:
     """Geometry bytes read back from the settings string."""
     return QByteArray.fromHex(text.encode("ascii"))
+
+
+def play_notification() -> None:
+    """The system sound of the finished downloads (spec 4.2 p.7).
+
+    The sound of Windows is used, so the program needs no sound file of its own.
+    A platform without ``winsound`` (Linux, the CI of the tests) plays nothing:
+    there the balloon of the tray is the report the user sees as well.
+    """
+    if sys.platform != "win32":
+        return
+    import winsound
+
+    winsound.PlaySound("SystemAsterisk", winsound.SND_ALIAS | winsound.SND_ASYNC)
 
 
 def _show_in_explorer(folder: Path) -> None:
