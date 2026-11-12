@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import tempfile
 from dataclasses import replace
 from pathlib import Path
@@ -99,6 +100,113 @@ def make_paths(tmp_path: Path) -> Paths:
         browsers_dir=tmp_path / "browsers",
         profile_dir=tmp_path / "profile",
     )
+
+
+class FakeSslSocket:
+    """Stand-in of Qt's TLS socket: only the choice of the backend is checked."""
+
+    backend = ""
+    backends: list[str] = []
+
+    @classmethod
+    def availableBackends(cls) -> list[str]:
+        return cls.backends
+
+    @classmethod
+    def setActiveBackend(cls, name: str) -> bool:
+        if name not in cls.backends:
+            return False
+        cls.backend = name
+        return True
+
+
+def test_windows_uses_its_own_tls_instead_of_an_openssl_from_path(monkeypatch):
+    """A conda libssl in PATH cannot break the stills: Qt takes Schannel (spec 4.1).
+
+    Qt loads ``libssl-3-x64.dll`` by name; Miniconda keeps its own copy in PATH,
+    while Python already loaded the ``libcrypto-3-x64.dll`` of a different version.
+    The native Windows TLS backend needs neither DLL, so the choice is made before
+    any picture is read.
+    """
+    monkeypatch.setattr(app_mod.sys, "platform", "win32")
+    monkeypatch.setattr(app_mod, "QSslSocket", FakeSslSocket)
+    FakeSslSocket.backend = ""
+    FakeSslSocket.backends = ["cert-only", "schannel"]
+
+    app_mod.use_windows_tls()
+
+    assert FakeSslSocket.backend == "schannel"
+
+
+def test_a_qt_without_schannel_keeps_its_backend(monkeypatch):
+    """An old Qt is left as it is: the program starts even when Schannel is absent."""
+    monkeypatch.setattr(app_mod.sys, "platform", "win32")
+    monkeypatch.setattr(app_mod, "QSslSocket", FakeSslSocket)
+    FakeSslSocket.backend = ""
+    FakeSslSocket.backends = ["cert-only", "openssl"]
+
+    app_mod.use_windows_tls()
+
+    assert FakeSslSocket.backend == ""
+
+
+def test_a_non_windows_system_keeps_qt_tls(monkeypatch):
+    monkeypatch.setattr(app_mod.sys, "platform", "linux")
+    monkeypatch.setattr(app_mod, "QSslSocket", FakeSslSocket)
+    FakeSslSocket.backend = ""
+    FakeSslSocket.backends = ["openssl"]
+
+    app_mod.use_windows_tls()
+
+    assert FakeSslSocket.backend == ""
+
+
+def test_a_foreign_openssl_is_taken_out_of_path(tmp_path, monkeypatch):
+    """A conda libssl in PATH is dropped before Qt can look for it (spec 4.1).
+
+    Windows resolves ``libssl-3-x64.dll`` by name, and Miniconda keeps its own copy
+    in ``Library\\bin``. Qt loaded it next to the OpenSSL of Python and stopped with
+    «entry point OPENSSL_LH_set_thunks not found»; the folder is removed from PATH,
+    so the DLL is not found at all.
+    """
+    prefix = tmp_path / "python"
+    own = prefix / "DLLs"
+    own.mkdir(parents=True)
+    (own / "libssl-3-x64.dll").write_bytes(b"")
+    foreign = tmp_path / "miniconda" / "Library" / "bin"
+    foreign.mkdir(parents=True)
+    (foreign / "libssl-3-x64.dll").write_bytes(b"")
+    plain = tmp_path / "tools"
+    plain.mkdir()
+    monkeypatch.setattr(app_mod.sys, "platform", "win32")
+    monkeypatch.setattr(app_mod.sys, "base_prefix", str(prefix))
+    monkeypatch.setenv("PATH", os.pathsep.join([str(foreign), str(plain), str(own)]))
+    silenced: list[bool] = []
+    monkeypatch.setattr(
+        app_mod, "silence_loader_errors", lambda: silenced.append(True)
+    )
+
+    app_mod.avoid_foreign_openssl()
+
+    assert os.environ["PATH"] == os.pathsep.join([str(plain), str(own)])
+    assert silenced == [True]
+
+
+def test_a_non_windows_system_keeps_its_path(tmp_path, monkeypatch):
+    foreign = tmp_path / "conda" / "bin"
+    foreign.mkdir(parents=True)
+    (foreign / "libssl-3-x64.dll").write_bytes(b"")
+    monkeypatch.setattr(app_mod.sys, "platform", "linux")
+    monkeypatch.setenv("PATH", str(foreign))
+    silenced: list[bool] = []
+    monkeypatch.setattr(
+        app_mod, "silence_loader_errors", lambda: silenced.append(True)
+    )
+
+    app_mod.avoid_foreign_openssl()
+
+    assert os.environ["PATH"] == str(foreign)
+    assert silenced == []
 
 
 class FakeWindow:

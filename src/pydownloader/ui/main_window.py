@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import cast
 
 from PySide6.QtCore import QByteArray, QObject, Qt, QThread, QUrl, Signal
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QDesktopServices, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -62,6 +62,7 @@ from pydownloader.ui.card import SourceCard, format_duration
 from pydownloader.ui.console import ConsolePanel
 from pydownloader.ui.settings_panel import SettingsDialog
 from pydownloader.ui.theme import apply_theme
+from pydownloader.ui.thumbnail import ThumbnailLoader, preview_url
 from pydownloader.ui.tray import TrayController, make_tray
 from pydownloader.update.ui import UpdateMonitor
 
@@ -168,6 +169,13 @@ class MainWindow(QMainWindow):
         self._danger = icon_color("danger", settings.theme)
         self.cards: dict[str, SourceCard] = {}
         self.out_paths: dict[str, Path] = {}
+        #: Found videos whose still is on its way: the card is added after the
+        #: picture has arrived, so the list never shows a card with an empty frame.
+        self._pending_cards: dict[str, SourceEntry] = {}
+        #: Reader of the stills of the videos: the bytes come in the event loop of
+        #: the window, so a slow picture never freezes the list (spec 4.1).
+        self.thumbnail_loader = ThumbnailLoader(self)
+        self.thumbnail_loader.loaded.connect(self._thumbnail_loaded)
         #: The tasks that are downloading, for the tooltip of the tray (spec 4.2 p.7).
         self._runs: dict[str, RunInfo] = {}
         #: The moment the tooltip of the tray may be written again.
@@ -586,10 +594,29 @@ class MainWindow(QMainWindow):
     # --- cards -----------------------------------------------------------
 
     def add_source(self, entry: SourceEntry) -> None:
-        """A source passed the filters: add its card under the existing ones."""
+        """A source passed the filters: add its card under the existing ones.
+
+        A video card carries the still the page painted for it: the sniffer gives
+        the address, the window reads the bytes, and the card is added once the
+        picture is decoded, so the list never shows a card with an empty frame.
+        An audio source has no still and is added at once: its card is the name of
+        what is downloaded (spec 4.1).
+        """
+        if entry.id in self.cards or entry.id in self._pending_cards:
+            return
+        url = preview_url(entry)
+        if not url:
+            self._add_card(entry)
+            return
+        self._pending_cards[entry.id] = entry
+        headers = entry.thumbnail_headers or entry.headers
+        self.thumbnail_loader.load(entry.id, url, entry.page_url, headers)
+
+    def _add_card(self, entry: SourceEntry, thumbnail: QPixmap | None = None) -> None:
+        """Put the card of ``entry`` under the existing ones."""
         if entry.id in self.cards:
             return
-        card = SourceCard(entry, theme=self.settings.theme)
+        card = SourceCard(entry, theme=self.settings.theme, thumbnail=thumbnail)
         card.download_clicked.connect(self._start_download)
         card.cancel_clicked.connect(self._cancel_download)
         card.open_file_clicked.connect(self._open_result_file)
@@ -603,6 +630,19 @@ class MainWindow(QMainWindow):
         self.hint_label.hide()
         self._sync_card_heights()
         self.log_info(tr("window_shown", url=entry.url))
+
+    def _thumbnail_loaded(self, entry_id: str, picture: object) -> None:
+        """The still of a found video arrived: the card is built with it (spec 4.1).
+
+        A picture that did not arrive or is not an image comes as ``None``: the
+        card is still added, without a frame, because a found source is not lost
+        to its preview.
+        """
+        entry = self._pending_cards.pop(entry_id, None)
+        if entry is None:
+            return
+        thumbnail = picture if isinstance(picture, QPixmap) else None
+        self._add_card(entry, thumbnail)
 
     def _start_download(self, entry_id: str) -> None:
         """«Скачать» puts the task in the queue (spec 4.1 p.6), the worker runs it."""
@@ -699,6 +739,10 @@ class MainWindow(QMainWindow):
         active = any(
             card.state in {"queued", "downloading"} for card in self.cards.values()
         )
+        # A still that is still on its way belongs to a card the user is clearing:
+        # its answer is not wanted any more, so the cleared list stays cleared.
+        self.thumbnail_loader.cancel_all()
+        self._pending_cards.clear()
         for card in list(self.cards.values()):
             self._remove_card(card)
         self.out_paths.clear()

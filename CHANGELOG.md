@@ -4,6 +4,34 @@ The format is [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versioning is [SemVer](https://semver.org/). A release is a `vX.Y.Z` tag
 on `main`.
 
+## [0.4.9] - 2026-11-12
+
+### Added
+- **A video card shows the still of the video** (spec 4.1): the picture stands on
+  the left of the text, so a found video is recognized by its frame before its name
+  is read. The address of the still is read from the page itself — the `og:image` of
+  the markup, the structured data of the page, the picture of a tweet card, the
+  `poster` of the player, the frame the player shows right now — so the card shows
+  the frame the person saw in the browser; every frame of the page is searched,
+  because a player often lives in an iframe, and a YouTube video takes the cover of
+  its id. The bytes are fetched by Qt's network manager with the `Referer`, the
+  `User-Agent`, the language and the cookies of the page, the window is never
+  blocked, and the card is added only after the picture has arrived and has been
+  decoded: the list never shows a card with an empty frame. The request names only
+  the picture formats Qt reads (AVIF is left out on purpose: a host that sees it
+  switches to AVIF, which this Qt cannot decode, and the frame would stay empty). A picture that did not
+  arrive in time or is not an image is skipped — the card is added without it, a
+  found source is never lost to a preview. An audio source (MP3) has no still: its
+  card starts with the name of what is downloaded.
+
+### Fixed
+- **The program no longer stops with «entry point OPENSSL_LH_set_thunks not found»**
+  on a machine with Miniconda or Anaconda (spec 4.1): folders that hold an OpenSSL of
+  another build are kept out of the DLL search, so Qt cannot load it next to the
+  copy of Python, a DLL that still fails to load no longer shows a system message
+  box, and Qt uses Schannel, the TLS of Windows. Video stills load on such a machine
+  instead of breaking the start with a dialog.
+
 ## [0.4.8] - 2026-11-11
 
 ### Added

@@ -1,6 +1,8 @@
 """The card of one found source (spec 4.1).
 
-A card carries: the type badge (HLS / DASH / MP4), the page title, the URL
+A card carries: the still of the video the page painted (on the left of the texts,
+so a video is recognized by its frame; an audio source has none and its card starts
+with the name), the type badge (HLS / DASH / MP4), the page title, the URL
 (elided, full text in the tooltip, «Копировать ссылку» in the context menu),
 resolution / duration / size when they are known, the «Скачать» button, the
 progress of the download inside the card (spec 4.1 p.5), and the «✕» on the right
@@ -23,7 +25,7 @@ from __future__ import annotations
 from typing import Literal
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFontMetrics, QGuiApplication, QResizeEvent
+from PySide6.QtGui import QFontMetrics, QGuiApplication, QPixmap, QResizeEvent
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -96,6 +98,13 @@ TITLE_LINES = 2
 #: wider than the list; the full text is in the tooltip (spec 4.1 p.1).
 URL_CHARS = 90
 
+#: The still of a video on its card: 16:9, the shape a video frame has. The card
+#: shows it on the left of the texts, so a video is recognized by its picture
+#: before the name is read; an audio source has no still and its card starts with
+#: the name (spec 4.1).
+THUMBNAIL_WIDTH = 240
+THUMBNAIL_HEIGHT = 135
+
 #: The sign of elision: the cut letters of a title are marked, so a person sees that
 #: the name goes on, and the tooltip is read for the whole of it.
 ELLIPSIS = "…"
@@ -162,6 +171,29 @@ def elide(url: str, width: int) -> str:
     return url[: width - 1] + ELLIPSIS
 
 
+def fit_thumbnail(
+    image: QPixmap, width: int = THUMBNAIL_WIDTH, height: int = THUMBNAIL_HEIGHT
+) -> QPixmap:
+    """The still cut to the frame of the card, the middle of the picture kept.
+
+    A page can point at a picture of any shape (a wide still, a square cover, a
+    poster of the player), so the picture is scaled until it covers the frame and
+    the middle of it is taken: the card always shows one rectangle of one size and
+    the layout of the card does not depend on the shape of the picture (spec 4.1).
+    """
+    if image.width() <= 0 or image.height() <= 0:
+        return image
+    scaled = image.scaled(
+        width,
+        height,
+        Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+        Qt.TransformationMode.SmoothTransformation,
+    )
+    left = max((scaled.width() - width) // 2, 0)
+    top = max((scaled.height() - height) // 2, 0)
+    return scaled.copy(left, top, width, height)
+
+
 def take_line(words: list[str], width: int, fm: QFontMetrics) -> tuple[str, list[str]]:
     """The first words that fit one line, and the words that are left over.
 
@@ -224,7 +256,13 @@ class SourceCard(QFrame):
     #: «✕» on the right of the card: take this one entry out of the list (spec 4.1 p.1).
     remove_clicked = Signal(str)
 
-    def __init__(self, entry: SourceEntry, parent=None, theme: ThemeName = "dark") -> None:
+    def __init__(
+        self,
+        entry: SourceEntry,
+        parent=None,
+        theme: ThemeName = "dark",
+        thumbnail: QPixmap | None = None,
+    ) -> None:
         super().__init__(parent)
         self.entry = entry
         self.state: CardState = "new"
@@ -248,16 +286,39 @@ class SourceCard(QFrame):
         # cutting the button off (spec 4.1 p.1).
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
 
-        layout = QVBoxLayout(self)
+        #: The card is one row: the still of the video on the left, everything the
+        #: card says in the column on the right. Without a still (an audio source)
+        #: the column takes the whole card, so the card looks as it did before
+        #: (spec 4.1).
+        layout = QHBoxLayout(self)
         self._layout = layout
         layout.setContentsMargins(10, 8, 10, 8)
-        layout.setSpacing(4)
+        layout.setSpacing(10)
 
         #: The full texts of the labels of the card before they are fitted to its
         #: width: a label shows the line that fits, the whole text is read in its
         #: tooltip. The flag marks the labels whose middle is worth keeping (a URL,
         #: the path of a saved file), so the end of the name stays on the card.
         self._full: dict[QLabel, tuple[str, bool]] = {}
+
+        #: The still of the video: the picture the page painted stands on the left
+        #: of the card, the name and the details are read on the right of it. An
+        #: audio source has no still and the card starts with the name (spec 4.1).
+        self.thumbnail_label: QLabel | None = None
+        if thumbnail is not None and not thumbnail.isNull():
+            self.thumbnail_label = QLabel()
+            self.thumbnail_label.setObjectName("cardThumb")
+            self.thumbnail_label.setFixedSize(THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT)
+            self.thumbnail_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.thumbnail_label.setPixmap(fit_thumbnail(thumbnail))
+            layout.addWidget(self.thumbnail_label, 0, Qt.AlignmentFlag.AlignTop)
+
+        #: The column of the texts and the buttons, on the right of the picture.
+        texts = QVBoxLayout()
+        self._texts = texts
+        texts.setContentsMargins(0, 0, 0, 0)
+        texts.setSpacing(4)
+        layout.addLayout(texts, 1)
 
         top = QHBoxLayout()
         self._top = top
@@ -294,7 +355,7 @@ class SourceCard(QFrame):
         self.remove_button.setToolTip(tr("card_remove_tip"))
         self.remove_button.clicked.connect(lambda: self.remove_clicked.emit(self.entry.id))
         top.addWidget(self.remove_button)
-        layout.addLayout(top)
+        texts.addLayout(top)
 
         self.url_label = QLabel(elide(entry.url, URL_CHARS))
         self._full[self.url_label] = (entry.url, True)
@@ -303,7 +364,7 @@ class SourceCard(QFrame):
         self.url_label.setTextFormat(Qt.TextFormat.PlainText)
         self.url_label.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.url_label.customContextMenuRequested.connect(self._copy_menu)
-        layout.addWidget(self.url_label)
+        texts.addWidget(self.url_label)
 
         parts = [format_quality(entry.height, entry.is_audio)]
         if entry.duration:
@@ -312,7 +373,7 @@ class SourceCard(QFrame):
             parts.append(format_size(entry.size))
         self.meta_label = QLabel()
         self.meta_label.setObjectName("cardMeta")
-        layout.addWidget(self.meta_label)
+        texts.addWidget(self.meta_label)
         self._meta_base = parts
         self._write(self.meta_label, SEPARATOR.join(parts))
 
@@ -322,12 +383,12 @@ class SourceCard(QFrame):
         self.bar.setFixedHeight(18)
         self.bar.setFormat("")
         self.bar.hide()
-        layout.addWidget(self.bar)
+        texts.addWidget(self.bar)
 
         self.stage_label = QLabel("")
         self.stage_label.setObjectName("cardMeta")
         self.stage_label.hide()
-        layout.addWidget(self.stage_label)
+        texts.addWidget(self.stage_label)
 
         row = QHBoxLayout()
         self.download_button = QPushButton(tr("card_download"))
@@ -366,7 +427,7 @@ class SourceCard(QFrame):
         row.addWidget(self.retry_button)
 
         row.addStretch(1)
-        layout.addLayout(row)
+        texts.addLayout(row)
 
         self._update_floor()
 
@@ -383,18 +444,22 @@ class SourceCard(QFrame):
         if self.minimumHeight() != hint.height():
             self.setMinimumSize(0, hint.height())
 
-    def _meta_width(self) -> int:
-        """The width a label of the card has: the card minus its margins."""
+    def _text_width(self) -> int:
+        """The width of the right column: the card minus its margins and the still."""
         margins = self._layout.contentsMargins()
-        return self.width() - margins.left() - margins.right()
+        width = self.width() - margins.left() - margins.right()
+        if self.thumbnail_label is not None:
+            width -= self.thumbnail_label.width() + self._layout.spacing()
+        return width
+
+    def _meta_width(self) -> int:
+        """The width a label of the card has: the column on the right of the still."""
+        return self._text_width()
 
     def _title_width(self) -> int:
         """The width of the title: the row is the badge, the title, the cross."""
-        margins = self._layout.contentsMargins()
         return (
-            self.width()
-            - margins.left()
-            - margins.right()
+            self._text_width()
             - self.badge.sizeHint().width()
             - self.remove_button.width()
             - self._top.spacing() * 2
@@ -534,6 +599,8 @@ class SourceCard(QFrame):
 
 __all__ = [
     "ELLIPSIS",
+    "THUMBNAIL_HEIGHT",
+    "THUMBNAIL_WIDTH",
     "TITLE_LINES",
     "URL_CHARS",
     "CardState",
@@ -541,6 +608,7 @@ __all__ = [
     "bar_style",
     "elide",
     "fit_line",
+    "fit_thumbnail",
     "fit_title",
     "format_duration",
     "format_quality",

@@ -6,9 +6,9 @@ import time
 from pathlib import Path
 
 from pydownloader.browser.events import ResponseEvent
-from pydownloader.browser.sniffer import SnifferThread
+from pydownloader.browser.sniffer import THUMBNAIL_ATTEMPTS, SnifferThread, youtube_thumbnail
 from pydownloader.manifest.quality import QualityFilter
-from pydownloader.manifest.registry import SourceRegistry
+from pydownloader.manifest.registry import SourceEntry, SourceRegistry
 
 MASTER_URL = "https://cdn.example.com/video/master.m3u8"
 VARIANT_1080 = "https://cdn.example.com/video/video/1080.m3u8?token=abc"
@@ -137,3 +137,136 @@ def test_open_browser_state_follows_the_context(qapp):
     assert sniffer.is_browser_open()
     sniffer.stop()
     assert not sniffer.is_browser_open()
+
+
+class FakeImagePage(FakePage):
+    """A page that paints one still of its video, as a real player page does."""
+
+    def __init__(self, still: str) -> None:
+        super().__init__()
+        self.still = still
+        self.evaluations = 0
+
+    def evaluate(self, script: str) -> str:
+        self.evaluations += 1
+        return self.still
+
+
+def test_the_still_of_a_page_is_read_once_and_resolved(qapp):
+    """The picture the page painted is read from its DOM, a relative address resolved."""
+    sniffer = make_sniffer()
+    page = FakeImagePage("/img/still.jpg")
+    page_url = "https://site.example/watch/42"
+
+    assert sniffer._thumbnail_of(page, page_url) == "https://site.example/img/still.jpg"
+    # The address is remembered: a later response of the same page does not ask its
+    # DOM again, so the listener stays cheap (spec 4.4).
+    assert sniffer._thumbnail_of(page, page_url) == "https://site.example/img/still.jpg"
+    assert page.evaluations == 1
+
+
+def test_a_page_without_a_still_is_asked_only_a_few_times(qapp):
+    """A page with no picture is asked on a few responses, then left alone (spec 4.1)."""
+    sniffer = make_sniffer()
+    page = FakeImagePage("")
+    page_url = "https://site.example/audio"
+
+    for _ in range(THUMBNAIL_ATTEMPTS + 2):
+        assert sniffer._thumbnail_of(page, page_url, force=True) == ""
+    assert page.evaluations == THUMBNAIL_ATTEMPTS
+
+
+def test_a_burst_of_responses_asks_the_dom_of_a_page_once(qapp):
+    """The still is looked up once a second, not once per response of a burst (spec 4.4)."""
+    sniffer = make_sniffer()
+    page = FakeImagePage("")
+    page_url = "https://site.example/watch/42"
+
+    for _ in range(10):
+        assert sniffer._thumbnail_of(page, page_url) == ""
+    assert page.evaluations == 1
+
+
+class FakeFrame(FakePage):
+    """A frame of a page: a player often lives in one, not in the main frame."""
+
+    def __init__(self, still: str) -> None:
+        super().__init__()
+        self.still = still
+
+    def evaluate(self, script: str) -> str:
+        return self.still
+
+
+class FakeFramedPage(FakePage):
+    def __init__(self, still: str) -> None:
+        super().__init__()
+        self.frames = [FakeFrame(""), FakeFrame(still)]
+
+
+def test_the_still_is_searched_in_the_frames_of_a_page(qapp):
+    """A player in an iframe keeps its still in the frame, not in the page (spec 4.1)."""
+    sniffer = make_sniffer()
+    page = FakeFramedPage("https://cdn.example.com/frame.jpg")
+
+    found = sniffer._thumbnail_of(page, "https://site.example/watch/42")
+
+    assert found == "https://cdn.example.com/frame.jpg"
+
+
+def test_a_frame_painted_by_the_player_is_kept_as_a_data_url(qapp):
+    """A canvas frame is already bytes in the address: nothing is fetched (spec 4.1)."""
+    sniffer = make_sniffer()
+    still = "data:image/jpeg;base64,AAAA"
+    page = FakeImagePage(still)
+
+    assert sniffer._thumbnail_of(page, "https://site.example/watch/42") == still
+
+
+def test_the_still_request_carries_the_headers_of_the_page(qapp):
+    """The image host gets the referer and the cookies the browser would send (spec 4.1)."""
+    sniffer = make_sniffer()
+    sniffer._context = FakeContext()
+    entry = SourceEntry(
+        id="s1",
+        kind="mp4",
+        url="https://cdn.example.com/movie.mp4",
+        normalized="mp4:https://cdn.example.com/movie.mp4",
+        page_url="https://site.example/watch/42",
+        headers={"User-Agent": "Test/1.0"},
+    )
+
+    sniffer._attach_thumbnail(entry, FakeImagePage("https://cdn.example.com/still.jpg"))
+
+    assert entry.thumbnail == "https://cdn.example.com/still.jpg"
+    assert entry.thumbnail_headers["Referer"] == "https://site.example/watch/42"
+    assert entry.thumbnail_headers["User-Agent"] == "Test/1.0"
+
+
+def test_a_reported_source_carries_the_still_of_its_page(qapp):
+    """The entry that reaches the window has the address of the picture of its page."""
+    registry = SourceRegistry()
+    sniffer = SnifferThread(FakeBrowser(), Path("."), registry, QualityFilter(1080))
+    found = []
+    sniffer.source_found.connect(found.append)
+    page = FakeImagePage("https://cdn.example.com/still.jpg")
+    event = ResponseEvent(
+        url="https://cdn.example.com/video/movie.mp4",
+        page_url="https://site.example/watch/42",
+        content_type="video/mp4",
+        content_length=5 * 1024 * 1024,
+        request_headers={},
+        page=page,
+    )
+    sniffer._events.put(event)
+
+    sniffer._drain(FakeContext())
+
+    assert len(found) == 1
+    assert found[0].thumbnail == "https://cdn.example.com/still.jpg"
+    # The Playwright page is not kept by the event: its tab may be closed.
+    assert event.page is None
+
+
+def test_the_cover_of_a_youtube_video_is_known_from_its_id():
+    assert youtube_thumbnail("abc123") == "https://i.ytimg.com/vi/abc123/mqdefault.jpg"
