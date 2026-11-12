@@ -4,6 +4,30 @@ The format is [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versioning is [SemVer](https://semver.org/). A release is a `vX.Y.Z` tag
 on `main`.
 
+## [0.4.10] - 2026-11-12
+
+### Fixed
+- **The update arrives over a slow GitHub** (spec 8.3 p.3.1): the installer of 110 MB was
+  read with the 15 s timeout of the API check, so a pause of the line longer than 15 s
+  stopped the file in the middle, and a break of the connection started the download from
+  zero. The read of the installer has 90 s now, a broken connection is tried again from the
+  byte the file reached (the `Range` of HTTP), and the bytes on the disk are counted against
+  the size the release promises before the installer is started, so half of a file never
+  installs a program that cannot start.
+- **The program says why an update did not arrive** (spec 8.3 p.3.1-3.2): the worker of the
+  download caught only `UpdateError`, so a plain timeout of `httpx` left the thread running,
+  the bar of the progress moved forever, and the console stayed silent. Every failure of the
+  download, of the digest, and of the launch of the installer goes to the console in the six
+  languages of the catalog.
+- **The bar of the download counts real bytes** (spec 8.3 p.3.1): the bar of the progress was
+  written from the thread of the download (a widget of the window touched by another thread)
+  and showed no numbers. The bytes travel by a signal, the bar is written in the GUI thread,
+  and the label shows the megabytes, the percent, the speed of the last seconds, and the time
+  left; a release that names no size shows the speed, so the person sees the line is alive.
+- **A silent install starts the new version** (spec 8.3 p.3.4): `skipifsilent` in the `[Run]`
+  section of the installer left the person with a closed program and no sign that anything
+  was installed; the silent command gets `/NORESTART` besides `/CLOSEAPPLICATIONS`.
+
 ## [0.4.9] - 2026-11-12
 
 ### Added
