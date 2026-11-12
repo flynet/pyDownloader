@@ -51,6 +51,14 @@ class SourceEntry:
     normalized: str
     title: str = ""
     page_url: str = ""
+    #: Address of the still the page painted for the video (``og:image``, the
+    #: poster of the player), ``""`` when the page has none. The card of a video
+    #: shows it on the left of its texts; an audio source has none (spec 4.1).
+    thumbnail: str = ""
+    #: Headers of the request for the still: the headers of the page and the
+    #: cookies of its host, so a CDN that checks where the picture is shown from
+    #: answers the same way it answers the browser.
+    thumbnail_headers: dict[str, str] = field(default_factory=dict)
     headers: dict[str, str] = field(default_factory=dict)
     size: int | None = None
     height: int | None = None
@@ -295,6 +303,7 @@ class SourceRegistry:
         duration: float | None = None,
         payload: str = "",
         family: bool = False,
+        thumbnail: str = "",
     ) -> AddResult:
         """Register an entry built outside the classifier (YouTube, segment family)."""
         existing = self._entries.get(normalized)
@@ -307,6 +316,7 @@ class SourceRegistry:
             normalized=normalized,
             title=title,
             page_url=page_url,
+            thumbnail=thumbnail,
             headers=dict(headers or {}),
             height=height,
             duration=duration,

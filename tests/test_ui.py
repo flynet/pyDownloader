@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import http.server
 import json
 import threading
+from base64 import b64encode
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QCloseEvent, QColor, QIcon, QImage, QPalette
+from PySide6.QtCore import QBuffer, QIODevice, Qt
+from PySide6.QtGui import QCloseEvent, QColor, QIcon, QImage, QPalette, QPixmap
 from PySide6.QtWidgets import QAbstractButton, QApplication, QPushButton
 
 from pydownloader.config.paths import Paths, default_paths
@@ -22,8 +24,11 @@ from pydownloader.ui.button_icons import ICON_SIZE, browser_icon, icon_color
 from pydownloader.ui.card import (
     DONE_COLOR,
     ELLIPSIS,
+    THUMBNAIL_HEIGHT,
+    THUMBNAIL_WIDTH,
     TITLE_LINES,
     SourceCard,
+    fit_thumbnail,
     format_duration,
     format_quality,
     format_size,
@@ -60,6 +65,7 @@ from pydownloader.ui.theme import (
     contrast_ratio,
     qss_for,
 )
+from pydownloader.ui.thumbnail import ThumbnailLoader, preview_url
 from pydownloader.ui.tray import (
     ACTIVE_COLOR,
     BASE_TOOLTIP,
@@ -138,6 +144,238 @@ def test_card_url_is_elided_with_tooltip(qtbot):
     qtbot.addWidget(card)
     assert len(card.url_label.text()) <= 91
     assert card.url_label.toolTip() == long
+
+
+def thumbnail_image(width: int = 320, height: int = 180) -> QPixmap:
+    """A still of a video for a card: a plain picture of the size a page serves."""
+    picture = QPixmap(width, height)
+    picture.fill(QColor("#2ea64f"))
+    return picture
+
+
+def test_a_video_card_shows_the_still_on_the_left_of_the_text(qtbot):
+    """The picture stands on the left, the name and the details on the right (spec 4.1)."""
+    card = SourceCard(entry(), thumbnail=thumbnail_image())
+    qtbot.addWidget(card)
+    card.show()
+    QApplication.processEvents()
+    assert card.thumbnail_label is not None
+    assert card.thumbnail_label.pixmap().width() == THUMBNAIL_WIDTH
+    assert card.thumbnail_label.pixmap().height() == THUMBNAIL_HEIGHT
+    # The whole text column is on the right of the picture, not above or below it.
+    assert card.thumbnail_label.geometry().right() < card.title_label.geometry().left()
+    assert card.thumbnail_label.geometry().right() < card.url_label.geometry().left()
+    assert card.thumbnail_label.geometry().top() <= card.title_label.geometry().top()
+    # The title stays the first line of the text block.
+    assert card.title_label.text().startswith("Мой клип")
+
+
+def test_a_card_without_a_still_starts_with_the_name(qtbot):
+    """An audio source has no picture: its card is the name of what is downloaded (spec 4.1)."""
+    item = entry(kind="mp4")
+    item.is_audio = True
+    card = SourceCard(item)
+    qtbot.addWidget(card)
+    assert card.thumbnail_label is None
+    assert card.title_label.text() == "Мой клип"
+
+
+def test_the_still_is_cut_to_the_frame_of_the_card():
+    """A picture of any shape is cut to one 16:9 frame, the middle of it kept (spec 4.1)."""
+    wide = fit_thumbnail(thumbnail_image(400, 100))
+    assert (wide.width(), wide.height()) == (THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT)
+    tall = fit_thumbnail(thumbnail_image(100, 400))
+    assert (tall.width(), tall.height()) == (THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT)
+
+
+def test_preview_url_is_resolved_against_the_page():
+    item = entry()
+    item.thumbnail = "/img/still.jpg"
+    assert preview_url(item) == "https://site.example/img/still.jpg"
+    item.thumbnail = "//cdn.example.com/still.jpg"
+    assert preview_url(item) == "https://cdn.example.com/still.jpg"
+    # A frame painted into a canvas is already the picture, not an address to fetch.
+    item.thumbnail = "data:image/jpeg;base64,AAAA"
+    assert preview_url(item) == "data:image/jpeg;base64,AAAA"
+    # An audio source has no still, a page without one gives no address.
+    audio = entry(kind="mp4")
+    audio.is_audio = True
+    audio.thumbnail = "https://cdn.example.com/still.jpg"
+    assert preview_url(audio) == ""
+    assert preview_url(entry()) == ""
+
+
+def test_the_card_of_a_video_waits_for_its_still(qtbot, tmp_path, monkeypatch):
+    """The card is added after the picture arrived, not before (spec 4.1)."""
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    item = entry()
+    item.thumbnail = "https://cdn.example.com/still.jpg"
+    asked: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        window.thumbnail_loader,
+        "load",
+        lambda key, url, referer="", headers=None: asked.append((key, url)),
+    )
+
+    window.add_source(item)
+    assert asked == [("s1", "https://cdn.example.com/still.jpg")]
+    assert "s1" not in window.cards
+
+    window._thumbnail_loaded("s1", thumbnail_image())
+    assert "s1" in window.cards
+    assert window.cards["s1"].thumbnail_label is not None
+    assert not window.hint_label.isVisible()
+
+
+def test_a_source_is_not_lost_when_its_still_did_not_arrive(qtbot, tmp_path, monkeypatch):
+    """A broken preview is skipped: the card is still added, without a frame (spec 4.1)."""
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    item = entry()
+    item.thumbnail = "https://cdn.example.com/still.jpg"
+    monkeypatch.setattr(window.thumbnail_loader, "load", lambda *args, **kwargs: None)
+
+    window.add_source(item)
+    window._thumbnail_loaded("s1", None)
+    assert "s1" in window.cards
+    assert window.cards["s1"].thumbnail_label is None
+
+
+def test_an_audio_source_is_added_without_waiting_for_a_still(qtbot, tmp_path):
+    """An audio card has no picture, so nothing is waited for (spec 4.1)."""
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    item = entry(kind="mp4")
+    item.is_audio = True
+    item.thumbnail = "https://cdn.example.com/still.jpg"
+
+    window.add_source(item)
+    assert "s1" in window.cards
+    assert window.cards["s1"].thumbnail_label is None
+
+
+def test_clearing_the_list_drops_the_stills_on_their_way(qtbot, tmp_path, monkeypatch):
+    """«Clear all» is the whole list: a picture that arrives later adds no card (spec 4.1)."""
+    window = make_window(tmp_path)
+    qtbot.addWidget(window)
+    item = entry()
+    item.thumbnail = "https://cdn.example.com/still.jpg"
+    monkeypatch.setattr(window.thumbnail_loader, "load", lambda *args, **kwargs: None)
+
+    window.add_source(item)
+    window.clear_all_cards()
+    window._thumbnail_loaded("s1", thumbnail_image())
+    assert window.cards == {}
+    assert window.hint_label.isVisible()
+
+
+def test_the_loader_reads_and_decodes_a_still(qtbot):
+    """The bytes of a picture are read in the event loop and arrive as a picture (spec 4.1)."""
+    image = QImage(8, 6, QImage.Format.Format_RGB32)
+    image.fill(QColor("#123456"))
+    buffer = QBuffer()
+    buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+    assert image.save(buffer, "PNG")
+    data = bytes(buffer.data())
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # the test serves one picture
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def log_message(self, *args) -> None:
+            return
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        loader = ThumbnailLoader()
+        received: list[tuple[str, object]] = []
+        loader.loaded.connect(lambda key, picture: received.append((key, picture)))
+        loader.load("s1", f"http://127.0.0.1:{server.server_port}/still.png")
+        qtbot.waitUntil(lambda: bool(received), timeout=5000)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    key, picture = received[0]
+    assert key == "s1"
+    assert isinstance(picture, QPixmap)
+    assert (picture.width(), picture.height()) == (8, 6)
+
+
+def test_the_loader_decodes_a_frame_painted_by_the_player(qtbot):
+    """A canvas frame arrives as a data URL: it is decoded here, no request is made (spec 4.1)."""
+    image = QImage(8, 6, QImage.Format.Format_RGB32)
+    image.fill(QColor("#123456"))
+    buffer = QBuffer()
+    buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+    assert image.save(buffer, "PNG")
+    url = "data:image/png;base64," + b64encode(bytes(buffer.data())).decode("ascii")
+
+    loader = ThumbnailLoader()
+    received: list[tuple[str, object]] = []
+    loader.loaded.connect(lambda key, picture: received.append((key, picture)))
+    loader.load("s1", url)
+    qtbot.waitUntil(lambda: bool(received), timeout=1000)
+
+    key, picture = received[0]
+    assert key == "s1"
+    assert isinstance(picture, QPixmap)
+    assert (picture.width(), picture.height()) == (8, 6)
+
+
+def test_the_loader_does_not_ask_for_a_picture_qt_cannot_decode(qtbot):
+    """The request names only the formats Qt reads: AVIF would arrive but stay empty (spec 4.1).
+
+    A host switches to AVIF as soon as the request advertises it (phncdn does),
+    and Qt of this build has no AVIF plugin: the bytes arrive, the decode fails
+    and the card is added without its picture.
+    """
+    image = QImage(8, 6, QImage.Format.Format_RGB32)
+    image.fill(QColor("#123456"))
+    buffer = QBuffer()
+    buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+    assert image.save(buffer, "PNG")
+    data = bytes(buffer.data())
+    accepted: list[str] = []
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # the test serves one picture
+            accepted.append(self.headers.get("Accept", ""))
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def log_message(self, *args) -> None:
+            return
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        loader = ThumbnailLoader()
+        received: list[tuple[str, object]] = []
+        loader.loaded.connect(lambda key, picture: received.append((key, picture)))
+        loader.load("s1", f"http://127.0.0.1:{server.server_port}/still.jpg")
+        qtbot.waitUntil(lambda: bool(received), timeout=5000)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert accepted, "the loader sent no request"
+    assert "avif" not in accepted[0].lower()
+    assert "image/webp" in accepted[0]
+    assert "image/jpeg" in accepted[0]
 
 
 def test_a_long_title_makes_the_card_taller_not_wider(qtbot, tmp_path):

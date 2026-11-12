@@ -12,12 +12,15 @@ so every console line and every window text uses the chosen language (spec 8.1).
 
 from __future__ import annotations
 
+import ctypes
+import os
 import sys
 import tempfile
 from pathlib import Path
 
-from PySide6.QtCore import QProcess, QThread, Signal
+from PySide6.QtCore import QLoggingCategory, QProcess, QThread, Signal
 from PySide6.QtGui import QIcon
+from PySide6.QtNetwork import QSslSocket
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from pydownloader._version import VERSION
@@ -73,6 +76,79 @@ def app_root() -> Path | None:
     if getattr(sys, "frozen", False):
         return application_dir()
     return None
+
+
+def use_windows_tls() -> None:
+    """Let Qt use the TLS stack of Windows instead of an OpenSSL from PATH (spec 4.1).
+
+    Qt on Windows looks for ``libssl-3-x64.dll`` in PATH. A Miniconda or Anaconda
+    installation puts its own copy there, and Python has already loaded the
+    ``libcrypto-3-x64.dll`` of its build under the same name: the two are of
+    different versions, and the loader stops with «entry point
+    OPENSSL_LH_set_thunks not found» as soon as the window asks for the still of a
+    video. Schannel is the TLS of Windows itself and needs no DLL from PATH, so the
+    stills load on a machine where conda is installed.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        # Qt probes every TLS backend, its OpenSSL plugin too, and that plugin
+        # cannot start next to the OpenSSL of Python: Qt logs «QObject::connect
+        # ... invalid nullptr parameter» and takes Schannel. The line looks like
+        # a failure although the probe is harmless, so it is hidden for the probe
+        # only; every other message of Qt stays as it is.
+        QLoggingCategory.setFilterRules("qt.core.qobject.connect.warning=false")
+        try:
+            if "schannel" in QSslSocket.availableBackends():
+                QSslSocket.setActiveBackend("schannel")
+        finally:
+            QLoggingCategory.setFilterRules("")
+    except Exception:
+        # An old Qt without the Schannel backend keeps its default: a still may
+        # fail, but the program must still start.
+        return
+
+
+def avoid_foreign_openssl() -> None:
+    """Keep an OpenSSL of another build out of the process (spec 4.1).
+
+    Scrub the PATH entries that hold a ``libssl-3-x64.dll`` of their own (Miniconda
+    and Anaconda keep it in ``Library\\\\bin``): the DLL is then not found at all
+    instead of being loaded next to the copy Python already uses, so no component
+    can mix two versions of OpenSSL. A DLL that still fails to load is skipped
+    quietly: the program must not stop on a system «entry point not found» box.
+    """
+    if sys.platform != "win32":
+        return
+    prefix = Path(sys.base_prefix).resolve()
+    kept: list[str] = []
+    for part in os.environ.get("PATH", "").split(os.pathsep):
+        if not part:
+            continue
+        try:
+            folder = Path(part).resolve()
+        except OSError:
+            kept.append(part)
+            continue
+        if folder == prefix or prefix in folder.parents:
+            kept.append(part)  # the OpenSSL of the running Python itself
+        elif (folder / "libssl-3-x64.dll").is_file() or (
+            folder / "libcrypto-3-x64.dll"
+        ).is_file():
+            continue
+        else:
+            kept.append(part)
+    os.environ["PATH"] = os.pathsep.join(kept)
+    silence_loader_errors()
+
+
+def silence_loader_errors() -> None:
+    """No system message box when a DLL of another build cannot be used (spec 4.1)."""
+    try:
+        ctypes.WinDLL("kernel32").SetErrorMode(0x0001 | 0x8000)
+    except (AttributeError, OSError):
+        return
+
 
 
 def restart_command() -> tuple[str, list[str]]:
@@ -395,6 +471,8 @@ def resolve_download_dir(settings: Settings) -> Path | None:
 
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
+    avoid_foreign_openssl()
+    use_windows_tls()
     app = QApplication(args)
     app.setApplicationName(APP_NAME)
     app.setApplicationDisplayName(APP_NAME)

@@ -90,6 +90,15 @@ The progress bar keeps the accent colour of the theme while the file is
 downloading and turns **green** when the file is on the disk, so the end of a
 download is seen at a glance, without reading the text of the card.
 
+The card of a video shows the **still of its first frame** on the left of the text —
+the picture the page itself painted (`og:image` of the page, the structured data of
+the page, the picture of a tweet card, the `poster` of the player, the frame the
+player shows right now; a YouTube video takes the cover of its id). The picture is
+read in the background and the card is added only after it has loaded, so the list
+never shows a card with an empty frame; a picture that did not arrive is skipped and
+the card is added without it. An audio source has no still: its card starts with the
+name of what is downloaded.
+
 Each card shows the source type badge: HLS, DASH, MP4, YOUTUBE, and **MP3** for
 an audio source, plus the quality line: `1080p`, `720p`, `480p`, the resolution
 when it is known, or `MP3`. A card with a source is never cut off: the list of

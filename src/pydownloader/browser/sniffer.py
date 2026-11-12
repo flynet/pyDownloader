@@ -18,6 +18,7 @@ import time
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
+from urllib.parse import urljoin
 
 from playwright.sync_api import BrowserContext, sync_playwright
 from PySide6.QtCore import QThread, Signal
@@ -36,7 +37,7 @@ from pydownloader.download.http import (
 from pydownloader.i18n import tr
 from pydownloader.manifest.pipeline import Outcome, ProbeMedia, process_event
 from pydownloader.manifest.quality import Choice, QualityFilter
-from pydownloader.manifest.registry import SourceRegistry
+from pydownloader.manifest.registry import SourceEntry, SourceRegistry
 from pydownloader.util.urls import is_manifest_url, normalize_content_type
 from pydownloader.youtube.api import (
     API_KEY,
@@ -61,6 +62,128 @@ MANIFEST_TYPES = {
     "audio/mpegurl",
     "application/dash+xml",
 }
+
+#: Script that reads the still of the video the page itself paints: the
+#: ``og:image`` of the page, the picture of the tweet card, the ``poster`` of the
+#: player or the frame the player shows right now. The card of a video shows
+#: exactly what the person saw in the browser, so the program never guesses an
+#: address of a preview (spec 4.1).
+THUMBNAIL_SCRIPT = """
+() => {
+    const pick = (selector) => {
+        const element = document.querySelector(selector);
+        if (!element) return '';
+        return element.content || element.href || element.src || '';
+    };
+    const metas = [
+        'meta[property="og:image"]',
+        'meta[property="og:image:url"]',
+        'meta[property="og:image:secure_url"]',
+        'meta[name="og:image"]',
+        'meta[name="twitter:image"]',
+        'meta[name="twitter:image:src"]',
+        'meta[property="twitter:image"]',
+        'meta[itemprop="thumbnailUrl"]',
+        'meta[name="thumbnail"]',
+        'link[rel="image_src"]',
+    ];
+    for (const selector of metas) {
+        const found = pick(selector);
+        if (found) return found;
+    }
+    // Structured data of the page: the thumbnail the site tells the search
+    // engines about, often the only copy of the still in the markup.
+    for (const script of document.querySelectorAll('script[type="application/ld+json"]')) {
+        try {
+            const data = JSON.parse(script.textContent);
+            const nodes = Array.isArray(data) ? data.slice() : [data];
+            while (nodes.length) {
+                const node = nodes.shift();
+                if (!node || typeof node !== 'object') continue;
+                const thumb = node.thumbnailUrl;
+                if (typeof thumb === 'string' && thumb) return thumb;
+                if (Array.isArray(thumb) && typeof thumb[0] === 'string') return thumb[0];
+                // Video objects name the still `thumbnail` or `image`, sometimes as
+                // an object with the address inside.
+                for (const name of ['thumbnail', 'image']) {
+                    const value = node[name];
+                    if (typeof value === 'string' && value) return value;
+                    if (Array.isArray(value) && typeof value[0] === 'string') return value[0];
+                    if (value && typeof value === 'object') {
+                        if (typeof value.url === 'string' && value.url) return value.url;
+                        if (typeof value.contentUrl === 'string' && value.contentUrl) {
+                            return value.contentUrl;
+                        }
+                    }
+                }
+                if (Array.isArray(node['@graph'])) nodes.push(...node['@graph']);
+            }
+        } catch (error) {}
+    }
+    // A player that paints its poster as an image (Dailymotion, many custom
+    // players): the mark of the picture is in its class, id or alt text. The
+    // largest picture wins, so an icon of the player is not taken for a still.
+    let posterImage = '';
+    let posterArea = 0;
+    const posters = document.querySelectorAll(
+        'img[class*="poster" i], img[id*="poster" i], img[class*="still" i],' +
+        'img[class*="preview" i], img[class*="cover" i], img[alt*="poster" i]'
+    );
+    for (const element of [...posters].slice(0, 40)) {
+        const src = element.currentSrc || element.src || '';
+        const area = element.naturalWidth * element.naturalHeight;
+        const real = element.naturalWidth >= 120 && element.naturalHeight >= 60;
+        if (src && real && area > posterArea) {
+            posterImage = src;
+            posterArea = area;
+        }
+    }
+    if (posterImage) return posterImage;
+    // The player paints its poster as a background of a div (Video.js, JW
+    // Player, Plyr, custom skins): the picture is read from the computed style.
+    for (const selector of ['.vjs-poster', '.jw-preview', '.plyr__poster',
+                            '[class*="poster"]', '[id*="poster"]']) {
+        const element = document.querySelector(selector);
+        if (!element) continue;
+        const image = window.getComputedStyle(element).backgroundImage || '';
+        const match = /url\\(["']?(.*?)["']?\\)/.exec(image);
+        if (match && match[1]) return match[1];
+    }
+    const video = document.querySelector('video');
+    if (video) {
+        if (video.poster) return video.poster;
+        if (video.dataset && video.dataset.poster) return video.dataset.poster;
+        // The frame on the screen right now: a video of another origin may not be
+        // drawn to a canvas, the try/catch keeps such a page quiet.
+        try {
+            if (video.videoWidth > 0 && video.videoHeight > 0 && video.readyState >= 2) {
+                const canvas = document.createElement('canvas');
+                canvas.width = 320;
+                canvas.height = Math.round(320 * video.videoHeight / video.videoWidth);
+                canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+                const frame = canvas.toDataURL('image/jpeg', 0.8);
+                if (frame && frame.length > 128) return frame;
+            }
+        } catch (error) {}
+    }
+    return '';
+}
+"""
+
+#: How many responses of one page may ask for its still, and how often: the
+#: metadata of a page appears after the markup is parsed, and some players paint
+#: their poster only when the video starts, so the page is asked again over its
+#: life instead of once (spec 4.1).
+THUMBNAIL_ATTEMPTS = 30
+THUMBNAIL_RETRY_SECONDS = 1.0
+#: How many frames of a page are searched: a player often lives in an iframe.
+THUMBNAIL_FRAMES = 8
+
+
+def youtube_thumbnail(video_id: str) -> str:
+    """Cover of a YouTube video: the 320x180 still the site itself shows (spec 4.1)."""
+    return f"https://i.ytimg.com/vi/{video_id}/mqdefault.jpg"
+
 
 logger = logging.getLogger("pydownloader.sniffer")
 
@@ -111,6 +234,14 @@ class SnifferThread(QThread):
         self._yt_failed_id: str | None = None
         self._yt_last_attempt = 0.0
         self._cached_ua = ""
+        #: Page address -> address of the still the page painted (spec 4.1): the
+        #: card takes it from here when the source of that page is reported.
+        self._thumbnails: dict[str, str] = {}
+        #: Page address -> how many responses asked for its still already.
+        self._thumb_attempts: dict[str, int] = {}
+        #: Page address -> when its still was read last: a burst of responses of
+        #: one page asks its DOM once, not once per response.
+        self._thumb_last: dict[str, float] = {}
         #: Page the browser is on: «Open browser» opens this address again.
         self.last_url = start_url
 
@@ -320,6 +451,7 @@ class SnifferThread(QThread):
         that no playlist owns their directory.
         """
         events: list[ResponseEvent] = []
+        pages: dict[str, Any] = {}
         while True:
             try:
                 item = self._events.get_nowait()
@@ -355,9 +487,14 @@ class SnifferThread(QThread):
             if event.page is not None:
                 with contextlib.suppress(Exception):
                     event.page_title = event.page.title()
-                # The registry may keep the event for family synthesis: do not
-                # hold a Playwright page (and its closed tab) alive.
-                event.page = None
+                # The still of the page is read here, in the thread that owns the
+                # page: the card of the video shows it (spec 4.1).
+                self._thumbnail_of(event.page, event.page_url)
+                # The page is kept until the entries of this burst are reported: a
+                # player may paint its poster a moment later, and the headers of
+                # the request for the picture are read from the context here, in
+                # the thread that owns it. A closed tab is not kept alive.
+                pages.setdefault(event.page_url, event.page)
             page_key = (event.page_url, event.page_title)
             if page_key != self._last_page:
                 self._last_page = page_key
@@ -375,11 +512,18 @@ class SnifferThread(QThread):
                 body=event.body,
             )
             for outcome in outcomes:
-                self._report(outcome)
+                page = None
+                if outcome.entry is not None:
+                    page = pages.get(outcome.entry.page_url)
+                self._report(outcome, page)
+        # The burst is read: a page of a closed tab must not be kept by an entry.
+        for event in events:
+            event.page = None
         for family in self.registry.synthesize_families():
             logger.info(
                 tr("browser_family", url=family.url, count=len(family.recorded))
             )
+            self._attach_thumbnail(family, pages.get(family.page_url))
             self.source_found.emit(family)
             self.message.emit(
                 tr("browser_hls_group", count=len(family.recorded), url=family.url)
@@ -444,6 +588,9 @@ class SnifferThread(QThread):
             existing.payload = raw
             existing.height = height
             existing.choice = Choice(kind="mp4", url=page_url, height=height)
+            if not existing.thumbnail:
+                existing.thumbnail = youtube_thumbnail(video_id)
+            self._attach_thumbnail(existing, page)
             self.message.emit(tr("browser_youtube_updated", title=existing.title or video_id))
             self._yt_last_id = video_id
             self._yt_failed_id = None
@@ -460,9 +607,14 @@ class SnifferThread(QThread):
             height=height,
             duration=player.duration,
             payload=raw,
+            # The player of the watch page serves the video over SABR/UMP, so the
+            # DOM of the page has no still to read: the cover of the video is the
+            # one YouTube itself uses, and it is known from the id (spec 4.1).
+            thumbnail=youtube_thumbnail(video_id),
         )
         entry = result.entry
         entry.choice = Choice(kind="mp4", url=page_url, height=height)
+        self._attach_thumbnail(entry, page)
         self._yt_last_id = video_id
         self._yt_failed_id = None
         if result.is_new:
@@ -479,10 +631,105 @@ class SnifferThread(QThread):
             return ""
         return self._cached_ua
 
-    def _report(self, outcome: Outcome) -> None:
+    def _thumbnail_of(self, page: Any, page_url: str, force: bool = False) -> str:
+        """Address of the still the page painted for its video, ``""`` when none.
+
+        The page already fetched the picture it shows in the player, so the read
+        is a lookup in its DOM, not a guess of an address: ``og:image`` first,
+        then the structured data of the page, the card of the tweet, the
+        ``poster`` of the player and the frame it shows right now. A player often
+        lives in an iframe, so every frame of the page is asked, up to
+        :data:`THUMBNAIL_FRAMES`.
+
+        A page is asked on a few responses, not on every one: the metadata
+        appears after the markup is parsed, so a page that has no still yet is
+        asked again a second later. ``force`` skips that pause when the entry of
+        the page is about to be shown: the last chance to find the picture is the
+        moment the card is built. A page that answered is remembered (spec 4.1).
+        """
+        found = self._thumbnails.get(page_url, "")
+        if found and not force:
+            return found
+        attempts = self._thumb_attempts.get(page_url, 0)
+        if attempts >= THUMBNAIL_ATTEMPTS:
+            return found
+        now = time.monotonic()
+        if not force and now - self._thumb_last.get(page_url, 0.0) < THUMBNAIL_RETRY_SECONDS:
+            return found
+        self._thumb_attempts[page_url] = attempts + 1
+        self._thumb_last[page_url] = now
+        try:
+            frames = list(getattr(page, "frames", None) or [page])[:THUMBNAIL_FRAMES]
+        except Exception:
+            frames = [page]
+        for frame in frames:
+            try:
+                raw = frame.evaluate(THUMBNAIL_SCRIPT)
+            except Exception:
+                # A frame of another origin, a frame that is gone, a page of an
+                # older browser: the next frame still may have the picture.
+                continue
+            if not raw:
+                continue
+            url = self._resolve_still(str(raw).strip(), page_url)
+            if url:
+                self._thumbnails[page_url] = url
+                return url
+        return found
+
+    @staticmethod
+    def _resolve_still(raw: str, page_url: str) -> str:
+        """An absolute address of a still: a relative one is resolved, a data URL kept.
+
+        Some players paint the frame into a canvas and hand the picture over as a
+        ``data:image/...`` URL: there is nothing to fetch, the bytes are already
+        in the address (spec 4.1).
+        """
+        if raw.startswith("data:image/"):
+            return raw
+        url = urljoin(page_url or "", raw)
+        return url if url.startswith(("http://", "https://")) else ""
+
+    def _attach_thumbnail(self, entry: SourceEntry, page: Any = None) -> None:
+        """Give the entry the still of its page before the card is built.
+
+        At the moment the entry is reported the page gets one last look: a player
+        that paints its poster on play has had no still on the first responses.
+        The headers of the request for the picture are captured here too, so the
+        image host receives the ``Referer``, the ``User-Agent`` and the cookies
+        the browser would have sent (spec 4.1).
+        """
+        if not entry.thumbnail:
+            if page is not None:
+                entry.thumbnail = self._thumbnail_of(page, entry.page_url, force=True)
+            else:
+                entry.thumbnail = self._thumbnails.get(entry.page_url, "")
+        if not entry.thumbnail or entry.thumbnail.startswith("data:"):
+            return
+        if entry.thumbnail_headers:
+            return
+        # The picture is an image of the page, not the media request: the request
+        # for it repeats the user agent and the language of the browser, and the
+        # referer of the page itself, so a hotlink check sees the page (spec 4.1).
+        source = {
+            key: value
+            for key, value in entry.headers.items()
+            if key.lower() in ("user-agent", "accept-language")
+        }
+        headers = capture_headers(source, entry.page_url)
+        cookies: Sequence[Mapping[str, object]] = []
+        if self._context is not None:
+            try:
+                cookies = self._context.cookies(entry.thumbnail)
+            except Exception:
+                cookies = []
+        entry.thumbnail_headers = merge_cookies(headers, cookies)
+
+    def _report(self, outcome: Outcome, page: Any = None) -> None:
         if outcome.message:
             self.message.emit(outcome.message)
         if outcome.action == "show" and outcome.entry is not None:
+            self._attach_thumbnail(outcome.entry, page)
             self.source_found.emit(outcome.entry)
 
     def _fetch(self, url: str, headers: dict[str, str]) -> str | None:

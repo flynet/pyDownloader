@@ -110,6 +110,14 @@ window size 900×600, size and position are remembered.
   console shrinks first.
 - Each card contains:
   - a type badge (HLS / DASH / MP4 / YOUTUBE / **MP3** for an audio source);
+  - the still of the video on the left of the texts: the picture the page itself
+    painted (`og:image` of the markup, the structured data of the page, the picture
+    of a tweet card, the `poster` of the player, the frame the player shows right
+    now), cut to one frame of the card and taken from every frame of the page. The
+    card is added only after the picture has arrived and has been decoded, so the
+    list never shows a card with an empty frame; a picture that did not arrive in
+    time is skipped, the card is added without it. An audio source has no still: its
+    card starts with the name of what is downloaded;
   - a title (the page title on which the source was found): the card is as wide as
     the list of cards, so a long title is broken into the lines of its words the card
     can hold (two at most), the letters that do not fit are marked by the sign of

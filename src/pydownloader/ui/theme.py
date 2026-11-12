@@ -242,6 +242,7 @@ QFrame#card {{
     padding: 8px;
 }}
 QLabel#cardTitle {{ color: {text}; font-size: 10pt; font-weight: bold; }}
+QLabel#cardThumb {{ background: {background}; border: 1px solid {border}; border-radius: 4px; }}
 QLabel#cardMeta {{ color: {muted}; font-size: 9pt; }}
 QPushButton {{
     background: {accent}; color: #ffffff; border: 1px solid {border};
