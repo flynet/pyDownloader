@@ -154,6 +154,9 @@ TEXTS: dict[str, str] = {
     # --- update dialog (spec 8.3) ------------------------------------------
     "update_title": "有新版本可用",
     "update_download_text": "正在下载安装程序…",
+    "update_download_of": "正在下载安装程序… {written} / {total} MB ({percent}%)",
+    "update_speed_left": "速度 {speed} · 剩余 {left}",
+    "update_speed_only": "正在下载安装程序… {speed}",
     "update_install_text": "安装程序正在启动。程序将关闭。",
     "update_wait_text": "视频正在下载。要等它完成后再更新吗?",
     "update_sha_fail": "SHA-256 校验不匹配。更新未安装",

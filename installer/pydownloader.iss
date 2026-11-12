@@ -63,7 +63,11 @@ Name: "{group}\Uninstall {#AppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#ExeName}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#ExeName}"; Description: "{cm:LaunchProgram,{#AppName}}"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent runascurrentuser
+; The update runs the installer silently and the program closes, so the new
+; version must start by itself: with ``skipifsilent`` a silent install leaves the
+; person with a closed program and no sign that anything was installed
+; (spec 8.3 p.3.4).
+Filename: "{app}\{#ExeName}"; Description: "{cm:LaunchProgram,{#AppName}}"; WorkingDir: "{app}"; Flags: nowait postinstall runascurrentuser
 
 [Code]
 { Settings and logs are removed only when the user asks for it (spec 7.3). }

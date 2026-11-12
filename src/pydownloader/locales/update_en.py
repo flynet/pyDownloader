@@ -17,4 +17,11 @@ TEXTS: dict[str, str] = {
     "up_sha_http": "SHA-256: HTTP {status}",
     # --- downloading the installer (spec 8.3 p.3.1) ------------------------
     "up_installer_http": "Installer download: HTTP {status}",
+    # A network failure of the download: the file comes from GitHub, and the
+    # line names the reason so the console does not stay silent.
+    "up_installer_failed": "Installer download: {error}",
+    "up_installer_cancelled": "Installer download: cancelled",
+    "up_installer_incomplete": "Installer is not downloaded in full: {got} of {size} MB",
+    # The installer is on the disk but Windows refuses to start it.
+    "up_installer_start_failed": "The installer is not started: {error}",
 }

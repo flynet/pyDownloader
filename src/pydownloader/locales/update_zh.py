@@ -15,4 +15,8 @@ TEXTS: dict[str, str] = {
     "up_sha_http": "SHA-256: HTTP {status}",
     # 下载安装程序 (spec 8.3 p.3.1)
     "up_installer_http": "下载安装程序: HTTP {status}",
+    "up_installer_failed": "下载安装程序: {error}",
+    "up_installer_cancelled": "下载安装程序: 已取消",
+    "up_installer_incomplete": "安装程序未下载完整: {got} / {size} MB",
+    "up_installer_start_failed": "未能启动安装程序: {error}",
 }

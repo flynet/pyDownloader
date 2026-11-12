@@ -158,6 +158,9 @@ TEXTS: dict[str, str] = {
     # --- update dialog (spec 8.3) ------------------------------------------
     "update_title": "Eine neue Version ist verfügbar",
     "update_download_text": "Der Installer wird heruntergeladen…",
+    "update_download_of": "Der Installer wird heruntergeladen… {written} / {total} MB ({percent}%)",
+    "update_speed_left": "Geschwindigkeit {speed} · {left} übrig",
+    "update_speed_only": "Der Installer wird heruntergeladen… {speed}",
     "update_install_text": "Der Installer startet, das Programm wird geschlossen.",
     "update_wait_text": "Ein Video läuft. Bis zum Ende warten, bevor aktualisiert wird?",
     "update_sha_fail": "SHA-256 passt nicht, das Update wird nicht installiert",
