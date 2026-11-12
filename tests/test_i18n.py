@@ -245,10 +245,13 @@ def test_restart_button_saves_the_language_for_the_next_start(qtbot):
 
 def test_restart_command_runs_the_program_again():
     from pydownloader.ui.app import restart_command
+    from pydownloader.ui.single_instance import RESTART_FLAG
 
     exe, args = restart_command()
     assert exe
-    assert args in ([], ["-m", "pydownloader"])
+    # The new copy is the restart of the running one, not a second start, so the
+    # command carries the flag (spec 3.1 p.9, 8.1).
+    assert args in ([RESTART_FLAG], ["-m", "pydownloader", RESTART_FLAG])
 
 
 def test_no_text_of_the_catalog_needs_a_glyph_the_ui_font_lacks():

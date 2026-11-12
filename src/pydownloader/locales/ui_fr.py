@@ -132,6 +132,7 @@ TEXTS: dict[str, str] = {
     "app_log_file": "Fichier journal : {path}",
     "app_data_dir": "Données du programme : {path}",
     "app_profile_dir": "Profil du navigateur : {path}",
+    "app_second_copy": "Une seconde copie a demandé d'afficher la fenêtre",
     "app_browser_hint": (
         "Le navigateur n'est pas ouvert : cliquez sur « Ouvrir le navigateur » "
         "quand vous voulez chercher une vidéo."
