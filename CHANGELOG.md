@@ -4,6 +4,21 @@ The format is [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versioning is [SemVer](https://semver.org/). A release is a `vX.Y.Z` tag
 on `main`.
 
+## [0.4.11] - 2026-11-12
+
+### Added
+- **The program runs in one copy**: a person who double-clicks the icon ten times gets
+  one window, not ten queues, ten browsers, ten tray icons and ten log files. The second
+  copy sends the word `show` to the running one and quits; the running one brings its
+  window to the front, the same way as the double click on the tray icon, and writes one
+  line in the console. The running copy listens on a local server, and the name of the
+  server carries the user, so the copies of two sessions of one machine do not show each
+  other's windows. A copy that is killed by the system leaves the name behind, and the
+  next copy asks for the name again, so a person gets a window and not a program that
+  hides itself because a dead copy had the name. The new copy of a restart (the language
+  change, spec 8.1) is not a second start: its command carries `--restart`, and it takes
+  the name when the old copy lets it go.
+
 ## [0.4.10] - 2026-11-12
 
 ### Fixed
