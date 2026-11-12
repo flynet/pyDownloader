@@ -15,4 +15,8 @@ TEXTS: dict[str, str] = {
     "up_sha_http": "SHA-256: HTTP {status}",
     # --- скачивание установщика (спецификация 8.3 p.3.1) -----------------
     "up_installer_http": "Скачивание установщика: HTTP {status}",
+    "up_installer_failed": "Скачивание установщика: {error}",
+    "up_installer_cancelled": "Скачивание установщика: отменено",
+    "up_installer_incomplete": "Установщик скачан не целиком: {got} из {size} МБ",
+    "up_installer_start_failed": "Установщик не запущен: {error}",
 }

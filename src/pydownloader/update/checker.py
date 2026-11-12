@@ -26,10 +26,21 @@ from pydownloader.i18n import tr
 #: Name pattern of the installer asset, and the checksum file next to it.
 SETUP_PREFIX = "PyDownloader-Setup-"
 SHA_SUFFIX = ".sha256"
-INSTALLER_ARGS = ["/SILENT", "/SUPPRESSMSGBOXES", "/CLOSEAPPLICATIONS"]
+INSTALLER_ARGS = ["/SILENT", "/SUPPRESSMSGBOXES", "/CLOSEAPPLICATIONS", "/NORESTART"]
 #: Windows flag: the installer runs detached, no console window is shown.
 DETACHED_PROCESS = 0x00000008
 API_TIMEOUT = 15.0
+#: The window of a read of the installer. A release of GitHub comes over a slow
+#: link today: the 15 s of the API check stopped the 110 MB file in the middle,
+#: and the code behind it reported nothing, so the program hung with the bar of
+#: the progress moving and the update never arrived (spec 8.3 p.3.1).
+INSTALLER_READ_TIMEOUT = 90.0
+INSTALLER_TIMEOUT = httpx.Timeout(
+    connect=API_TIMEOUT, read=INSTALLER_READ_TIMEOUT, write=30.0, pool=API_TIMEOUT
+)
+#: How many times a broken connection of the installer is tried again, each time
+#: from the byte the file reached (the ``Range`` of HTTP), not from the start.
+DOWNLOAD_ATTEMPTS = 3
 USER_AGENT = "PyDownloader"
 
 
@@ -193,17 +204,72 @@ def verify(path: Path, expected: str) -> bool:
     return sha256_of(path) == expected.lower()
 
 
+def _final_size(headers: Mapping[str, str], done: int, length: int) -> int:
+    """The whole size of the installer the server promises.
+
+    A normal answer says the size in ``Content-Length``. A part of the file
+    (``206``) says only what is left, and writes the whole size in
+    ``Content-Range``, so the bar of the progress needs that number to show the
+    bytes that are already on disk against the full file (spec 8.3 p.3.1).
+    """
+    span = headers.get("content-range", "")
+    if "/" in span:
+        tail = span.rsplit("/", 1)[1]
+        if tail.isdigit():
+            return int(tail)
+    return done + length
+
+
 def download_installer(url: str, target: Path, on_chunk=None) -> Path:
-    """Save the installer to ``target`` with a progress callback (spec 8.3 p.3.1)."""
+    """Save the installer to ``target``; the callback gets the bytes written (spec 8.3 p.3.1).
+
+    ``on_chunk(written, total)`` is called after every megabyte lands, so the
+    window shows the real progress of the file. A connection that breaks is
+    tried again from the byte the file reached, and not from the start: a slow
+    GitHub gives a 110 MB installer in pieces, and a restart from zero on such a
+    link never finishes. Every network failure is turned into
+    :class:`UpdateError`, so the console names the reason instead of leaving the
+    program to hang with a moving bar and no word about the update.
+    """
     target.parent.mkdir(parents=True, exist_ok=True)
-    with httpx.stream("GET", url, follow_redirects=True, timeout=API_TIMEOUT) as response:
-        if response.status_code >= 400:
-            raise UpdateError(tr("up_installer_http", status=response.status_code))
-        with target.open("wb") as handle:
-            for chunk in response.iter_bytes(1024 * 1024):
-                handle.write(chunk)
-                if on_chunk is not None:
-                    on_chunk(len(chunk))
+    last: Exception | None = None
+    for _attempt in range(DOWNLOAD_ATTEMPTS):
+        done = target.stat().st_size if target.exists() else 0
+        headers = {"User-Agent": USER_AGENT}
+        if done:
+            headers["Range"] = f"bytes={done}-"
+        try:
+            with httpx.stream(
+                "GET", url, follow_redirects=True, timeout=INSTALLER_TIMEOUT, headers=headers
+            ) as response:
+                if response.status_code >= 400:
+                    raise UpdateError(tr("up_installer_http", status=response.status_code))
+                if response.status_code == 416:
+                    # The server has no bytes after the ones the file already has:
+                    # the installer is whole.
+                    return target
+                length = int(response.headers.get("content-length", 0) or 0)
+                final = _final_size(response.headers, done, length)
+                written = done
+                with target.open("ab") as handle:
+                    for chunk in response.iter_bytes(1024 * 1024):
+                        handle.write(chunk)
+                        written += len(chunk)
+                        if on_chunk is not None:
+                            on_chunk(written, final)
+                if final and written >= final:
+                    # The file is whole: the next request would ask for bytes the
+                    # server does not have.
+                    return target
+        except UpdateError:
+            # A reason the user must hear (HTTP 404, a cancel of the download):
+            # trying the same address again answers the same way.
+            raise
+        except httpx.HTTPError as exc:
+            last = exc
+            continue
+    if not target.exists() or target.stat().st_size == 0:
+        raise UpdateError(tr("up_installer_failed", error=last or "empty answer"))
     return target
 
 
