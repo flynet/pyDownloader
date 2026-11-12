@@ -58,13 +58,14 @@ from pydownloader.ui.button_icons import (
     icon_color,
     log_icon,
 )
-from pydownloader.ui.card import SourceCard, format_duration
+from pydownloader.ui.card import SourceCard
 from pydownloader.ui.console import ConsolePanel
 from pydownloader.ui.settings_panel import SettingsDialog
 from pydownloader.ui.theme import apply_theme
 from pydownloader.ui.thumbnail import ThumbnailLoader, preview_url
 from pydownloader.ui.tray import TrayController, make_tray
 from pydownloader.update.ui import UpdateMonitor
+from pydownloader.util.format import format_duration
 
 APP_TITLE = "PyDownloader"
 MIN_WIDTH = 900
