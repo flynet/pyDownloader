@@ -15,6 +15,7 @@ source is never lost to a preview.
 from __future__ import annotations
 
 import base64
+import weakref
 from urllib.parse import unquote_to_bytes, urljoin
 
 from PySide6.QtCore import QObject, QTimer, QUrl, Signal
@@ -101,8 +102,36 @@ class ThumbnailLoader(QObject):
         is nothing to fetch.
         """
         self.cancel(key)
+        # Qt keeps the callbacks on the objects the loader owns: the reply and the
+        # timer. A lambda that holds ``self`` closes the circle, and the collector
+        # then frees the loader inside the event loop, in the middle of a reply,
+        # which ends the process with an abort. A weak reference keeps the circle
+        # open: the loader is freed when its owner drops it, and the callback of
+        # a loader that is gone is not called (spec 4.1).
+        guard = weakref.ref(self)
+
+        def on_timeout(key: str) -> None:
+            target = guard()
+            if target is not None:
+                target._timed_out(key)
+
+        def on_finished(own: QNetworkReply, key: str) -> None:
+            target = guard()
+            if target is not None:
+                target._finished(key, own)
+
+        def on_progress(own: QNetworkReply, received: int) -> None:
+            target = guard()
+            if target is not None:
+                target._guard(own, received)
+
+        def on_decode(key: str, source: str) -> None:
+            target = guard()
+            if target is not None:
+                target._decode_data_url(key, source)
+
         if url.startswith("data:image/"):
-            QTimer.singleShot(0, lambda: self._decode_data_url(key, url))
+            QTimer.singleShot(0, lambda key=key, source=url: on_decode(key, source))
             return
         request = QNetworkRequest(QUrl(url))
         request.setAttribute(
@@ -126,12 +155,12 @@ class ThumbnailLoader(QObject):
         self._replies[key] = reply
         timer = QTimer(self)
         timer.setSingleShot(True)
-        timer.timeout.connect(lambda key=key: self._timed_out(key))
+        timer.timeout.connect(lambda key=key: on_timeout(key))
         timer.start(self.timeout_ms)
         self._timers[key] = timer
-        reply.finished.connect(lambda reply=reply, key=key: self._finished(key, reply))
+        reply.finished.connect(lambda reply=reply, key=key: on_finished(reply, key))
         reply.downloadProgress.connect(
-            lambda received, total, reply=reply: self._guard(reply, received)
+            lambda received, total, reply=reply: on_progress(reply, received)
         )
 
     def cancel(self, key: str) -> None:

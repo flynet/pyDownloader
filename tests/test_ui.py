@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-import http.server
 import json
 import threading
 from base64 import b64encode
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import QBuffer, QIODevice, Qt
+from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QCloseEvent, QColor, QIcon, QImage, QPalette, QPixmap
+from PySide6.QtNetwork import QNetworkReply, QNetworkRequest
 from PySide6.QtWidgets import QAbstractButton, QApplication, QPushButton
 
 from pydownloader.config.paths import Paths, default_paths
@@ -270,39 +270,68 @@ def test_clearing_the_list_drops_the_stills_on_their_way(qtbot, tmp_path, monkey
     assert window.hint_label.isVisible()
 
 
-def test_the_loader_reads_and_decodes_a_still(qtbot):
-    """The bytes of a picture are read in the event loop and arrive as a picture (spec 4.1)."""
-    image = QImage(8, 6, QImage.Format.Format_RGB32)
+def png_of_size(width: int, height: int) -> bytes:
+    """A picture of the size a page serves, as the bytes of a PNG."""
+    image = QImage(width, height, QImage.Format.Format_RGB32)
     image.fill(QColor("#123456"))
     buffer = QBuffer()
     buffer.open(QIODevice.OpenModeFlag.WriteOnly)
     assert image.save(buffer, "PNG")
-    data = bytes(buffer.data())
+    return bytes(buffer.data())
 
-    class Handler(http.server.BaseHTTPRequestHandler):
-        def do_GET(self) -> None:  # the test serves one picture
-            self.send_response(200)
-            self.send_header("Content-Type", "image/png")
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
 
-        def log_message(self, *args) -> None:
-            return
+class FakeReply(QObject):
+    """A reply that answers from memory: the picture is inside, no socket is opened.
 
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        loader = ThumbnailLoader()
-        received: list[tuple[str, object]] = []
-        loader.loaded.connect(lambda key, picture: received.append((key, picture)))
-        loader.load("s1", f"http://127.0.0.1:{server.server_port}/still.png")
-        qtbot.waitUntil(lambda: bool(received), timeout=5000)
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=5)
+    The real network stack of Qt opens a socket, a thread of its own and a timer,
+    and a test that ends while they are on their way leaves objects that the
+    collector frees in the middle of the event loop: the process aborts. Here the
+    answer is handed over in the event loop of the test, so the test is about the
+    loader, not about a socket.
+    """
+
+    finished = Signal()
+    downloadProgress = Signal(int, int)
+
+    def __init__(self, payload: bytes) -> None:
+        super().__init__()
+        self._payload = payload
+        self.aborted = False
+        # The answer comes later, as a real one: the loader connects its callbacks
+        # after the reply is handed over.
+        QTimer.singleShot(0, self.finished.emit)
+
+    def error(self) -> QNetworkReply.NetworkError:
+        return QNetworkReply.NetworkError.NoError
+
+    def readAll(self) -> QByteArray:
+        return QByteArray(self._payload)
+
+    def abort(self) -> None:
+        self.aborted = True
+
+
+class FakeManager:
+    """Stand-in of ``QNetworkAccessManager``: the requests are recorded, no answer is fetched."""
+
+    def __init__(self, payload: bytes) -> None:
+        self.payload = payload
+        self.requests: list[QNetworkRequest] = []
+
+    def get(self, request: QNetworkRequest) -> FakeReply:
+        self.requests.append(request)
+        return FakeReply(self.payload)
+
+
+def test_the_loader_reads_and_decodes_a_still(qtbot):
+    """The bytes of a picture are read in the event loop and arrive as a picture (spec 4.1)."""
+    loader = ThumbnailLoader()
+    loader._manager = FakeManager(png_of_size(8, 6))
+    received: list[tuple[str, object]] = []
+    loader.loaded.connect(lambda key, picture: received.append((key, picture)))
+
+    loader.load("s1", "https://cdn.example.com/still.png")
+    qtbot.waitUntil(lambda: bool(received), timeout=5000)
 
     key, picture = received[0]
     assert key == "s1"
@@ -312,14 +341,11 @@ def test_the_loader_reads_and_decodes_a_still(qtbot):
 
 def test_the_loader_decodes_a_frame_painted_by_the_player(qtbot):
     """A canvas frame arrives as a data URL: it is decoded here, no request is made (spec 4.1)."""
-    image = QImage(8, 6, QImage.Format.Format_RGB32)
-    image.fill(QColor("#123456"))
-    buffer = QBuffer()
-    buffer.open(QIODevice.OpenModeFlag.WriteOnly)
-    assert image.save(buffer, "PNG")
-    url = "data:image/png;base64," + b64encode(bytes(buffer.data())).decode("ascii")
+    url = "data:image/png;base64," + b64encode(png_of_size(8, 6)).decode("ascii")
 
+    manager = FakeManager(b"")
     loader = ThumbnailLoader()
+    loader._manager = manager
     received: list[tuple[str, object]] = []
     loader.loaded.connect(lambda key, picture: received.append((key, picture)))
     loader.load("s1", url)
@@ -329,6 +355,7 @@ def test_the_loader_decodes_a_frame_painted_by_the_player(qtbot):
     assert key == "s1"
     assert isinstance(picture, QPixmap)
     assert (picture.width(), picture.height()) == (8, 6)
+    assert manager.requests == [], "a data URL is not fetched"
 
 
 def test_the_loader_does_not_ask_for_a_picture_qt_cannot_decode(qtbot):
@@ -338,44 +365,21 @@ def test_the_loader_does_not_ask_for_a_picture_qt_cannot_decode(qtbot):
     and Qt of this build has no AVIF plugin: the bytes arrive, the decode fails
     and the card is added without its picture.
     """
-    image = QImage(8, 6, QImage.Format.Format_RGB32)
-    image.fill(QColor("#123456"))
-    buffer = QBuffer()
-    buffer.open(QIODevice.OpenModeFlag.WriteOnly)
-    assert image.save(buffer, "PNG")
-    data = bytes(buffer.data())
-    accepted: list[str] = []
+    manager = FakeManager(png_of_size(8, 6))
+    loader = ThumbnailLoader()
+    loader._manager = manager
+    received: list[tuple[str, object]] = []
+    loader.loaded.connect(lambda key, picture: received.append((key, picture)))
 
-    class Handler(http.server.BaseHTTPRequestHandler):
-        def do_GET(self) -> None:  # the test serves one picture
-            accepted.append(self.headers.get("Accept", ""))
-            self.send_response(200)
-            self.send_header("Content-Type", "image/png")
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
+    loader.load("s1", "https://phncdn.example.com/still.jpg", "https://site.example/watch/42")
+    qtbot.waitUntil(lambda: bool(received), timeout=5000)
 
-        def log_message(self, *args) -> None:
-            return
-
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        loader = ThumbnailLoader()
-        received: list[tuple[str, object]] = []
-        loader.loaded.connect(lambda key, picture: received.append((key, picture)))
-        loader.load("s1", f"http://127.0.0.1:{server.server_port}/still.jpg")
-        qtbot.waitUntil(lambda: bool(received), timeout=5000)
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=5)
-
-    assert accepted, "the loader sent no request"
-    assert "avif" not in accepted[0].lower()
-    assert "image/webp" in accepted[0]
-    assert "image/jpeg" in accepted[0]
+    request = manager.requests[0]
+    accept = bytes(request.rawHeader("Accept")).decode("ascii")
+    assert "avif" not in accept.lower(), accept
+    assert "image/webp" in accept
+    assert "image/jpeg" in accept
+    assert bytes(request.rawHeader("Referer")).decode("ascii") == "https://site.example/watch/42"
 
 
 def test_a_long_title_makes_the_card_taller_not_wider(qtbot, tmp_path):

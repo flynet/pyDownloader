@@ -32,6 +32,12 @@ on `main`.
   box, and Qt uses Schannel, the TLS of Windows. Video stills load on such a machine
   instead of breaking the start with a dialog.
 
+- **A video card no longer takes the program with it when its picture is on its way**
+  (spec 4.1): the callbacks of the loader held its owner, so the collector freed the
+  loader inside the event loop, in the middle of a reply, and the process closed
+  without a word. The callbacks hold a weak reference now: the loader is freed only
+  when its owner drops it, and the answer of a loader that is gone is not called.
+
 ## [0.4.8] - 2026-11-11
 
 ### Added
