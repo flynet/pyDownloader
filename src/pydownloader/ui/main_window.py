@@ -15,7 +15,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from PySide6.QtCore import QByteArray, QObject, Qt, QThread, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QPixmap
@@ -66,6 +66,9 @@ from pydownloader.ui.thumbnail import ThumbnailLoader, preview_url
 from pydownloader.ui.tray import TrayController, make_tray
 from pydownloader.update.ui import UpdateMonitor
 from pydownloader.util.format import format_duration
+
+if TYPE_CHECKING:
+    from pydownloader.ui.single_instance import InstanceServer
 
 APP_TITLE = "PyDownloader"
 MIN_WIDTH = 900
@@ -187,6 +190,9 @@ class MainWindow(QMainWindow):
         self.ffmpeg: Ffmpeg | None = None
         #: Update check: created by ``app.py`` after the window, wired to the dialog.
         self.updater: UpdateMonitor | None = None
+        #: The server that announces the running copy, created by ``app.py`` after
+        #: the window: a second start of the program finds it and asks for the window.
+        self.instance: InstanceServer | None = None
         #: Bridge of the log handler to the console, created with the window.
         self.log_bridge: LogBridge | None = None
         #: Browser of the last run: «Open browser» restarts the same kind and page.
