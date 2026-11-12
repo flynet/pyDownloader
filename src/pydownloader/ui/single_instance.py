@@ -93,7 +93,7 @@ def notify_running(app: QCoreApplication, name: str | None = None) -> bool:
         socket.flush()
 
     def read() -> None:
-        if ANSWER in bytes(socket.readAll()):
+        if ANSWER in bytes(socket.readAll().data()):
             answered.append(True)
             app.quit()
 
@@ -158,7 +158,7 @@ class InstanceServer(QLocalServer):
 
     def _read(self, client: QLocalSocket) -> None:
         """The word of the second copy: the window comes to the front."""
-        if SHOW in bytes(client.readAll()):
+        if SHOW in bytes(client.readAll().data()):
             self.window.show_from_tray()
             self.window.log_info(tr("app_second_copy"))
             # The answer tells the second copy that the word has arrived, so the
