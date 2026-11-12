@@ -132,6 +132,7 @@ TEXTS: dict[str, str] = {
     "app_log_file": "Log file: {path}",
     "app_data_dir": "Program data: {path}",
     "app_profile_dir": "Browser profile: {path}",
+    "app_second_copy": "A second copy asked to show the window",
     "app_browser_hint": (
         'The browser is not open: press "Open browser" when you want to look for a video.'
     ),

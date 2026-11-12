@@ -7,6 +7,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
+from PySide6.QtWidgets import QApplication
 
 from pydownloader.i18n import set_language
 
@@ -51,6 +52,17 @@ def isolated_app_data(tmp_path_factory: pytest.TempPathFactory):
         else:
             os.environ[key] = value
     tempfile.tempdir = old_temp
+
+
+@pytest.fixture(scope="session")
+def app(qapp: QApplication) -> QApplication:
+    """The Qt application of the suite: the copies of a program need a running one.
+
+    A copy of the program talks to the running copy through the Qt event loop, so
+    the tests that send the word to a listener need the same application the
+    window lives in (spec 3.1 p.9).
+    """
+    return qapp
 
 
 @pytest.fixture(scope="session", autouse=True)

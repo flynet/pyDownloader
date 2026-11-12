@@ -50,6 +50,7 @@ from pydownloader.i18n import set_language, tr
 from pydownloader.manifest.quality import QualityFilter
 from pydownloader.manifest.registry import SourceRegistry
 from pydownloader.ui.main_window import LogBridge, MainWindow, pick_download_dir
+from pydownloader.ui.single_instance import RESTART_FLAG, is_restart, notify_running, start_instance
 from pydownloader.ui.theme import apply_theme
 from pydownloader.ui.tray import make_tray
 from pydownloader.update.ui import UpdateMonitor
@@ -152,10 +153,15 @@ def silence_loader_errors() -> None:
 
 
 def restart_command() -> tuple[str, list[str]]:
-    """Command that starts the program again: the exe of the build, the module in a checkout."""
+    """Command that starts the program again: the exe of the build, the module in a checkout.
+
+    The new copy sees the running one and quits, so a restart gets the flag
+    ``--restart``: the new copy knows the old one is closing and takes the name
+    of its server when the name is free (spec 8.1).
+    """
     if getattr(sys, "frozen", False):
-        return sys.executable, []
-    return sys.executable, ["-m", "pydownloader"]
+        return sys.executable, [RESTART_FLAG]
+    return sys.executable, ["-m", "pydownloader", RESTART_FLAG]
 
 
 def restart_application(app: QApplication) -> None:
@@ -167,6 +173,18 @@ def restart_application(app: QApplication) -> None:
     exe, args = restart_command()
     QProcess.startDetached(exe, args)
     app.quit()
+
+
+def is_second_start(app: QApplication, args: list[str]) -> bool:
+    """Whether this copy must not open a window: another copy runs.
+
+    The flag of a restart is not a second start: the copy that restarts the
+    program after the language change meets the copy that is closing, and it is
+    the program the person asked for, so it opens its own window (spec 8.1).
+    """
+    if is_restart(args):
+        return False
+    return notify_running(app)
 
 
 def make_worker(settings: Settings, ffmpeg: Ffmpeg, sniffer: SnifferThread | None) -> QueueWorker:
@@ -484,6 +502,11 @@ def main(argv: list[str] | None = None) -> int:
     settings = load_settings(paths.settings_file)
     # The language is chosen once for the whole run, so it is set before any text.
     set_language(settings.language)
+    # A second copy of the program opens nothing: no second queue, no second
+    # browser, no second tray icon, no second log. It asks the running one to
+    # show its window and quits.
+    if is_second_start(app, args):
+        return 0
     chosen = resolve_download_dir(settings)
     if chosen is None:
         return 0
@@ -491,6 +514,8 @@ def main(argv: list[str] | None = None) -> int:
     paths = default_paths(settings.profile_in_downloads, chosen, application_dir())
     save_settings(settings, paths.settings_file)
     window = create_window(app, settings, paths)
+    # The running copy announces itself, so the next start finds it.
+    window.instance = start_instance(window)
     apply_theme(app, settings.theme)
     # The tray keeps the program alive when the window is hidden: Qt counts a
     # hidden window as closed, so quitting is done by the tray menu (spec 4.3).

@@ -133,6 +133,7 @@ TEXTS: dict[str, str] = {
     "app_log_file": "日志文件: {path}",
     "app_data_dir": "程序数据: {path}",
     "app_profile_dir": "浏览器配置: {path}",
+    "app_second_copy": "第二个实例请求显示窗口",
     "app_browser_hint": "浏览器未打开: 想查找视频时点击“打开浏览器”。",
     "app_console_hint": "控制台: 列表下方的按钮显示和隐藏它",
     "app_blocker_state": "广告拦截器: {state}",
