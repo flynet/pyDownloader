@@ -13,7 +13,6 @@ from PySide6.QtWidgets import QApplication, QMessageBox, QPushButton, QWidget
 
 from pydownloader.config.settings import Settings
 from pydownloader.i18n import tr
-from pydownloader.ui.card import format_duration
 from pydownloader.update.checker import (
     Asset,
     Release,
@@ -43,6 +42,7 @@ from pydownloader.update.ui import (
     skip_label,
     update_label,
 )
+from pydownloader.util.format import format_duration
 
 
 def payload(

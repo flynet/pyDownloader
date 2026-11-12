@@ -27,9 +27,9 @@ from PySide6.QtWidgets import QMessageBox, QProgressDialog
 
 from pydownloader.config.settings import Settings
 from pydownloader.i18n import tr
-from pydownloader.ui.card import format_duration
 from pydownloader.update import checker
 from pydownloader.update.checker import Release, UpdateError
+from pydownloader.util.format import format_duration
 
 
 def update_title() -> str:

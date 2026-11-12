@@ -50,6 +50,7 @@ from pydownloader.ui.button_icons import (
     retry_icon,
 )
 from pydownloader.ui.theme import DARK, PALETTES, badge_style
+from pydownloader.util.format import format_duration
 
 CardState = Literal["new", "queued", "downloading", "done", "error"]
 
@@ -146,15 +147,6 @@ def format_size(size: int | None) -> str:
     if size is None:
         return tr("card_size_unknown")
     return tr("card_size_mb", mb=size / (1024 * 1024))
-
-
-def format_duration(seconds: float | None) -> str:
-    """``12:34`` for 12 minutes 34 seconds, ``""`` when the length is unknown."""
-    if seconds is None:
-        return ""
-    total = round(seconds)
-    minutes, rest = divmod(total, 60)
-    return f"{minutes}:{rest:02d}"
 
 
 def format_quality(height: int | None, audio: bool = False) -> str:
