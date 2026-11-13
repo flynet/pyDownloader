@@ -113,6 +113,8 @@ TEXTS: dict[str, str] = {
     "settings_check_updates_button": "Проверить обновления",
     "settings_restart_hint": "Язык применяется после перезапуска программы.",
     "settings_restart": "Перезапустить",
+    "settings_help": "Справка",
+    "settings_help_tip": "Открыть страницу GitHub, где сообщают о проблемах",
     "settings_tray": "Значок в области уведомлений",
     "settings_console": "Показывать консоль под списком",
     "settings_console_tip": "Скрытая консоль отдаёт всё окно списку найденных видео",

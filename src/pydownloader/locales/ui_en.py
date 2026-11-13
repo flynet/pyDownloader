@@ -113,6 +113,8 @@ TEXTS: dict[str, str] = {
     "settings_check_updates_button": "Check for updates",
     "settings_restart_hint": "The language is applied after the program restarts.",
     "settings_restart": "Restart",
+    "settings_help": "Help",
+    "settings_help_tip": "Open the page on GitHub where a problem is reported",
     "settings_tray": "Show the icon in the notification area",
     "settings_console": "Show the console panel below the list",
     "settings_console_tip": "Hidden, the list of found videos takes the whole window",
