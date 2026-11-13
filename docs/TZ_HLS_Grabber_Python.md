@@ -302,9 +302,11 @@ window size 900×600, size and position are remembered.
 - **The row of buttons at the bottom of the dialog:** the two main buttons —
   **"Save"** and **"Cancel"** — are in the **right lower corner**, where the buttons
   that finish a dialog are looked for ("Save" is the button of Enter, "Cancel" is
-  the last button of the row). "Check updates" and "Restart" are the secondary
-  commands of the dialog and stand on the **left** of the row. Every button carries
-  its painted mark.
+  the last button of the row). "Check updates", "Restart" and **"Help"** are the
+  secondary commands of the dialog and stand on the **left** of the row. **"Help"**
+  opens the issues page of the repository in the browser of the system, so a person
+  reports a problem from the settings; the dialog stays open and the form is not
+  written, because Help asks for nothing. Every button carries its painted mark.
 - **Tray (Windows notification area).** Pressing "X" hides the window to the tray
   and the downloads keep running; "Exit" in the tray menu is the only way to
   quit (it asks for confirmation when a download is running). The tray menu has
@@ -634,6 +636,10 @@ blocked" when they see an automation tool. The requirements:
   for updates" button in settings, the application requests
   `GET https://api.github.com/repos/<OWNER>/<REPO>/releases/latest`. The owner
   and the repository name are a constant in `config.py`.
+- **"Help" in settings** opens `https://github.com/<OWNER>/<REPO>/issues` in the
+  browser of the system: the page where a person reports a problem is the page of
+  the same repository the release notes are read from, so one pair of constants
+  gives both addresses, and opening the page writes nothing in the settings.
 - The release version (`tag_name`) is compared with the current one by SemVer
   (`packaging.version`). Prereleases (`prerelease: true`) and drafts are
   ignored.

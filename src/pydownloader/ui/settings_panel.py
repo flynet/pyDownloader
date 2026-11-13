@@ -3,14 +3,17 @@
 Fields: download folder, number of segment threads, target height, minimum MP4
 size, language, theme, automatic update check. The dialog is opened from the
 window; it does not write the settings until the user presses «Сохранить».
-The language is applied at startup, so the dialog offers a restart (spec 8.1).
+The language is applied at startup, so the dialog offers a restart (spec 8.1),
+and «Справка» opens the page of the problems of the program on GitHub, where a
+person reports one (spec 4.3 p.2, 8.3).
 """
 
 from __future__ import annotations
 
 from typing import cast
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QUrl, Signal
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -27,6 +30,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from pydownloader.config.constants import issues_url
 from pydownloader.config.paths import download_dir_default
 from pydownloader.config.settings import (
     BROWSERS,
@@ -43,6 +47,7 @@ from pydownloader.ui.button_icons import (
     check_icon,
     cross_icon,
     folder_icon,
+    help_icon,
     icon_color,
     retry_icon,
 )
@@ -246,6 +251,14 @@ class SettingsDialog(QDialog):
         self.restart_button = QPushButton(tr("settings_restart"))
         attach(self.restart_button, retry_icon(self._accent))
         self.restart_button.clicked.connect(self._restart)
+        # «Справка» is a secondary command, so it stands on the left with the two
+        # update commands: a person reports a problem from the settings, and the
+        # dialog stays open, because Help writes nothing (spec 4.3 p.2, 8.3).
+        self.help_button = QPushButton(tr("settings_help"))
+        self.help_button.setToolTip(tr("settings_help_tip"))
+        # The ring with the question mark is the mark of the page of the problems.
+        attach(self.help_button, help_icon(self._accent))
+        self.help_button.clicked.connect(self._open_issues)
         self.save_button = QPushButton(tr("settings_save"))
         # The check is the mark of the values written to settings.json (spec 4.3 p.2).
         attach(self.save_button, check_icon(self._accent))
@@ -256,6 +269,7 @@ class SettingsDialog(QDialog):
         self.cancel_button.clicked.connect(self.reject)
         buttons.addWidget(self.update_check_button)
         buttons.addWidget(self.restart_button)
+        buttons.addWidget(self.help_button)
         buttons.addStretch(1)
         buttons.addWidget(self.save_button)
         buttons.addWidget(self.cancel_button)
@@ -294,6 +308,15 @@ class SettingsDialog(QDialog):
         )
         if path:
             self.download_edit.setText(path)
+
+    def _open_issues(self) -> None:
+        """Open the page of the problems of the program in the browser of the system.
+
+        The address is the one constant of the repository (spec 8.3), so the page of
+        «Help» and the page of the release notes are the pages of the same repository.
+        The dialog is not closed and the form is not written: help asks for nothing.
+        """
+        QDesktopServices.openUrl(QUrl(issues_url()))
 
     def _accept(self) -> None:
         self.apply_to(self.settings)

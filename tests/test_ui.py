@@ -8,16 +8,18 @@ from base64 import b64encode
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QObject, Qt, QTimer, Signal
+from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QObject, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QCloseEvent, QColor, QIcon, QImage, QPalette, QPixmap
 from PySide6.QtNetwork import QNetworkReply, QNetworkRequest
 from PySide6.QtWidgets import QAbstractButton, QApplication, QPushButton
 
+from pydownloader.config.constants import OWNER, REPO, issues_url
 from pydownloader.config.paths import Paths, default_paths
 from pydownloader.config.settings import THEMES, Settings
 from pydownloader.i18n import SUPPORTED_LANGUAGES, set_language, tr
 from pydownloader.manifest.registry import SourceEntry
 from pydownloader.ui import main_window as main_window_mod
+from pydownloader.ui import settings_panel as settings_panel_mod
 from pydownloader.ui import tray as tray_mod
 from pydownloader.ui.app_icon import ACCENT, BACKGROUND, TRAY_SIZE, WHITE, draw
 from pydownloader.ui.button_icons import ICON_SIZE, browser_icon, icon_color
@@ -1398,6 +1400,35 @@ def test_the_buttons_of_the_settings_dialog_carry_their_marks(qtbot):
     for button in buttons:
         assert not button.icon().isNull(), button.text()
         assert painted(button.icon()) > 10, button.text()
+
+
+def test_the_help_button_of_the_settings_opens_the_page_of_the_problems(qtbot, monkeypatch):
+    settings = Settings()
+    opened: list[str] = []
+
+    class FakeDesktop:
+        """The browser of the system is not started in a test: the address is recorded."""
+
+        @staticmethod
+        def openUrl(url: QUrl) -> bool:
+            opened.append(url.toString())
+            return True
+
+    monkeypatch.setattr(settings_panel_mod, "QDesktopServices", FakeDesktop)
+    dialog = SettingsDialog(settings)
+    qtbot.addWidget(dialog)
+    assert dialog.help_button.text() == tr("settings_help")
+    assert dialog.help_button.toolTip() == tr("settings_help_tip")
+    # The ring with the question mark is painted, not typed (spec 4.3 p.2).
+    assert painted(dialog.help_button.icon()) > 10
+    dialog.help_button.click()
+    # The address is the page of the problems of the repository, taken from the one
+    # constant of GitHub of the program (spec 8.3).
+    assert opened == [issues_url()]
+    assert opened[0] == f"https://github.com/{OWNER}/{REPO}/issues"
+    # Help asks for nothing: the dialog is not closed and the settings are untouched.
+    assert dialog.result() == 0
+    assert settings == Settings()
 
 
 def test_the_two_states_of_the_browser_button_are_one_window():

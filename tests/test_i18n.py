@@ -274,6 +274,14 @@ def test_the_browser_starting_tip_is_in_every_language():
         assert CATALOG[language]["window_browser_starting"]
 
 
+def test_the_help_of_the_settings_is_in_every_language():
+    # «Справка» opens the page of the problems of the program, so the label and its
+    # tip are written in the language the person reads (spec 4.3 p.2, 8.3).
+    for language in SUPPORTED_LANGUAGES:
+        assert CATALOG[language]["settings_help"]
+        assert CATALOG[language]["settings_help_tip"]
+
+
 def test_the_tray_has_one_item_for_the_browser_window():
     # The item of the menu is the button of the window: it changes its text, so the
     # menu does not carry the two keys of the old pair (spec 4.3).

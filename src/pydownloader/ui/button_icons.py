@@ -290,6 +290,22 @@ def exit_icon(color: QColor) -> QIcon:
     return _done(pixmap, painter)
 
 
+def help_icon(color: QColor) -> QIcon:
+    """Help: the ring with the question mark, the page of the problems (spec 4.3 p.2, 8.3)."""
+    pixmap, painter = _begin(color, STROKE)
+    painter.drawEllipse(QRectF(2.3, 2.3, 11.4, 11.4))
+    # The hook of the mark: 205°..-25° of Qt angles, so the opening is at the lower
+    # left and the curve lands at the middle of the ring.
+    _set_pen(painter, color, MARK)
+    painter.drawArc(QRectF(5.9, 4.2, 4.2, 4.2), -25 * 16, 230 * 16)
+    painter.drawLine(QPointF(9.9, 7.2), QPointF(8.0, 8.8))
+    painter.drawLine(QPointF(8.0, 8.8), QPointF(8.0, 10.3))
+    # The point of the mark is a dot of its own, not the end of the line.
+    _set_pen(painter, color, 1.9)
+    painter.drawPoint(QPointF(8.0, 11.6))
+    return _done(pixmap, painter)
+
+
 def attach(button: QAbstractButton, icon: QIcon) -> None:
     """Put the icon on the button, the text stays next to it.
 
@@ -320,6 +336,7 @@ __all__ = [
     "exit_icon",
     "folder_icon",
     "gear_icon",
+    "help_icon",
     "icon_color",
     "log_icon",
     "play_icon",
