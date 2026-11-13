@@ -4,6 +4,20 @@ The format is [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 versioning is [SemVer](https://semver.org/). A release is a `vX.Y.Z` tag
 on `main`.
 
+## [0.4.12] - 2026-11-13
+
+### Added
+- **Help in the settings opens the page of the problems** (spec 4.3 p.2, 8.3): the group of
+  the secondary commands of the settings dialog — "Check updates", "Restart" — gets the
+  third button, "Help", on the left of the row, and it carries its painted mark: the ring
+  with the question mark, drawn by hand in the 16 px grid of the other marks, in the accent
+  color of the theme. The button opens the page of the issues of the repository in the
+  browser of the system, so a person reports a problem from the window where the version,
+  the language and the downloads folder are read. The address comes from the same pair of
+  constants as the check of the release, so the page of the problems and the page of the
+  release notes are the pages of one repository. Help asks for nothing: the dialog stays
+  open, the form is not written, and the settings are saved only by "Save".
+
 ## [0.4.11] - 2026-11-12
 
 ### Added
