@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import pytest
+
+from pydownloader.i18n import set_language
 from pydownloader.manifest.detector import Candidate, classify
 from pydownloader.manifest.registry import SourceRegistry
 from pydownloader.util.ranges import ByteRange, content_range_total, merge_ranges
@@ -9,6 +12,16 @@ from pydownloader.util.urls import normalize_url, origin_of, path_extension
 
 MIN_SIZE = 5 * 1024 * 1024
 PAGE = "https://site.example/watch/42"
+
+
+@pytest.fixture(autouse=True)
+def russian():
+    """The words of this file are read in Russian: the detector writes the reason of
+    a skip in the language the user reads (spec 4.3, 5.1).
+    """
+    previous = set_language("ru")
+    yield
+    set_language(previous)
 
 
 def mp4(url: str, size: int | None = None, content_type: str = "video/mp4") -> Candidate:

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import pytest
+
 from pydownloader.dash.parser import parse_mpd
 from pydownloader.hls.parser import parse_playlist
-from pydownloader.i18n import tr
+from pydownloader.i18n import set_language, tr
 from pydownloader.manifest.quality import (
     QualityFilter,
     heights_message,
@@ -14,6 +16,16 @@ from pydownloader.manifest.quality import (
 from tests.conftest import HLS_URL, MPD_URL
 
 FILTER = QualityFilter()
+
+
+@pytest.fixture(autouse=True)
+def russian():
+    """The words of this file are read in Russian: the quality filter names the
+    presets it missed in the language the user reads (spec 4.3, 11).
+    """
+    previous = set_language("ru")
+    yield
+    set_language(previous)
 
 
 def test_master_with_1080p_is_shown(read):

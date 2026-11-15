@@ -14,6 +14,7 @@ from pydownloader.browser.chromium_installer import (
     install_chromium,
     install_env,
 )
+from pydownloader.i18n import set_language
 
 LINES = [
     "Downloading to D:\\browsers\\chromium-1140",
@@ -49,6 +50,16 @@ def fake_popen(monkeypatch):
         return captured
 
     return factory
+
+
+@pytest.fixture(autouse=True)
+def russian():
+    """The words of this file are read in Russian: the installer asks in the language
+    the user reads (spec 4.3, 7.2).
+    """
+    previous = set_language("ru")
+    yield
+    set_language(previous)
 
 
 def test_env_uses_app_browsers_dir(tmp_path: Path):

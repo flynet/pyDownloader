@@ -18,6 +18,23 @@ on `main`.
   release notes are the pages of one repository. Help asks for nothing: the dialog stays
   open, the form is not written, and the settings are saved only by "Save".
 
+### Changed
+- **The rows of the language combo stand by the number of the people who read the
+  language** (spec 8.1): the row Settings → Language starts with English, the default
+  of the program, and after it stand 中文, Français, Deutsch, Українська. Russian is
+  the last row of the combo, outside of that order, so a person who reads the program
+  in Russian finds it at the bottom of the list. The name of a language is written in
+  its own language, as before. The README carries the same order as a table of the
+  languages with the number of the readers, English at the top of the table and
+  Russian at the bottom.
+
+### Tests
+- **The suite runs in English**: the session fixture of `conftest.py` leaves the tests
+  in the language a person sees on the first start of the program and in the
+  screenshots of the README. A file that checks the Russian texts of the catalog calls
+  `set_language` for itself, so its words are read in the language they are written
+  in, and the language is handed back after every test.
+
 ## [0.4.11] - 2026-11-12
 
 ### Added

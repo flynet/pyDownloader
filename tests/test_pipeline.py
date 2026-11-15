@@ -6,9 +6,11 @@ browser and without a network.
 
 from __future__ import annotations
 
+import pytest
+
 from pydownloader.browser.events import ResponseEvent
 from pydownloader.ffmpeg.probe import MediaInfo
-from pydownloader.i18n import tr
+from pydownloader.i18n import set_language, tr
 from pydownloader.manifest.pipeline import Fetch, ProbeMedia, process_event
 from pydownloader.manifest.quality import QualityFilter
 from pydownloader.manifest.registry import SourceRegistry
@@ -17,6 +19,16 @@ from tests.conftest import HLS_URL, MPD_URL
 MIN_SIZE = 5 * 1024 * 1024
 QUALITY = QualityFilter()
 VARIANT_1080 = "https://cdn.example.com/video/video/1080.m3u8?token=abc"
+
+
+@pytest.fixture(autouse=True)
+def russian():
+    """The words of this file are read in Russian: the pipeline writes what it found
+    and what it skipped in the language the user reads (spec 4.3, 5.2).
+    """
+    previous = set_language("ru")
+    yield
+    set_language(previous)
 
 
 def make_fetch(texts: dict[str, str]) -> Fetch:

@@ -15,6 +15,17 @@ from pydownloader.download.engine import (
 )
 from pydownloader.download.plan import PlanItem
 from pydownloader.hls.models import Key
+from pydownloader.i18n import set_language
+
+
+@pytest.fixture(autouse=True)
+def russian():
+    """The words of this file are read in Russian: the engine reports a failure in
+    the language the user reads (spec 4.3, 6.2).
+    """
+    previous = set_language("ru")
+    yield
+    set_language(previous)
 
 TMP = ".tmp/s1"
 

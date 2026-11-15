@@ -60,13 +60,30 @@ def test_placeholders_match_across_languages():
 def test_language_names_are_written_in_their_own_language():
     assert LANGUAGE_NAMES == {
         "en": "English",
-        "ru": "Русский",
-        "uk": "Українська",
         "zh": "中文",
         "fr": "Français",
         "de": "Deutsch",
+        "uk": "Українська",
+        "ru": "Русский",
     }
     assert set(LANGUAGE_NAMES) == set(SUPPORTED_LANGUAGES)
+
+
+def test_the_rows_of_the_combo_are_the_number_of_the_readers_and_russian_is_last():
+    """The order of the language row of the settings (spec 8.1).
+
+    English is the default and the first row, the rest stand by the number of the
+    people who read the language, and Russian is always the last row of the combo,
+    outside of that order.
+    """
+    assert DEFAULT_LANGUAGE == "en"
+    assert list(SUPPORTED_LANGUAGES) == ["en", "zh", "fr", "de", "uk", "ru"]
+
+
+def test_the_suite_reads_the_english_texts():
+    # The session fixture of ``conftest.py`` leaves the suite in English: the
+    # screenshots of the README and the settings of a first start are English too.
+    assert current_language() == DEFAULT_LANGUAGE
 
 
 def test_tr_switches_the_language_and_returns_the_previous():

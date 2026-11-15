@@ -79,6 +79,16 @@ from pydownloader.ui.tray import (
 )
 
 
+@pytest.fixture(autouse=True)
+def russian():
+    """The words of this file are read in Russian: the window paints its cards,
+    buttons and tips in the language the user reads (spec 4.3).
+    """
+    previous = set_language("ru")
+    yield
+    set_language(previous)
+
+
 def entry(id: str = "s1", kind: str = "hls", height: int | None = 1080) -> SourceEntry:
     return SourceEntry(
         id=id,
@@ -998,7 +1008,6 @@ def test_the_names_of_the_new_themes_are_localized():
         set_language(language)
         for theme in THEMES:
             assert theme_label(theme).strip()
-    set_language("ru")
 
 
 @pytest.mark.parametrize("theme", ["cartoons", "neon", "pink"])

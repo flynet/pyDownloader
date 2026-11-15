@@ -326,12 +326,30 @@ state of the panel is stored, so the window opens the way the user left it.
 
 ## Languages
 
-The interface and the log lines are in English, Russian, Ukrainian, Chinese,
-French and German; English is the default. The language is chosen in
-Settings → Language; the native names shown in the combo are English, Русский,
-Українська, 中文, Français, Deutsch. The choice is stored in
+The interface and the log lines are in English, Chinese, French, German,
+Ukrainian and Russian; English is the default. The language is chosen in
+Settings → Language. The choice is stored in
 `%APPDATA%\PyDownloader\settings.json` as `"language"` and is applied after the
 program restarts — the Settings dialog shows a hint and a Restart button.
+
+The rows of the combo stand in the order of the languages of the world by the
+number of the people who read them, English at the top; the name of a language is
+written in its own language, so the row is readable whatever the current language
+is. Russian is always the last row, outside of that order:
+
+| Language | Row in the combo | `"language"` | People who read it |
+| --- | --- | --- | --- |
+| English | `English` | `en` | ~1.5 billion |
+| Chinese | `中文` | `zh` | ~1.1 billion |
+| French | `Français` | `fr` | ~310 million |
+| German | `Deutsch` | `de` | ~135 million |
+| Ukrainian | `Українська` | `uk` | ~40 million |
+| Russian | `Русский` | `ru` | ~260 million |
+
+The counts are the speakers of both kinds — the people who learned the language and
+the people who use it every day — so the order of the rows is the order of the
+readers the program can reach. The counts are rounded, and Russian stands at the
+bottom of the table by the rule above, not by its number.
 
 ## Anti-bot
 
@@ -477,7 +495,7 @@ settings.
 ```
 src/pydownloader/
   i18n.py   language of the interface and of the log lines, ``tr`` lookup
-  locales/  catalog of texts: English, Russian, Ukrainian, Chinese, French, German
+  locales/  catalog of texts: English, Chinese, French, German, Ukrainian, Russian
   hls/      .m3u8 parser and model
   dash/     .mpd parser and model
   manifest/ candidate detection (audio/video), DRM, quality presets

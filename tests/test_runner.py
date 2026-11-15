@@ -21,6 +21,7 @@ from pydownloader.download.runner import (
 )
 from pydownloader.ffmpeg.locate import Ffmpeg
 from pydownloader.ffmpeg.mux import MuxResult
+from pydownloader.i18n import set_language
 from pydownloader.manifest.pipeline import process_event
 from pydownloader.manifest.quality import Choice, QualityFilter
 from pydownloader.manifest.registry import SourceEntry, SourceRegistry
@@ -53,6 +54,16 @@ SEGMENTS = {
     "https://cdn.example.com/video/video/seg102.ts?token=abc": b"C",
 }
 TEXTS = {HLS_URL: MASTER, VARIANT_1080: MEDIA}
+
+
+@pytest.fixture(autouse=True)
+def russian():
+    """The words of this file are read in Russian: the runner reports a task in the
+    language the user reads (spec 4.3, 6.2).
+    """
+    previous = set_language("ru")
+    yield
+    set_language(previous)
 
 
 def entry_for(texts: dict[str, str], url: str, kind: str) -> SourceEntry:

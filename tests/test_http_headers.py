@@ -15,7 +15,18 @@ from pydownloader.download.http import (
     head_info,
     merge_cookies,
 )
+from pydownloader.i18n import set_language
 from pydownloader.util.ranges import ByteRange
+
+
+@pytest.fixture(autouse=True)
+def russian():
+    """The words of this file are read in Russian: the fetcher reports a failure in
+    the language the user reads (spec 4.3, 6.1).
+    """
+    previous = set_language("ru")
+    yield
+    set_language(previous)
 
 PAGE = "https://site.example/watch/42"
 

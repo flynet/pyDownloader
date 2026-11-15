@@ -13,6 +13,7 @@ from pydownloader.download import worker as worker_mod
 from pydownloader.download.runner import build_task, task_root
 from pydownloader.download.worker import QueueWorker
 from pydownloader.ffmpeg.locate import Ffmpeg
+from pydownloader.i18n import set_language
 from pydownloader.manifest.pipeline import process_event
 from pydownloader.manifest.quality import QualityFilter
 from pydownloader.manifest.registry import SourceEntry, SourceRegistry
@@ -37,6 +38,16 @@ AUDIO_SEGMENTS = {
     "https://cdn.example.com/video/seg-1.m4a": b"S1",
 }
 FFMPEG = Ffmpeg(path=Path("ffmpeg.exe"), label="test")
+
+
+@pytest.fixture(autouse=True)
+def russian():
+    """The words of this file are read in Russian: the queue writes the start and the
+    end of a task in the language the user reads (spec 4.3, 6.2).
+    """
+    previous = set_language("ru")
+    yield
+    set_language(previous)
 
 
 def entry(id: str = "s1") -> SourceEntry:

@@ -10,6 +10,7 @@ import pytest
 from pydownloader.download.runner import RunContext, build_task, make_plan, run_task
 from pydownloader.ffmpeg.locate import Ffmpeg
 from pydownloader.ffmpeg.mux import MuxResult
+from pydownloader.i18n import set_language
 from pydownloader.manifest.quality import Choice
 from pydownloader.manifest.registry import SourceEntry
 from pydownloader.youtube.api import payload_template, video_id_from_url
@@ -67,6 +68,16 @@ PLAYER = {
 
 def player_text(data: dict = PLAYER) -> str:
     return json.dumps(data)
+
+
+@pytest.fixture(autouse=True)
+def russian():
+    """The words of this file are read in Russian: the YouTube reader reports a
+    refused video in the language the user reads (spec 4.3, 6.2).
+    """
+    previous = set_language("ru")
+    yield
+    set_language(previous)
 
 
 def test_parse_player():

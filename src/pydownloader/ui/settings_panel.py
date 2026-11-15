@@ -201,7 +201,8 @@ class SettingsDialog(QDialog):
         self._form.addRow("", self.blocker_check)
 
         # The name of a language is written in its own language, so the combo is
-        # readable whatever the current language is (spec 8.1).
+        # readable whatever the current language is (spec 8.1). The rows follow the
+        # number of the people who read the language, and Russian is the last row.
         self.language_box = QComboBox()
         for code in SUPPORTED_LANGUAGES:
             self.language_box.addItem(LANGUAGE_NAMES[code], code)

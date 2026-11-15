@@ -1,7 +1,7 @@
 """Language of the interface and of the log lines (spec 4.3, 8.1).
 
 Every user-facing text is a key of the catalog in ``locales``, so the program
-can run in English, Russian, Ukrainian, Chinese, French and German. The
+can run in English, Chinese, French, German, Ukrainian and Russian. The
 language comes from the settings and is applied once at startup: the text of a
 widget is written when the widget is built, so changing the language needs a
 restart.
@@ -17,20 +17,22 @@ from typing import Literal
 
 from pydownloader.locales import CATALOG
 
-Language = Literal["en", "ru", "uk", "zh", "fr", "de"]
+Language = Literal["en", "zh", "fr", "de", "uk", "ru"]
 
-#: English is the default, the rest follow it in the order of the settings combo.
+#: English is the default, the rest follow it in the order of the settings combo:
+#: the languages of the world by the number of the people who read them, and
+#: Russian stands last of the list, outside of that order.
 DEFAULT_LANGUAGE: Language = "en"
-SUPPORTED_LANGUAGES: tuple[Language, ...] = ("en", "ru", "uk", "zh", "fr", "de")
+SUPPORTED_LANGUAGES: tuple[Language, ...] = ("en", "zh", "fr", "de", "uk", "ru")
 #: The name of a language is always written in its own language, so the combo
 #: is readable whatever the current language is.
 LANGUAGE_NAMES: dict[Language, str] = {
     "en": "English",
-    "ru": "Русский",
-    "uk": "Українська",
     "zh": "中文",
     "fr": "Français",
     "de": "Deutsch",
+    "uk": "Українська",
+    "ru": "Русский",
 }
 
 #: The language of the running program; the settings apply it at startup.

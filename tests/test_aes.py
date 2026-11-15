@@ -10,6 +10,17 @@ from pydownloader.download.aes import (
     parse_iv,
     segment_iv,
 )
+from pydownloader.i18n import set_language
+
+
+@pytest.fixture(autouse=True)
+def russian():
+    """The words of this file are read in Russian: the cipher reports the size in
+    the language the user reads (spec 4.3, 6.3).
+    """
+    previous = set_language("ru")
+    yield
+    set_language(previous)
 
 
 def encrypt(data: bytes, key: bytes, iv: bytes) -> bytes:

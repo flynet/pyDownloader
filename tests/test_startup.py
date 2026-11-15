@@ -7,11 +7,24 @@ import tempfile
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
+
 from pydownloader.browser.launcher import BrowserChoice
 from pydownloader.config.paths import Paths, download_dir_default
 from pydownloader.config.settings import Settings, load_settings, save_settings
 from pydownloader.ffmpeg.locate import Ffmpeg
+from pydownloader.i18n import set_language
 from pydownloader.ui import app as app_mod
+
+
+@pytest.fixture(autouse=True)
+def russian():
+    """The words of this file are read in Russian: the start of the program writes
+    its first lines in the language the user reads (spec 4.3, 8.1).
+    """
+    previous = set_language("ru")
+    yield
+    set_language(previous)
 
 
 def test_saved_folder_is_used_without_a_dialog(tmp_path, monkeypatch):

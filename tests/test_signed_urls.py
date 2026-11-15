@@ -11,6 +11,7 @@ from pydownloader.download.engine import DownloadError
 from pydownloader.download.plan import plan_family
 from pydownloader.download.runner import RunContext, make_plan
 from pydownloader.ffmpeg.locate import Ffmpeg
+from pydownloader.i18n import set_language
 from pydownloader.manifest.detector import Candidate
 from pydownloader.manifest.quality import Choice
 from pydownloader.manifest.registry import SourceEntry, SourceRegistry
@@ -18,6 +19,16 @@ from pydownloader.util.urls import resolve_url
 
 FFMPEG = Ffmpeg(path=Path("ffmpeg.exe"), label="test")
 PLAYLIST = "https://cdn.example.com/v/index-v1-a1.m3u8?h=9"
+
+
+@pytest.fixture(autouse=True)
+def russian():
+    """The words of this file are read in Russian: the plan reports a missing URL in
+    the language the user reads (spec 4.3, 6.1).
+    """
+    previous = set_language("ru")
+    yield
+    set_language(previous)
 
 
 def segment_event(url: str, title: str = "Клип") -> ResponseEvent:

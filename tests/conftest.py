@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from PySide6.QtWidgets import QApplication
 
-from pydownloader.i18n import set_language
+from pydownloader.i18n import DEFAULT_LANGUAGE, set_language
 
 DATA_DIR = Path(__file__).parent / "data"
 
@@ -80,9 +80,14 @@ def log_to_tmp(tmp_path_factory: pytest.TempPathFactory):
 
 
 @pytest.fixture(scope="session", autouse=True)
-def russian_language():
-    """The suite checks the Russian texts: it is written in Russian (spec 4.3)."""
-    set_language("ru")
+def english_language():
+    """The suite runs in English: the interface the user reads starts in English.
+
+    The screenshots of the README and the default settings of a first start are
+    English, so the suite checks the English texts of the catalog (spec 8.1).
+    A test that reads another language calls ``set_language`` itself.
+    """
+    set_language(DEFAULT_LANGUAGE)
 
 
 @pytest.fixture

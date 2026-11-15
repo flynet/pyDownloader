@@ -39,11 +39,11 @@ from pydownloader.locales.update_zh import TEXTS as UPDATE_ZH
 #: Language -> key -> text.
 CATALOG: dict[str, dict[str, str]] = {
     "en": {**UI_EN, **BROWSER_EN, **DOWNLOAD_EN, **MANIFEST_EN, **UPDATE_EN},
-    "ru": {**UI_RU, **BROWSER_RU, **DOWNLOAD_RU, **MANIFEST_RU, **UPDATE_RU},
-    "uk": {**UI_UK, **BROWSER_UK, **DOWNLOAD_UK, **MANIFEST_UK, **UPDATE_UK},
     "zh": {**UI_ZH, **BROWSER_ZH, **DOWNLOAD_ZH, **MANIFEST_ZH, **UPDATE_ZH},
     "fr": {**UI_FR, **BROWSER_FR, **DOWNLOAD_FR, **MANIFEST_FR, **UPDATE_FR},
     "de": {**UI_DE, **BROWSER_DE, **DOWNLOAD_DE, **MANIFEST_DE, **UPDATE_DE},
+    "uk": {**UI_UK, **BROWSER_UK, **DOWNLOAD_UK, **MANIFEST_UK, **UPDATE_UK},
+    "ru": {**UI_RU, **BROWSER_RU, **DOWNLOAD_RU, **MANIFEST_RU, **UPDATE_RU},
 }
 
 __all__ = ["CATALOG"]
